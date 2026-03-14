@@ -21,7 +21,7 @@ Citadel is a Mad Max-themed agentic workflow orchestrator. Raw code enters the c
 
 <p>&nbsp;</p>
 <p>&nbsp;</p>
-![Citadel](Citadel.png)
+![Citadel](https://raw.githubusercontent.com/MichielDean/Citadel/main/Citadel.png)
 
 ## Quick Start
 
