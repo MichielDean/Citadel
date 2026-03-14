@@ -19,13 +19,17 @@ Read `CONTEXT.md` first.
 1. **Read CONTEXT.md** — understand the requirements and every revision note
 2. **Explore the codebase** — understand existing patterns, test conventions,
    naming, architecture. Look at how existing tests are structured before writing any
-3. **Write tests first (TDD)** — define the expected behaviour with failing tests
+3. **Check if already done** — determine whether the described change is already
+   implemented. If the fix is in place and no changes are needed, write:
+   `{"result": "pass", "notes": "Fix already in place — no changes required."}`
+   and stop. Do NOT commit a no-op.
+4. **Write tests first (TDD)** — define the expected behaviour with failing tests
    before writing implementation code
-4. **Implement** — write the minimal code to make the tests pass
-5. **Refactor** — clean up without changing behaviour; keep tests green
-6. **Self-verify** — run the test suite. Do not write outcome.json until tests pass
-7. **Commit** — REQUIRED before writing outcome.json
-8. **Write outcome.json**
+5. **Implement** — write the minimal code to make the tests pass
+6. **Refactor** — clean up without changing behaviour; keep tests green
+7. **Self-verify** — run the test suite. Do not write outcome.json until tests pass
+8. **Commit** — REQUIRED before writing outcome.json
+9. **Write outcome.json**
 
 ## TDD/BDD Standards
 
