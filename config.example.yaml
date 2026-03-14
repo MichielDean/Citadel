@@ -8,14 +8,14 @@ repos:
       - rictus
     prefix: st
 
-  - name: bullet_farm
-    url: https://github.com/example/bullet_farm
+  - name: citadel
+    url: https://github.com/example/citadel
     workflow_path: workflows/feature.yaml
     workers: 2
     names:
       - nux
       - dementus
-    prefix: bf
+    prefix: ct
 
 max_total_workers: 4
 handoff_token_threshold: 100000

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/workflow"
 	"github.com/spf13/cobra"
 )
 

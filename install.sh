@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bullet Farm installer
-# Usage: curl -sSf https://raw.githubusercontent.com/MichielDean/bullet-farm/main/install.sh | bash
+# Citadel installer
+# Usage: curl -sSf https://raw.githubusercontent.com/MichielDean/citadel/main/install.sh | bash
 
-REPO='github.com/MichielDean/bullet-farm'
-BF_DIR="${HOME}/.bullet-farm"
+REPO='github.com/MichielDean/citadel'
+CT_DIR="${HOME}/.citadel"
 MIN_GO_VERSION="1.22"
 
 # --- colors (disabled if not a tty) ---
@@ -102,7 +102,7 @@ check_api_key() {
   if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
     printf "\n"
     warn "ANTHROPIC_API_KEY is not set."
-    warn "Bullet Farm needs this to run AI agent steps."
+    warn "Citadel needs this to run AI agent steps."
     printf "\n"
     printf "  Add to your shell profile (~/.bashrc, ~/.zshrc, etc.):\n"
     printf "    export ANTHROPIC_API_KEY='sk-ant-...'\n"
@@ -114,34 +114,34 @@ check_api_key() {
   info "ANTHROPIC_API_KEY ✓"
 }
 
-# --- install_bf: install via go install ---
-install_bf() {
-  info "Installing bf..."
-  CGO_ENABLED=1 go install "${REPO}/cmd/bf@latest"
+# --- install_ct: install via go install ---
+install_ct() {
+  info "Installing ct..."
+  CGO_ENABLED=1 go install "${REPO}/cmd/ct@latest"
 
   # Verify the binary is on PATH.
-  if command -v bf &>/dev/null; then
-    info "bf $(bf version 2>/dev/null || echo '?') installed at $(command -v bf)"
+  if command -v ct &>/dev/null; then
+    info "ct $(ct version 2>/dev/null || echo '?') installed at $(command -v ct)"
   else
     local gobin
     gobin="$(go env GOBIN)"
     if [ -z "${gobin}" ]; then
       gobin="$(go env GOPATH)/bin"
     fi
-    warn "bf installed to ${gobin}/bf but it's not on your PATH."
+    warn "ct installed to ${gobin}/ct but it's not on your PATH."
     warn "Add this to your shell profile:  export PATH=\"\${PATH}:${gobin}\""
   fi
 }
 
-# --- setup_dirs: create ~/.bullet-farm structure ---
+# --- setup_dirs: create ~/.citadel structure ---
 setup_dirs() {
-  info "Setting up ${BF_DIR}..."
-  mkdir -p "${BF_DIR}/sandboxes" "${BF_DIR}/logs"
+  info "Setting up ${CT_DIR}..."
+  mkdir -p "${CT_DIR}/sandboxes" "${CT_DIR}/logs"
 }
 
 # --- create_config: write starter config.yaml if none exists ---
 create_config() {
-  local cfg="${BF_DIR}/config.yaml"
+  local cfg="${CT_DIR}/config.yaml"
 
   if [ -f "${cfg}" ]; then
     info "Config already exists at ${cfg} — skipping"
@@ -150,10 +150,10 @@ create_config() {
 
   info "Creating starter config at ${cfg}..."
   cat > "${cfg}" << 'YAML'
-# Bullet Farm configuration
+# Citadel configuration
 # Edit this file to add your repos and configure your farm.
 #
-# See https://github.com/MichielDean/bullet-farm for full documentation.
+# See https://github.com/MichielDean/citadel for full documentation.
 
 # Maximum total workers across all repos (0 = unlimited).
 max_total_workers: 4
@@ -169,7 +169,7 @@ repos:
   # - name: my-project
   #   url: git@github.com:you/my-project.git
   #   prefix: mp
-  #   workflow_path: ~/.bullet-farm/workflows/feature.yaml
+  #   workflow_path: ~/.citadel/workflows/feature.yaml
   #   max_workers: 2
   #   workers:
   #     - name: worker-a
@@ -177,9 +177,9 @@ repos:
 YAML
 
   # Also create a workflows directory with the bundled feature workflow.
-  mkdir -p "${BF_DIR}/workflows"
+  mkdir -p "${CT_DIR}/workflows"
 
-  local wf="${BF_DIR}/workflows/feature.yaml"
+  local wf="${CT_DIR}/workflows/feature.yaml"
   if [ ! -f "${wf}" ]; then
     info "Creating default workflow at ${wf}..."
     cat > "${wf}" << 'YAML'
@@ -235,16 +235,16 @@ add_shell_completion() {
     bash)
       local comp_dir="${HOME}/.local/share/bash-completion/completions"
       mkdir -p "${comp_dir}"
-      if command -v bf &>/dev/null; then
-        bf completion bash > "${comp_dir}/bf" 2>/dev/null || true
+      if command -v ct &>/dev/null; then
+        ct completion bash > "${comp_dir}/ct" 2>/dev/null || true
         info "Bash completion installed"
       fi
       ;;
     zsh)
       local comp_dir="${HOME}/.zsh/completions"
       mkdir -p "${comp_dir}"
-      if command -v bf &>/dev/null; then
-        bf completion zsh > "${comp_dir}/_bf" 2>/dev/null || true
+      if command -v ct &>/dev/null; then
+        ct completion zsh > "${comp_dir}/_ct" 2>/dev/null || true
         info "Zsh completion installed"
         if ! grep -q 'fpath.*\.zsh/completions' "${HOME}/.zshrc" 2>/dev/null; then
           warn "Add to your .zshrc:  fpath=(~/.zsh/completions \$fpath)"
@@ -252,7 +252,7 @@ add_shell_completion() {
       fi
       ;;
     *)
-      warn "Shell completion not configured for ${shell_name}. Run: bf completion --help"
+      warn "Shell completion not configured for ${shell_name}. Run: ct completion --help"
       ;;
   esac
 }
@@ -260,40 +260,40 @@ add_shell_completion() {
 # --- print_success ---
 print_success() {
   printf "\n"
-  printf "${GREEN}${BOLD}✓ Bullet Farm installed${NC}\n"
+  printf "${GREEN}${BOLD}✓ Citadel installed${NC}\n"
   printf "\n"
   printf "${BOLD}Next steps:${NC}\n"
   printf "\n"
   printf "  1. Edit your config:\n"
-  printf "     ${BLUE}%s/config.yaml${NC}\n" "${BF_DIR}"
+  printf "     ${BLUE}%s/config.yaml${NC}\n" "${CT_DIR}"
   printf "     Add at least one repo with a URL, prefix, and workers.\n"
   printf "\n"
   printf "  2. Add a work item:\n"
-  printf "     ${BLUE}bf queue add --title \"My first task\" --repo <repo-name>${NC}\n"
+  printf "     ${BLUE}ct queue add --title \"My first task\" --repo <repo-name>${NC}\n"
   printf "\n"
   printf "  3. Start the farm:\n"
-  printf "     ${BLUE}bf farm start --config ~/.bullet-farm/config.yaml${NC}\n"
+  printf "     ${BLUE}ct farm start --config ~/.citadel/config.yaml${NC}\n"
   printf "\n"
   printf "${BOLD}Paths:${NC}\n"
-  printf "  Config:     %s/config.yaml\n" "${BF_DIR}"
-  printf "  Workflows:  %s/workflows/\n" "${BF_DIR}"
-  printf "  Queue DB:   %s/queue.db\n" "${BF_DIR}"
-  printf "  Sandboxes:  %s/sandboxes/\n" "${BF_DIR}"
+  printf "  Config:     %s/config.yaml\n" "${CT_DIR}"
+  printf "  Workflows:  %s/workflows/\n" "${CT_DIR}"
+  printf "  Queue DB:   %s/queue.db\n" "${CT_DIR}"
+  printf "  Sandboxes:  %s/sandboxes/\n" "${CT_DIR}"
   printf "\n"
-  printf "${BOLD}Docs:${NC} https://github.com/MichielDean/bullet-farm\n"
+  printf "${BOLD}Docs:${NC} https://github.com/MichielDean/citadel\n"
   printf "\n"
 }
 
 main() {
-  printf "${BOLD}Bullet Farm Installer${NC}\n\n"
+  printf "${BOLD}Citadel Installer${NC}\n\n"
   step "Checking Go"
   check_go
   step "Checking dependencies"
   check_deps
   step "Checking API key"
   check_api_key
-  step "Installing bf"
-  install_bf
+  step "Installing ct"
+  install_ct
   step "Setting up directories"
   setup_dirs
   step "Creating starter config"

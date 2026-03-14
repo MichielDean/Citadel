@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/workflow"
 	"github.com/spf13/cobra"
 )
 

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 func testQueueClient(t *testing.T) *queue.Client {

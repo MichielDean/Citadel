@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -52,13 +52,13 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}) && ok
 
 	home, _ := os.UserHomeDir()
-	cfgPath := filepath.Join(home, ".bullet-farm", "config.yaml")
+	cfgPath := filepath.Join(home, ".citadel", "config.yaml")
 	ok = check("config exists and parses", func() error {
 		_, err := workflow.ParseFarmConfig(cfgPath)
 		return err
 	}) && ok
 
-	dbFile := filepath.Join(home, ".bullet-farm", "queue.db")
+	dbFile := filepath.Join(home, ".citadel", "queue.db")
 	ok = check("queue.db accessible", func() error {
 		f, err := os.OpenFile(dbFile, os.O_RDWR, 0)
 		if err != nil {
@@ -68,7 +68,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return nil
 	}) && ok
 
-	sandboxDir := filepath.Join(home, ".bullet-farm", "sandboxes")
+	sandboxDir := filepath.Join(home, ".citadel", "sandboxes")
 	ok = check("sandboxes/ writable", func() error {
 		if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
 			return err

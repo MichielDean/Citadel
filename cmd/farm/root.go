@@ -6,7 +6,7 @@ var cfgPath string
 
 var rootCmd = &cobra.Command{
 	Use:   "farm",
-	Short: "Bullet Farm orchestrator",
+	Short: "Citadel orchestrator",
 }
 
 func init() {

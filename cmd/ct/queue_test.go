@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
+	"github.com/MichielDean/citadel/internal/queue"
 )
 
 func TestQueueListOutputFlag(t *testing.T) {
 	// Set up a temp DB.
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
-	t.Setenv("BF_DB", db)
+	t.Setenv("CT_DB", db)
 
 	// Verify default flag value is "table".
 	f := queueListCmd.Flags().Lookup("output")

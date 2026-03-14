@@ -159,7 +159,7 @@ func TestValidateFarmConfig_Valid(t *testing.T) {
 	cfg := &FarmConfig{
 		Repos: []RepoConfig{
 			{Name: "ScaledTest", Workers: 2, Names: []string{"max", "furiosa"}, Prefix: "st"},
-			{Name: "bullet_farm", Workers: 1, Names: []string{"immortan"}, Prefix: "bf"},
+			{Name: "citadel", Workers: 1, Names: []string{"immortan"}, Prefix: "ct"},
 		},
 		MaxTotalWorkers: 3,
 	}

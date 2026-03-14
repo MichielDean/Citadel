@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 // ContextParams holds everything needed to prepare a step's execution context.
@@ -53,7 +53,7 @@ func PrepareContext(p ContextParams) (dir string, cleanup func(), err error) {
 // prepareDiffOnly creates a tmpdir containing only diff.patch and CONTEXT.md.
 // The agent has no access to the full repo — isolation enforced by filesystem.
 func prepareDiffOnly(p ContextParams) (string, func(), error) {
-	tmpDir, err := os.MkdirTemp("", "bf-diff-*")
+	tmpDir, err := os.MkdirTemp("", "ct-diff-*")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("create diff tmpdir: %w", err)
 	}
@@ -84,7 +84,7 @@ func prepareDiffOnly(p ContextParams) (string, func(), error) {
 // prepareSpecOnly creates a tmpdir with only spec.md and CONTEXT.md.
 // The agent sees only the item description and step notes — no code.
 func prepareSpecOnly(p ContextParams) (string, func(), error) {
-	tmpDir, err := os.MkdirTemp("", "bf-spec-*")
+	tmpDir, err := os.MkdirTemp("", "ct-spec-*")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("create spec tmpdir: %w", err)
 	}

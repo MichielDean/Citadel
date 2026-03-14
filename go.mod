@@ -1,4 +1,4 @@
-module github.com/MichielDean/bullet-farm
+module github.com/MichielDean/citadel
 
 go 1.26.1
 

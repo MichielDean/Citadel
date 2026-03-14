@@ -8,13 +8,13 @@ repos:
       - furiosa
     prefix: st
 
-  - name: bullet_farm
-    url: https://github.com/example/bullet-farm
+  - name: citadel
+    url: https://github.com/example/citadel
     workflow_path: workflow.yaml
     workers: 1
     names:
       - immortan
-    prefix: bf
+    prefix: ct
 
 max_total_workers: 3
 handoff_token_threshold: 150000

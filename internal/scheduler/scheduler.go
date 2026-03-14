@@ -1,4 +1,4 @@
-// Package scheduler implements the core scheduling loop for bullet farm.
+// Package scheduler implements the core scheduling loop for Citadel.
 //
 // It polls the work queue for each configured repo, assigns work to
 // idle named workers, runs workflow steps via an injected StepRunner, reads
@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 // QueueClient is the interface for interacting with the work queue.
@@ -104,7 +104,7 @@ func New(config workflow.FarmConfig, dbPath string, runner StepRunner, opts ...O
 		if err != nil {
 			return nil, fmt.Errorf("scheduler: home dir: %w", err)
 		}
-		s.sandboxRoot = filepath.Join(home, ".bullet-farm", "sandboxes")
+		s.sandboxRoot = filepath.Join(home, ".citadel", "sandboxes")
 	}
 
 	if config.CleanupInterval != "" {

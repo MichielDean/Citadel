@@ -1,4 +1,4 @@
-// Package queue provides a SQLite-backed work queue for Bullet Farm.
+// Package queue provides a SQLite-backed work queue for Citadel.
 //
 // Each work item flows through a workflow pipeline. The queue stores items,
 // step notes, and events. No external dependencies — just SQLite.

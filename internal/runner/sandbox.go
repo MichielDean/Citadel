@@ -152,8 +152,8 @@ func branchExists(dir, branch string) (bool, error) {
 // commits don't fail due to missing identity.
 func configureGitIdentity(dir string) error {
 	cmds := [][]string{
-		{"git", "config", "user.name", "Bullet Farm Agent"},
-		{"git", "config", "user.email", "agent@bullet-farm.local"},
+		{"git", "config", "user.name", "Citadel Agent"},
+		{"git", "config", "user.email", "agent@citadel.local"},
 	}
 	for _, args := range cmds {
 		c := exec.Command(args[0], args[1:]...)

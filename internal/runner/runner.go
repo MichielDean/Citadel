@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 // Worker is a named execution slot with a git worktree.
@@ -19,7 +19,7 @@ import (
 type Worker struct {
 	Name       string
 	Repo       string
-	SandboxDir string // ~/.bullet-farm/sandboxes/<repo>/<worker>/ — git worktree
+	SandboxDir string // ~/.citadel/sandboxes/<repo>/<worker>/ — git worktree
 	SessionID  string // tmux session name: <repo>-<worker>
 	Busy       bool
 }
@@ -31,7 +31,7 @@ type Runner struct {
 	queue    *queue.Client
 
 	workers          []*Worker
-	sharedCloneDir   string // ~/.bullet-farm/sandboxes/<repo>/ — single shared git clone
+	sharedCloneDir   string // ~/.citadel/sandboxes/<repo>/ — single shared git clone
 	sandboxBase      string // kept for compat; same as sharedCloneDir
 	handoffThreshold int
 
@@ -43,7 +43,7 @@ type Config struct {
 	Repo              workflow.RepoConfig
 	Workflow          *workflow.Workflow
 	QueueClient       *queue.Client
-	SandboxRoot       string // Override for sandbox root dir (default: ~/.bullet-farm/sandboxes)
+	SandboxRoot       string // Override for sandbox root dir (default: ~/.citadel/sandboxes)
 	HandoffThreshold  int    // Token threshold for session handoff (default: 150000)
 	SkipInitialClone  bool   // Skip the startup clone (for tests with fake repo URLs)
 }
@@ -65,7 +65,7 @@ func New(cfg Config) (*Runner, error) {
 		if err != nil {
 			return nil, fmt.Errorf("runner: home dir: %w", err)
 		}
-		sandboxRoot = filepath.Join(home, ".bullet-farm", "sandboxes")
+		sandboxRoot = filepath.Join(home, ".citadel", "sandboxes")
 	}
 
 	repoSandboxDir := filepath.Join(sandboxRoot, cfg.Repo.Name)

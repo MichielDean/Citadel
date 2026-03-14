@@ -11,19 +11,19 @@ import (
 var dbPath string
 
 var rootCmd = &cobra.Command{
-	Use:   "bf",
-	Short: "Bullet Farm CLI — work queue and farm management",
+	Use:   "ct",
+	Short: "Citadel CLI — work queue and farm management",
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to queue database (default: ~/.bullet-farm/queue.db)")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to queue database (default: ~/.citadel/queue.db)")
 }
 
 func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
 	}
-	if env := os.Getenv("BF_DB"); env != "" {
+	if env := os.Getenv("CT_DB"); env != "" {
 		return env
 	}
 	home, err := os.UserHomeDir()
@@ -31,7 +31,7 @@ func resolveDBPath() string {
 		fmt.Fprintf(os.Stderr, "error: cannot determine home directory: %v\n", err)
 		os.Exit(1)
 	}
-	dir := filepath.Join(home, ".bullet-farm")
+	dir := filepath.Join(home, ".citadel")
 	os.MkdirAll(dir, 0o755)
 	return filepath.Join(dir, "queue.db")
 }

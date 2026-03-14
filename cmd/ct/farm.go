@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/runner"
-	"github.com/MichielDean/bullet-farm/internal/scheduler"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/runner"
+	"github.com/MichielDean/citadel/internal/scheduler"
+	"github.com/MichielDean/citadel/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -211,7 +211,7 @@ func resolveConfigPath() string {
 	if configPath != "" {
 		return configPath
 	}
-	if env := os.Getenv("BF_CONFIG"); env != "" {
+	if env := os.Getenv("CT_CONFIG"); env != "" {
 		return env
 	}
 	return "config.yaml"

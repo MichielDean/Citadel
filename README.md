@@ -1,4 +1,4 @@
-# Bullet Farm
+# Citadel
 
 Agentic workflow orchestrator for software development. Composable AI pipelines
 where each step is either an AI agent doing cognitive work or automated code
@@ -11,7 +11,7 @@ outcomes, you're burning tokens on things a state machine does better. CrewAI,
 AutoGen — they all have this problem. The coordination layer is AI when it
 shouldn't be.
 
-Bullet Farm flips this: **AI does cognitive work, code does mechanical work.**
+Citadel flips this: **AI does cognitive work, code does mechanical work.**
 
 - Routing between steps → deterministic state machine
 - Scheduling when to run → cron/event loop
@@ -71,7 +71,8 @@ Steps have a `type`:
 
 ### Roles
 
-Each `agent` step uses a role. Roles are defined by a `CLAUDE.md` in `roles/`:
+Each `agent` step uses a role. Roles are defined in workflow YAML and generated
+to `~/.citadel/roles/<role>/CLAUDE.md`:
 
 - **implementer** — writes code for the work item, full codebase context
 - **reviewer** — adversarial code review, sees only the diff (no author, no history)
@@ -118,9 +119,9 @@ implementer sees the reviewer's notes when the work comes back).
 ## Architecture
 
 ```
-bullet-farm/
+citadel/
   cmd/
-    bf/                 # bf CLI — queue management and farm control
+    ct/                 # ct CLI — queue management and farm control
     farm/               # farm binary — scheduler + CLI
   internal/
     scheduler/          # step scheduling, state machine
@@ -146,7 +147,7 @@ bullet-farm/
 
 ## Work Queue
 
-Bullet Farm uses a SQLite-backed work queue. Work items drive the pipeline.
+Citadel uses a SQLite-backed work queue. Work items drive the pipeline.
 Each item flows through a workflow where the scheduler polls for ready items
 and assigns them to the appropriate step agent.
 
@@ -162,20 +163,23 @@ The item's `current_step` field always reflects which step it's at. The
 
 ## CLI
 
-The `bf` command manages the work queue and farm:
+The `ct` command manages the work queue and farm:
 
 ```
-bf queue add --title "..." --description "..." --priority 1 --repo github.com/Org/Repo
-bf queue list [--repo <repo>] [--status open|in_progress|closed|escalated]
-bf queue show <id>
-bf queue note <id> "content"
-bf queue close <id>
-bf queue reopen <id>
-bf queue escalate <id> --reason "stuck"
-bf farm start [--config config.yaml]
-bf farm status
-bf farm config validate <path>
-bf version
+ct queue add --title "..." --description "..." --priority 1 --repo github.com/Org/Repo
+ct queue list [--repo <repo>] [--status open|in_progress|closed|escalated]
+ct queue show <id>
+ct queue note <id> "content"
+ct queue close <id>
+ct queue reopen <id>
+ct queue escalate <id> --reason "stuck"
+ct farm start [--config config.yaml]
+ct farm status
+ct farm config validate <path>
+ct roles generate [--workflow path]
+ct roles list
+ct roles edit
+ct version
 ```
 
 ## Key Design Decisions
@@ -187,7 +191,7 @@ needed.
 
 **Why SQLite for the queue?**
 SQLite is embedded, zero-dependency, and handles our concurrency needs. No
-external services to manage. The queue database lives at `~/.bullet-farm/queue.db`.
+external services to manage. The queue database lives at `~/.citadel/queue.db`.
 
 **Why enforce context isolation in infrastructure?**
 An adversarial reviewer prompted to "pretend you don't know who wrote this" is
@@ -201,4 +205,4 @@ adds a step.
 
 ## Status
 
-Under active development. See [issues](https://github.com/MichielDean/bullet-farm/issues) for the build plan.
+Under active development. See [issues](https://github.com/MichielDean/citadel/issues) for the build plan.

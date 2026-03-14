@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/MichielDean/bullet-farm/internal/automated"
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/scheduler"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/automated"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/scheduler"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 // Adapter wraps Runner instances to implement scheduler.StepRunner.
@@ -85,7 +85,7 @@ func (a *Adapter) Run(ctx context.Context, req scheduler.StepRequest) (*schedule
 // runAutomated dispatches an automated step through the automated executor.
 func (a *Adapter) runAutomated(ctx context.Context, req scheduler.StepRequest) *scheduler.Outcome {
 	home, _ := os.UserHomeDir()
-	sandboxDir := filepath.Join(home, ".bullet-farm", "sandboxes", req.RepoConfig.Name, req.WorkerName)
+	sandboxDir := filepath.Join(home, ".citadel", "sandboxes", req.RepoConfig.Name, req.WorkerName)
 	branch := "feat/" + req.Item.ID
 
 	// Build metadata from prior annotations stored as step notes with "meta:" prefix.

@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
+	"github.com/MichielDean/citadel/internal/queue"
 	"github.com/spf13/cobra"
 )
 
@@ -329,7 +329,7 @@ func inferPrefix(repo string) string {
 		}
 	}
 	if len(name) == 0 {
-		return "bf"
+		return "ct"
 	}
 	if len(name) <= 2 {
 		return name

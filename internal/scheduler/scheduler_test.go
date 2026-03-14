@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 // --- mocks ---
@@ -514,13 +514,13 @@ func TestTick_NoWorkAvailable(t *testing.T) {
 	}
 }
 
-// --- Multi-repo tests matching spec: ScaledTest (max/furiosa) + bullet_farm (immortan) ---
+// --- Multi-repo tests matching spec: ScaledTest (max/furiosa) + citadel (immortan) ---
 
 func multiRepoConfig() workflow.FarmConfig {
 	return workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
 			{Name: "ScaledTest", Workers: 2, Names: []string{"max", "furiosa"}, Prefix: "st"},
-			{Name: "bullet_farm", Workers: 1, Names: []string{"immortan"}, Prefix: "bf"},
+			{Name: "citadel", Workers: 1, Names: []string{"immortan"}, Prefix: "ct"},
 		},
 		MaxTotalWorkers: 3,
 	}
@@ -531,7 +531,7 @@ func multiRepoScheduler(clients map[string]QueueClient, runner StepRunner) *Sche
 	wf := testWorkflow()
 	workflows := map[string]*workflow.Workflow{
 		"ScaledTest":  wf,
-		"bullet_farm": wf,
+		"citadel": wf,
 	}
 	return NewFromParts(config, workflows, clients, runner)
 }
@@ -544,20 +544,20 @@ func TestMultiRepo_ItemsGoToCorrectWorkers(t *testing.T) {
 	}
 	bfClient := newMockClient()
 	bfClient.readyItems = []*queue.WorkItem{
-		{ID: "bf-1", Title: "bullet farm item 1"},
+		{ID: "bf-1", Title: "citadel item 1"},
 	}
 
 	runner := newMockRunner()
 	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
-		"bullet_farm": bfClient,
+		"citadel": bfClient,
 	}
 	sched := multiRepoScheduler(clients, runner)
 
 	// First tick: should pick up items from both repos.
 	sched.Tick(context.Background())
 
-	// ScaledTest has 2 workers and 2 items; bullet_farm has 1 worker and 1 item.
+	// ScaledTest has 2 workers and 2 items; citadel has 1 worker and 1 item.
 	// All 3 should be assigned (total 3 = MaxTotalWorkers).
 	if !runner.waitCalls(3, 2*time.Second) {
 		t.Fatal("timed out waiting for 3 runner calls")
@@ -579,9 +579,9 @@ func TestMultiRepo_ItemsGoToCorrectWorkers(t *testing.T) {
 				t.Errorf("ScaledTest item %s assigned to wrong worker: %s", call.Item.ID, call.WorkerName)
 			}
 		}
-		if call.RepoConfig.Name == "bullet_farm" {
+		if call.RepoConfig.Name == "citadel" {
 			if call.WorkerName != "immortan" {
-				t.Errorf("bullet_farm item %s assigned to wrong worker: %s (expected immortan)", call.Item.ID, call.WorkerName)
+				t.Errorf("citadel item %s assigned to wrong worker: %s (expected immortan)", call.Item.ID, call.WorkerName)
 			}
 		}
 	}
@@ -604,7 +604,7 @@ func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
 	blocker := newBlockingRunner()
 	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
-		"bullet_farm": bfClient,
+		"citadel": bfClient,
 	}
 
 	config := multiRepoConfig()
@@ -612,7 +612,7 @@ func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
 	wf := testWorkflow()
 	workflows := map[string]*workflow.Workflow{
 		"ScaledTest":  wf,
-		"bullet_farm": wf,
+		"citadel": wf,
 	}
 	sched := NewFromParts(config, workflows, clients, blocker)
 
@@ -638,7 +638,7 @@ func TestMultiRepo_WorkersNeverCrossRepoBoundaries(t *testing.T) {
 	runner := newMockRunner()
 	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
-		"bullet_farm": bfClient,
+		"citadel": bfClient,
 	}
 	sched := multiRepoScheduler(clients, runner)
 	sched.Tick(context.Background())
@@ -656,9 +656,9 @@ func TestMultiRepo_WorkersNeverCrossRepoBoundaries(t *testing.T) {
 			if call.WorkerName != "max" && call.WorkerName != "furiosa" {
 				t.Errorf("ScaledTest item used non-ScaledTest worker: %s", call.WorkerName)
 			}
-		case "bullet_farm":
+		case "citadel":
 			if call.WorkerName != "immortan" {
-				t.Errorf("bullet_farm item used non-bullet_farm worker: %s", call.WorkerName)
+				t.Errorf("citadel item used non-citadel worker: %s", call.WorkerName)
 			}
 		default:
 			t.Errorf("unexpected repo: %s", call.RepoConfig.Name)
@@ -673,7 +673,7 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 	runner := newMockRunner()
 	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
-		"bullet_farm": bfClient,
+		"citadel": bfClient,
 	}
 	sched := multiRepoScheduler(clients, runner)
 
@@ -692,7 +692,7 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 		t.Errorf("expected ScaledTest polled once, got %d", stCalls)
 	}
 	if bfCalls != 1 {
-		t.Errorf("expected bullet_farm polled once, got %d", bfCalls)
+		t.Errorf("expected citadel polled once, got %d", bfCalls)
 	}
 }
 
@@ -704,7 +704,7 @@ func TestMultiRepo_OneRepoEmptyOtherHasWork(t *testing.T) {
 	runner := newMockRunner()
 	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
-		"bullet_farm": bfClient,
+		"citadel": bfClient,
 	}
 	sched := multiRepoScheduler(clients, runner)
 	sched.Tick(context.Background())
@@ -738,7 +738,7 @@ func TestMultiRepo_RepoWorkersExhausted(t *testing.T) {
 	blocker := newBlockingRunner()
 	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
-		"bullet_farm": bfClient,
+		"citadel": bfClient,
 	}
 	sched := multiRepoScheduler(clients, blocker)
 

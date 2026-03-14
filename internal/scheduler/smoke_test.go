@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/queue"
-	"github.com/MichielDean/bullet-farm/internal/workflow"
+	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/citadel/internal/workflow"
 )
 
 // featureWorkflow returns the full 4-step feature pipeline matching
@@ -206,10 +206,10 @@ func smokeConfig() workflow.FarmConfig {
 	return workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
 			{
-				Name:    "bullet-farm",
+				Name:    "citadel",
 				Workers: 1,
 				Names:   []string{"smoker"},
-				Prefix:  "bf",
+				Prefix:  "ct",
 			},
 		},
 		MaxTotalWorkers: 1,
@@ -218,8 +218,8 @@ func smokeConfig() workflow.FarmConfig {
 
 func smokeScheduler(client QueueClient, runner StepRunner) *Scheduler {
 	config := smokeConfig()
-	workflows := map[string]*workflow.Workflow{"bullet-farm": featureWorkflow()}
-	clients := map[string]QueueClient{"bullet-farm": client}
+	workflows := map[string]*workflow.Workflow{"citadel": featureWorkflow()}
+	clients := map[string]QueueClient{"citadel": client}
 	return NewFromParts(config, workflows, clients, runner)
 }
 
