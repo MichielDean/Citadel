@@ -120,7 +120,7 @@ func runRolesList(cmd *cobra.Command, args []string) error {
 		if len(desc) > 40 {
 			desc = desc[:37] + "..."
 		}
-		fmt.Printf("  %-20s %-40s ct roles edit %s\n", k, desc, k)
+		fmt.Printf("  %-20s %-40s \u2192 ct roles edit %s\n", k, desc, k)
 	}
 	return nil
 }
@@ -330,7 +330,7 @@ func runRolesReset(cmd *cobra.Command, args []string) error {
 		}
 		for _, path := range written {
 			if strings.Contains(path, roleName) {
-				fmt.Printf("Reset %s -> %s regenerated\n", roleName, path)
+				fmt.Printf("Drop %s back to source. %s refreshed.\n", roleName, path)
 			}
 		}
 		return nil
@@ -383,7 +383,7 @@ func runRolesReset(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	for _, path := range written {
-		fmt.Printf("Reset -> %s regenerated\n", path)
+		fmt.Printf("Drop back to source. %s refreshed.\n", path)
 	}
 	return nil
 }

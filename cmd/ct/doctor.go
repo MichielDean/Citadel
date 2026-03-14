@@ -52,7 +52,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}) && ok
 
 	home, _ := os.UserHomeDir()
-	cfgPath := filepath.Join(home, ".citadel", "config.yaml")
+	cfgPath := filepath.Join(home, ".citadel", "citadel.yaml")
 	ok = check("config exists and parses", func() error {
 		_, err := workflow.ParseFarmConfig(cfgPath)
 		return err

@@ -12,7 +12,7 @@ var dbPath string
 
 var rootCmd = &cobra.Command{
 	Use:   "ct",
-	Short: "Citadel CLI — work queue and farm management",
+	Short: "Citadel CLI — the Citadel controls the water",
 }
 
 func init() {

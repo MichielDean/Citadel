@@ -24,7 +24,7 @@ Citadel is a Mad Max-themed agentic workflow orchestrator. Raw code enters the c
 # Install
 curl -sSL https://raw.githubusercontent.com/MichielDean/citadel/main/install.sh | bash
 
-# Initialize — creates ~/.citadel/config.yaml and default workflows
+# Initialize — creates ~/.citadel/citadel.yaml and default workflows
 ct init
 
 # Add a drop to the cistern
@@ -74,7 +74,7 @@ furiosa-ct-x7k: 1 windows (filtration)
 nux-ct-m3j: 1 windows (raw draw)
 ```
 
-Change names in `~/.citadel/config.yaml` under `names:`.
+Change names in `~/.citadel/citadel.yaml` under `names:`.
 
 ## Customizing Roles
 
@@ -91,7 +91,7 @@ Role content lives in `~/.citadel/workflows/feature.yaml` under the `roles:` key
 
 ## Drought Protocols
 
-When the cistern is dry, the Citadel runs maintenance automatically. Configure in `~/.citadel/config.yaml`:
+When the cistern is dry, the Citadel runs maintenance automatically. Configure in `~/.citadel/citadel.yaml`:
 
 ```yaml
 # Drought protocols — run when the Citadel is idle
@@ -132,7 +132,7 @@ ct flow config validate        # Check config and all workflow files
 ct doctor                      # Full health check
 ```
 
-Config lives at `~/.citadel/config.yaml`. See `config.example.yaml` for all options.
+Config lives at `~/.citadel/citadel.yaml`. See `citadel.yaml` for all options.
 
 ## CLI Reference
 

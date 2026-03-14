@@ -52,8 +52,9 @@ func TestIdleHook_FiresOnIdleTransition(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// At this point the work is done and workers released.
-	// Next tick: no work available → idle transition fires hooks.
+	// Next tick: no work available → idle transition fires hooks (in goroutine).
 	sched.Tick(context.Background())
+	time.Sleep(200 * time.Millisecond) // Allow goroutine to complete.
 
 	if _, err := os.Stat(markerFile); os.IsNotExist(err) {
 		t.Error("idle hook did not fire on idle transition")
@@ -79,8 +80,9 @@ func TestIdleHook_DoesNotFireWhenAlreadyIdle(t *testing.T) {
 	}
 	sched.logger = discardLogger()
 
-	// First tick: no work → enters idle, hooks fire.
+	// First tick: no work → enters idle, hooks fire (in goroutine).
 	sched.Tick(context.Background())
+	time.Sleep(200 * time.Millisecond) // Allow goroutine to complete.
 
 	// Second tick: still no work → stays idle, hooks should NOT fire.
 	sched.Tick(context.Background())

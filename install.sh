@@ -139,9 +139,9 @@ setup_dirs() {
   mkdir -p "${CT_DIR}/sandboxes" "${CT_DIR}/logs"
 }
 
-# --- create_config: write starter config.yaml if none exists ---
+# --- create_config: write starter citadel.yaml if none exists ---
 create_config() {
-  local cfg="${CT_DIR}/config.yaml"
+  local cfg="${CT_DIR}/citadel.yaml"
 
   if [ -f "${cfg}" ]; then
     info "Config already exists at ${cfg} — skipping"
@@ -265,17 +265,17 @@ print_success() {
   printf "${BOLD}Next steps:${NC}\n"
   printf "\n"
   printf "  1. Edit your config:\n"
-  printf "     ${BLUE}%s/config.yaml${NC}\n" "${CT_DIR}"
+  printf "     ${BLUE}%s/citadel.yaml${NC}\n" "${CT_DIR}"
   printf "     Add at least one repo with a URL, prefix, and workers.\n"
   printf "\n"
   printf "  2. Add a work item:\n"
   printf "     ${BLUE}ct queue add --title \"My first task\" --repo <repo-name>${NC}\n"
   printf "\n"
   printf "  3. Start the farm:\n"
-  printf "     ${BLUE}ct farm start --config ~/.citadel/config.yaml${NC}\n"
+  printf "     ${BLUE}ct flow start --config ~/.citadel/citadel.yaml${NC}\n"
   printf "\n"
   printf "${BOLD}Paths:${NC}\n"
-  printf "  Config:     %s/config.yaml\n" "${CT_DIR}"
+  printf "  Config:     %s/citadel.yaml\n" "${CT_DIR}"
   printf "  Workflows:  %s/workflows/\n" "${CT_DIR}"
   printf "  Queue DB:   %s/queue.db\n" "${CT_DIR}"
   printf "  Sandboxes:  %s/sandboxes/\n" "${CT_DIR}"

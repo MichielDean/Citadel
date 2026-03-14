@@ -262,7 +262,7 @@ var flowConfigValidateCmd = &cobra.Command{
 }
 
 func init() {
-	flowStartCmd.Flags().StringVar(&configPath, "config", "", "path to citadel config (default: ~/.citadel/config.yaml)")
+	flowStartCmd.Flags().StringVar(&configPath, "config", "", "path to citadel config (default: ~/.citadel/citadel.yaml)")
 
 	flowConfigCmd.AddCommand(flowConfigValidateCmd)
 	flowCmd.AddCommand(flowStartCmd, flowStatusCmd, flowConfigCmd)
@@ -285,7 +285,7 @@ func resolveConfigPath() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "config.yaml"
+		return "citadel.yaml"
 	}
-	return filepath.Join(home, ".citadel", "config.yaml")
+	return filepath.Join(home, ".citadel", "citadel.yaml")
 }

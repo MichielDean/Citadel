@@ -188,9 +188,9 @@ func defaultWorkerNames(n int) []string {
 
 // Run starts the scheduler loop. It blocks until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) error {
-	s.logger.Info("scheduler starting",
+	s.logger.Info("Citadel online. Aqueducts open.",
 		"repos", len(s.config.Repos),
-		"max_total_workers", s.config.MaxTotalWorkers,
+		"channels", s.config.MaxTotalWorkers,
 	)
 
 	s.recoverInProgress()
@@ -216,7 +216,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("scheduler stopping")
+			s.logger.Info("Aqueducts closed.")
 			return ctx.Err()
 		case <-ticker.C:
 			s.tick(ctx)
@@ -266,8 +266,8 @@ func (s *Scheduler) tick(ctx context.Context) {
 	if isIdle && !s.wasIdle {
 		// Entering idle state — run idle hooks.
 		if len(s.config.IdleHooks) > 0 {
-			s.logger.Info("scheduler entering idle — running idle hooks")
-			RunIdleHooks(s.config.IdleHooks, &s.config, s.dbPath, s.sandboxRoot, s.logger)
+			s.logger.Info("Drought protocols running.")
+			go RunIdleHooks(s.config.IdleHooks, &s.config, s.dbPath, s.sandboxRoot, s.logger)
 		}
 	}
 	s.wasIdle = isIdle
@@ -351,11 +351,10 @@ func (s *Scheduler) runStep(
 	client := s.clients[repo.Name]
 	wf := s.workflows[repo.Name]
 
-	s.logger.Info("step starting",
-		"repo", repo.Name,
-		"item", item.ID,
-		"step", step.Name,
-		"worker", worker.Name,
+	s.logger.Info("Drop entering channel",
+		"drop", item.ID,
+		"channel", worker.Name,
+		"valve", step.Name,
 	)
 
 	// Mark item as in-progress with the assigned worker and step.
@@ -402,12 +401,16 @@ func (s *Scheduler) runStep(
 		return
 	}
 
-	s.logger.Info("step completed",
-		"repo", repo.Name,
-		"item", item.ID,
-		"step", step.Name,
-		"result", outcome.Result,
-	)
+	switch outcome.Result {
+	case ResultPass:
+		s.logger.Info("Drop cleared valve", "drop", item.ID, "valve", step.Name)
+	case ResultRevision:
+		s.logger.Info("Drop recirculated \u2014 valve returned it upstream", "drop", item.ID, "valve", step.Name)
+	case ResultFail:
+		s.logger.Info("Drop poisoned at valve", "drop", item.ID, "valve", step.Name)
+	default:
+		s.logger.Info("Drop outcome", "drop", item.ID, "valve", step.Name, "result", outcome.Result)
+	}
 
 	// Attach notes from this step.
 	if outcome.Notes != "" {
@@ -471,17 +474,17 @@ func isTerminal(name string) bool {
 }
 
 func (s *Scheduler) handleTerminal(client QueueClient, itemID, terminal, fromStep string) {
-	s.logger.Info("reached terminal", "item", itemID, "terminal", terminal, "from_step", fromStep)
-
 	switch strings.ToLower(terminal) {
 	case "done":
+		s.logger.Info("Drop flows free", "drop", itemID)
 		if err := client.CloseItem(itemID); err != nil {
-			s.logger.Error("close failed", "item", itemID, "error", err)
+			s.logger.Error("close failed", "drop", itemID, "error", err)
 		}
 	case "blocked", "human", "escalate":
-		reason := fmt.Sprintf("reached terminal %q from step %q", terminal, fromStep)
+		s.logger.Info("Drop poisoned at terminal", "drop", itemID, "terminal", terminal, "from_valve", fromStep)
+		reason := fmt.Sprintf("reached terminal %q from valve %q", terminal, fromStep)
 		if err := client.Escalate(itemID, reason); err != nil {
-			s.logger.Error("escalate at terminal failed", "item", itemID, "error", err)
+			s.logger.Error("escalate at terminal failed", "drop", itemID, "error", err)
 		}
 	}
 }
