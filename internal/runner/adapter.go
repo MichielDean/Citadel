@@ -104,7 +104,7 @@ func (a *Adapter) runAutomated(ctx context.Context, req scheduler.StepRequest) *
 	}
 
 	bc := automated.BeadContext{
-		ID:          req.Item.ID,
+		ID:          req.WorkerName + "-" + req.Item.ID,
 		Title:       req.Item.Title,
 		Description: req.Item.Description,
 		WorkDir:     sandboxDir,
