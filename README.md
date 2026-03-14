@@ -1,208 +1,164 @@
 # Citadel
 
-Agentic workflow orchestrator for software development. Composable AI pipelines
-where each step is either an AI agent doing cognitive work or automated code
-doing mechanical work — and the two never get confused.
+> The Citadel controls the water. Water is life. Code is water.
 
-## The Problem with Pure AI Orchestration
+Citadel is a Mad Max-themed agentic workflow orchestrator. Raw code enters the cistern, flows through channels tended by named workers, is purified by adversarial reviewers and quality gatekeepers, and what flows free at the other end is clean enough to ship.
 
-When you use an AI agent to decide what to run next, schedule work, and route
-outcomes, you're burning tokens on things a state machine does better. CrewAI,
-AutoGen — they all have this problem. The coordination layer is AI when it
-shouldn't be.
+## The Vocabulary
 
-Citadel flips this: **AI does cognitive work, code does mechanical work.**
+| Term | Meaning |
+|---|---|
+| **Drop** | A unit of work — one issue, one feature, one fix. The atomic thing that flows. |
+| **Cistern** | The reservoir. Drops queue here waiting to flow. |
+| **Channel** | A worker slot. Named after Fury Road characters. Each channel carries one drop at a time. |
+| **Valve** | A workflow step. Controls what passes and what gets recirculated. |
+| **Aqueduct** | The full pipeline — raw draw → filtration → purity test → flows free. |
+| **Drought** | Idle state. The cistern is dry. Drought protocols run automatically. |
+| **Flows free** | A drop that made it: PR merged, delivered to the Wasteland. |
+| **Recirculated** | Sent back upstream for another pass — revision from reviewer or QA. |
+| **Poisoned** | A drop that can't flow without human intervention. |
 
-- Routing between steps → deterministic state machine
-- Scheduling when to run → cron/event loop
-- Context isolation for adversarial steps → enforced at infrastructure level
-- Writing code, reviewing code, making judgment calls → AI agents
+## Quick Start
 
-## Core Concepts
+```bash
+# Install
+curl -sSL https://raw.githubusercontent.com/MichielDean/citadel/main/install.sh | bash
 
-### Workflows
+# Initialize — creates ~/.citadel/config.yaml and default workflows
+ct init
 
-A workflow is a YAML file defining a sequence of steps. Each step has a role,
-a context level, and routing rules for every possible outcome.
+# Add a drop to the cistern
+ct cistern add --title "Add retry logic to fetch" --repo myproject
+
+# Open the aqueducts
+ct flow start
+
+# Watch the water flow
+ct flow status
+
+# See what's in the cistern
+ct cistern list
+```
+
+## How It Works
+
+Every drop flows through a sequence of valves:
+
+```
+Raw draw → Filtration → Purity test → PR opens → CI gate → Flows free
+```
+
+1. **Raw draw** (`implement`) — The Implementer agent reads the drop, writes tests first (TDD/BDD), implements, commits. No outcome until tests pass.
+
+2. **Filtration** (`adversarial-review`) — The Adversarial Reviewer receives *only the diff*. No codebase access, no author context. Finds poison: bugs, security holes, missing tests, logic errors. Context isolation is enforced at the infrastructure level.
+
+3. **Purity test** (`qa`) — The QA Reviewer checks test quality, not just whether tests pass. Finds test gaps, weak assertions, missing error paths, coverage theater. Routes back to raw draw on revision.
+
+4. **Automated valves** — PR opens via `gh pr create`, CI runs and must pass, `gh pr merge` fires. Pure water delivered.
+
+5. **Recirculation** — Revision sends the drop back upstream for another pass. No retry limits. The water flows until it's pure.
+
+## Channel Names
+
+Workers are named from a pool. The default pool is the Fury Road cast:
+
+```
+furiosa, nux, immortan, splendid, capable, dag, toast,
+angharad, miss-giddy, keeper-of-seeds, organic-mechanic, the-dag
+```
+
+Each tmux session is named `<worker>-<drop-id>`. Every `tmux ls` is a scene from the film:
+
+```
+furiosa-ct-x7k: 1 windows (filtration)
+nux-ct-m3j: 1 windows (raw draw)
+```
+
+Change names in `~/.citadel/config.yaml` under `names:`.
+
+## Customizing Roles
+
+Roles are defined in your workflow YAML — they're yours to edit. The Citadel adapts.
+
+```bash
+ct roles list                  # See all roles and how to edit them
+ct roles edit implementer      # Open in $EDITOR, save, CLAUDE.md regenerates
+ct roles reset qa              # Restore to built-in default (with confirmation)
+ct roles generate              # Regenerate all CLAUDE.md files from YAML
+```
+
+Role content lives in `~/.citadel/workflows/feature.yaml` under the `roles:` key. CLAUDE.md files are generated artifacts — the YAML is the source of truth.
+
+## Drought Protocols
+
+When the cistern is dry, the Citadel runs maintenance automatically. Configure in `~/.citadel/config.yaml`:
 
 ```yaml
-# workflows/feature.yaml
-name: feature
-steps:
-  - name: implement
-    role: implementer
-    model: sonnet
-    context: full_codebase
-    on_pass: adversarial-review
-    on_fail: blocked
+# Drought protocols — run when the Citadel is idle
+idle_hooks:
+  - name: sync-roles
+    action: roles_generate     # Regenerate role files when YAML is newer
 
-  - name: adversarial-review
-    role: reviewer
-    model: sonnet
-    context: diff_only          # enforced: agent never sees author context
-    adversarial: true
-    on_pass: qa
-    on_revision: implement      # routed back with reviewer notes attached
+  - name: prune-worktrees
+    action: worktree_prune     # Prune stale aqueduct registrations
 
-  - name: qa
-    role: qa
-    model: haiku                # cheaper for test running
-    context: full_codebase
-    on_pass: merge
-    on_fail: implement
+  # - name: vacuum-cistern
+  #   action: db_vacuum        # Compact the cistern database
 
-  - name: merge
-    type: automated             # no AI — just runs gh pr merge
-    checks: [ci]
-    on_pass: done
-    on_fail: human
+  # - name: custom
+  #   action: shell
+  #   command: "echo $(date): cistern dry >> ~/.citadel/drought.log"
 ```
 
-### Steps
+Protocols fire once on the `flowing → idle` transition, not on every tick. Safe to add your own.
 
-Steps have a `type`:
+## Installation
 
-| Type | What runs | When to use |
-|------|-----------|-------------|
-| `agent` | Claude Code session with role CLAUDE.md | Code, review, QA, analysis |
-| `automated` | Shell command / script | Git ops, CI checks, PR creation |
-| `gate` | Condition check, no action | CI must be green before proceeding |
-| `human` | Pause for human input | Escalation, ambiguous cases |
-
-### Roles
-
-Each `agent` step uses a role. Roles are defined in workflow YAML and generated
-to `~/.citadel/roles/<role>/CLAUDE.md`:
-
-- **implementer** — writes code for the work item, full codebase context
-- **reviewer** — adversarial code review, sees only the diff (no author, no history)
-- **qa** — writes and runs tests, full codebase context
-- **security** — security-focused audit, diff_only context
-- **docs** — updates documentation
-- **refiner** — takes a vague work item and sharpens it into an implementable spec
-
-Context levels:
-- `full_codebase` — agent has full repo access
-- `diff_only` — agent receives only `git diff` output, no repo access (adversarial isolation)
-- `spec_only` — agent receives only the work item description
-
-### Context Isolation
-
-Adversarial steps enforce isolation at the infrastructure level, not by prompting.
-A reviewer with `context: diff_only` gets:
-
-- A fresh tmux session
-- A temp directory with only the diff file
-- No git history
-- No work item description
-- No author attribution
-
-The scheduler controls this. The reviewer agent cannot accidentally see what it
-shouldn't — there's nothing there to see.
-
-### Outcomes
-
-Every agent step writes an outcome file when complete:
-
-```json
-{
-  "result": "pass" | "fail" | "revision" | "escalate",
-  "notes": "Human-readable summary of what happened",
-  "annotations": []  // optional: file:line level comments
-}
+```bash
+curl -sSL https://raw.githubusercontent.com/MichielDean/citadel/main/install.sh | bash
 ```
 
-The scheduler reads this and routes to the next step. Notes from failed steps
-are injected as context for the next agent that picks up the work (e.g., the
-implementer sees the reviewer's notes when the work comes back).
+Requirements:
+- Go 1.21+
+- `claude` CLI with OAuth login (`claude login`)
+- `gh` CLI authenticated (`gh auth login`)
+- `git`, `tmux`
 
-## Architecture
+## Configuration
 
-```
-citadel/
-  cmd/
-    ct/                 # ct CLI — queue management and farm control
-    farm/               # farm binary — scheduler + CLI
-  internal/
-    scheduler/          # step scheduling, state machine
-    workflow/           # YAML parser, workflow definitions
-    runner/             # Claude Code session management (was agent/)
-    queue/              # SQLite-backed work queue
-    context/            # context preparation per step type
-    automated/          # deterministic step executors (PR create, CI gate, merge)
-  workflows/
-    feature.yaml        # default feature workflow
-    bug.yaml            # bug fix (no refine step needed)
-    docs.yaml           # documentation only
-    security-audit.yaml # security-focused pipeline
-  roles/
-    implementer/CLAUDE.md
-    reviewer/CLAUDE.md
-    qa/CLAUDE.md
-    security/CLAUDE.md
-    refiner/CLAUDE.md
-    docs/CLAUDE.md
-  config.yaml           # farm config (queue, agent limits, etc.)
+```bash
+ct init                        # Create ~/.citadel/ with default config and workflows
+ct flow config validate        # Check config and all workflow files
+ct doctor                      # Full health check
 ```
 
-## Work Queue
+Config lives at `~/.citadel/config.yaml`. See `config.example.yaml` for all options.
 
-Citadel uses a SQLite-backed work queue. Work items drive the pipeline.
-Each item flows through a workflow where the scheduler polls for ready items
-and assigns them to the appropriate step agent.
-
-Work item lifecycle:
+## CLI Reference
 
 ```
-open → in_progress(implement) → in_progress(review) → in_progress(qa) → closed
+ct flow start                  Open the aqueducts (start processing)
+ct flow status                 Show channels and cistern state
+ct flow config validate        Validate config
+
+ct cistern add --title "..." --repo myproject   Add a drop
+ct cistern list                                 List drops
+ct cistern show <id>                            Show drop details
+ct cistern close <id>                           Mark flows free
+ct cistern reopen <id>                          Return to cistern
+ct cistern purge --older-than 30d               Drain old drops
+ct cistern escalate <id> --reason "..."         Poison a drop
+
+ct roles list                  List roles with edit hints
+ct roles edit <role>           Edit role in $EDITOR
+ct roles generate              Regenerate CLAUDE.md files from YAML
+ct roles reset <role>          Restore role to built-in default
+
+ct doctor                      Health check
+ct version                     Version info
 ```
 
-The item's `current_step` field always reflects which step it's at. The
-`status` field tracks whether it's `open`, `in_progress`, `closed`, or
-`escalated`.
+---
 
-## CLI
-
-The `ct` command manages the work queue and farm:
-
-```
-ct queue add --title "..." --description "..." --priority 1 --repo github.com/Org/Repo
-ct queue list [--repo <repo>] [--status open|in_progress|closed|escalated]
-ct queue show <id>
-ct queue note <id> "content"
-ct queue close <id>
-ct queue reopen <id>
-ct queue escalate <id> --reason "stuck"
-ct farm start [--config config.yaml]
-ct farm status
-ct farm config validate <path>
-ct roles generate [--workflow path]
-ct roles list
-ct roles edit
-ct version
-```
-
-## Key Design Decisions
-
-**Why not AI for routing?**
-Routing is deterministic. The reviewer either passes or requests revision. Using
-an AI to decide that introduces latency, cost, and nondeterminism where none is
-needed.
-
-**Why SQLite for the queue?**
-SQLite is embedded, zero-dependency, and handles our concurrency needs. No
-external services to manage. The queue database lives at `~/.citadel/queue.db`.
-
-**Why enforce context isolation in infrastructure?**
-An adversarial reviewer prompted to "pretend you don't know who wrote this" is
-unreliable — the context is still in the window. Actual isolation (fresh session,
-diff-only directory) is reliable by construction.
-
-**Why YAML workflows?**
-Adding a security step should be a YAML edit, not a code change. Workflows should
-be readable by anyone, versionable, and composable. `security-audit.yaml` just
-adds a step.
-
-## Status
-
-Under active development. See [issues](https://github.com/MichielDean/citadel/issues) for the build plan.
+*Mediocre code is a parasite. It drinks our resources and starves our projects.*
+*The Citadel purifies the water so the Wasteland can drink.*

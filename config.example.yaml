@@ -1,40 +1,47 @@
+# Citadel configuration
+# The Citadel controls the water. Water is life. Code is water.
+
 repos:
-  - name: ScaledTest
-    url: https://github.com/example/ScaledTest
-    workflow_path: workflows/feature.yaml
+  - name: myproject
+    url: https://github.com/example/myproject
+    workflow_path: ~/.citadel/workflows/feature.yaml
     workers: 2
+    # Channel names — who carries the water. Mad Max: Fury Road cast.
+    # Workers are assigned names from this pool when the Citadel opens.
     names:
       - furiosa
-      - rictus
-    prefix: st
-
-  - name: citadel
-    url: https://github.com/example/citadel
-    workflow_path: workflows/feature.yaml
-    workers: 2
-    names:
       - nux
-      - dementus
-    prefix: ct
+      - immortan
+      - splendid
+      - capable
+      - dag
+      - toast
+      - angharad
+      - miss-giddy
+      - keeper-of-seeds
+      - organic-mechanic
+      - the-dag
+    prefix: mp
 
 max_total_workers: 4
-handoff_token_threshold: 100000
+handoff_token_threshold: 150000
 
+# Drought protocols — run automatically when the Citadel is idle (cistern dry)
 idle_hooks:
-  # Regenerate role CLAUDE.md files when workflow YAML is newer
+  # Regenerate role CLAUDE.md files when workflow YAML is newer than role files
   - name: sync-roles
     action: roles_generate
 
-  # Prune stale git worktree registrations
+  # Prune stale aqueduct (worktree) registrations
   - name: prune-worktrees
     action: worktree_prune
 
-  # Compact the SQLite queue database
-  # - name: vacuum-db
+  # Compact the cistern (SQLite VACUUM — recovers space after purges)
+  # - name: vacuum-cistern
   #   action: db_vacuum
 
-  # Custom shell hook example (uncomment to enable):
-  # - name: notify-idle
+  # Custom drought protocol — any shell command
+  # - name: log-drought
   #   action: shell
-  #   command: "echo idle >> ~/.citadel/idle.log"
+  #   command: "echo $(date): cistern dry >> ~/.citadel/drought.log"
   #   timeout_seconds: 5
