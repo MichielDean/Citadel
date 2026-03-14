@@ -165,18 +165,14 @@ func configureGitIdentity(dir string) error {
 	return nil
 }
 
-// ParkWorktree switches the worktree back to main (or detaches HEAD if main
-// is unavailable) so no worktree holds a feature branch between steps.
-// Any worker can then check out the feature branch on the next step.
+// ParkWorktree detaches HEAD in the worktree so no worktree holds a feature
+// branch between steps. The shared clone owns the main branch; workers must
+// use detached HEAD as their "parked" state so any worker can check out any
+// feature branch on the next step.
 func ParkWorktree(dir string) {
-	// Try to checkout main first; fall back to detached HEAD.
-	cmd := exec.Command("git", "checkout", "main")
+	cmd := exec.Command("git", "checkout", "--detach", "HEAD")
 	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		detach := exec.Command("git", "checkout", "--detach", "HEAD")
-		detach.Dir = dir
-		_ = detach.Run()
-	}
+	_ = cmd.Run() // best-effort; failure just means the next checkout may conflict
 }
 
 // cleanArtifacts removes runner-written files (CONTEXT.md, outcome.json) from

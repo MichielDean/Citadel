@@ -167,6 +167,10 @@ func (r *Runner) IdleCount() int {
 func (r *Runner) RunStep(w *Worker, item *queue.WorkItem, step *workflow.WorkflowStep) (*Outcome, error) {
 	log.Printf("runner: %s/%s: step %q for item %s", r.repo.Name, w.Name, step.Name, item.ID)
 
+	// Always park the worktree on exit so feature branches are never left
+	// "in use by another worktree" when the item moves to the next step.
+	defer ParkWorktree(w.SandboxDir)
+
 	// 1. Fetch latest from remote (shared clone already exists), then ensure this worker's worktree.
 	if err := fetchSandbox(r.sharedCloneDir); err != nil {
 		log.Printf("runner: warning: git fetch failed for %s: %v", r.repo.Name, err)
@@ -216,11 +220,6 @@ func (r *Runner) RunStep(w *Worker, item *queue.WorkItem, step *workflow.Workflo
 	if err != nil {
 		return nil, fmt.Errorf("session: %w", err)
 	}
-
-	// Park the worktree back on main so no worktree holds the feature branch.
-	// This lets any worker pick up the item on the next step without a "branch
-	// already used by worktree X" conflict.
-	ParkWorktree(w.SandboxDir)
 
 	return outcome, nil
 }
