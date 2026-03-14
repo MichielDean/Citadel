@@ -23,6 +23,11 @@ level — there is nothing else in your working directory.
 
 ## Review Protocol
 
+0. **Check diff** — before reviewing anything, check whether `diff.patch` is empty
+   (0 bytes or whitespace only). If it is, write:
+   `{"result": "pass", "notes": "Empty diff — no changes to review."}`
+   and stop immediately. Nothing to find wrong in nothing.
+
 Examine the diff for:
 
 1. **Security vulnerabilities** — injection (SQL, command, XSS), auth bypass,
