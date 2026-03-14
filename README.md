@@ -1,0 +1,186 @@
+# Bullet Farm 🌾
+
+Agentic workflow orchestrator for software development. Composable AI pipelines
+where each step is either an AI agent doing cognitive work or automated code
+doing mechanical work — and the two never get confused.
+
+## The Problem with Pure AI Orchestration
+
+When you use an AI agent to decide what to run next, schedule work, and route
+outcomes, you're burning tokens on things a state machine does better. Gastown,
+CrewAI, AutoGen — they all have this problem. The coordination layer is AI when
+it shouldn't be.
+
+Bullet Farm flips this: **AI does cognitive work, code does mechanical work.**
+
+- Routing between steps → deterministic state machine
+- Scheduling when to run → cron/event loop
+- Context isolation for adversarial steps → enforced at infrastructure level
+- Writing code, reviewing code, making judgment calls → AI agents
+
+## Core Concepts
+
+### Workflows
+
+A workflow is a YAML file defining a sequence of steps. Each step has a role,
+a context level, and routing rules for every possible outcome.
+
+```yaml
+# workflows/feature.yaml
+name: feature
+steps:
+  - name: implement
+    role: implementer
+    model: sonnet
+    context: full_codebase
+    on_pass: adversarial-review
+    on_fail: blocked
+
+  - name: adversarial-review
+    role: reviewer
+    model: sonnet
+    context: diff_only          # enforced: agent never sees author context
+    adversarial: true
+    on_pass: qa
+    on_revision: implement      # routed back with reviewer notes attached
+
+  - name: qa
+    role: qa
+    model: haiku                # cheaper for test running
+    context: full_codebase
+    on_pass: merge
+    on_fail: implement
+
+  - name: merge
+    type: automated             # no AI — just runs gh pr merge
+    checks: [ci]
+    on_pass: done
+    on_fail: human
+```
+
+### Steps
+
+Steps have a `type`:
+
+| Type | What runs | When to use |
+|------|-----------|-------------|
+| `agent` | Claude Code session with role CLAUDE.md | Code, review, QA, analysis |
+| `automated` | Shell command / script | Git ops, CI checks, PR creation |
+| `gate` | Condition check, no action | CI must be green before proceeding |
+| `human` | Pause for human input | Escalation, ambiguous cases |
+
+### Roles
+
+Each `agent` step uses a role. Roles are defined by a `CLAUDE.md` in `roles/`:
+
+- **implementer** — writes code for the bead, full codebase context
+- **reviewer** — adversarial code review, sees only the diff (no author, no history)
+- **qa** — writes and runs tests, full codebase context
+- **security** — security-focused audit, diff_only context
+- **docs** — updates documentation
+- **refiner** — takes a vague bead and sharpens it into an implementable spec
+
+Context levels:
+- `full_codebase` — agent has full repo access
+- `diff_only` — agent receives only `git diff` output, no repo access (adversarial isolation)
+- `spec_only` — agent receives only the bead description
+
+### Context Isolation
+
+Adversarial steps enforce isolation at the infrastructure level, not by prompting.
+A reviewer with `context: diff_only` gets:
+
+- A fresh tmux session
+- A temp directory with only the diff file
+- No git history
+- No bead description
+- No author attribution
+
+The scheduler controls this. The reviewer agent cannot accidentally see what it
+shouldn't — there's nothing there to see.
+
+### Outcomes
+
+Every agent step writes an outcome file when complete:
+
+```json
+{
+  "result": "pass" | "fail" | "revision" | "escalate",
+  "notes": "Human-readable summary of what happened",
+  "annotations": []  // optional: file:line level comments
+}
+```
+
+The scheduler reads this and routes to the next step. Notes from failed steps
+are injected as context for the next agent that picks up the work (e.g., the
+implementer sees the reviewer's notes when the work comes back).
+
+## Architecture
+
+```
+bullet-farm/
+  cmd/
+    farm/               # main binary — scheduler + CLI
+  internal/
+    scheduler/          # step scheduling, state machine
+    workflow/           # YAML parser, workflow definitions
+    agent/              # Claude Code session management
+    bd/                 # bd client (work queue)
+    context/            # context preparation per step type
+  workflows/
+    feature.yaml        # default feature workflow
+    bug.yaml            # bug fix (no refine step needed)
+    docs.yaml           # documentation only
+    security-audit.yaml # security-focused pipeline
+  roles/
+    implementer/CLAUDE.md
+    reviewer/CLAUDE.md
+    qa/CLAUDE.md
+    security/CLAUDE.md
+    refiner/CLAUDE.md
+    docs/CLAUDE.md
+  config.yaml           # farm config (bd connection, agent limits, etc.)
+```
+
+## Work Queue
+
+Bullet Farm uses [bd](https://github.com/steveyegge/gastown) for the work queue.
+Beads drive the pipeline. Each bead has a `workflow` field that determines which
+pipeline it enters. The scheduler polls `bd ready` and assigns beads to the
+appropriate step agent.
+
+Bead lifecycle:
+
+```
+open → assigned(implement) → assigned(review) → assigned(qa) → merged → closed
+```
+
+The bead's status in bd always reflects which step it's at. No separate state
+store needed.
+
+## Key Design Decisions
+
+**Why not AI for routing?**
+Routing is deterministic. The reviewer either passes or requests revision. Using
+an AI to decide that introduces latency, cost, and nondeterminism where none is
+needed.
+
+**Why not replace bd?**
+bd is good. Dolt-backed, git-history on every bead change, solid CLI. The work
+queue is solved. Bullet Farm is the pipeline on top of it.
+
+**Why enforce context isolation in infrastructure?**
+An adversarial reviewer prompted to "pretend you don't know who wrote this" is
+unreliable — the context is still in the window. Actual isolation (fresh session,
+diff-only directory) is reliable by construction.
+
+**Why YAML workflows?**
+Adding a security step should be a YAML edit, not a code change. Workflows should
+be readable by anyone, versionable, and composable. `security-audit.yaml` just
+adds a step.
+
+## Status
+
+🚧 Design phase — not yet implemented.
+
+See [issues](https://github.com/MichielDean/bullet-farm/issues) for the build plan.
