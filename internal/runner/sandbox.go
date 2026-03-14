@@ -39,20 +39,15 @@ func resetSandbox(dir string) error {
 		return fmt.Errorf("git fetch in %s: %w: %s", dir, err, out)
 	}
 
-	checkout := exec.Command("git", "checkout", "main")
-	checkout.Dir = dir
-	if out, err := checkout.CombinedOutput(); err != nil {
-		return fmt.Errorf("git checkout main in %s: %w: %s", dir, err, out)
+	// Hard reset to discard any uncommitted changes from previous runs.
+	reset := exec.Command("git", "reset", "--hard", "origin/main")
+	reset.Dir = dir
+	if out, err := reset.CombinedOutput(); err != nil {
+		return fmt.Errorf("git reset in %s: %w: %s", dir, err, out)
 	}
 
-	pull := exec.Command("git", "pull", "--ff-only", "origin", "main")
-	pull.Dir = dir
-	if out, err := pull.CombinedOutput(); err != nil {
-		return fmt.Errorf("git pull in %s: %w: %s", dir, err, out)
-	}
-
-	// Clean untracked files left by previous runs.
-	clean := exec.Command("git", "clean", "-fd")
+	// Clean untracked and ignored files left by previous runs.
+	clean := exec.Command("git", "clean", "-fdx")
 	clean.Dir = dir
 	if out, err := clean.CombinedOutput(); err != nil {
 		return fmt.Errorf("git clean in %s: %w: %s", dir, err, out)
