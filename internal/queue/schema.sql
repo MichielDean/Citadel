@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS work_items (
     status TEXT DEFAULT 'open',
     assignee TEXT DEFAULT '',
     current_step TEXT DEFAULT '',
-    attempt_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

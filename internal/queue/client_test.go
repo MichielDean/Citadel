@@ -216,27 +216,6 @@ func TestUpdateStatus(t *testing.T) {
 	}
 }
 
-func TestIncrementAttempts(t *testing.T) {
-	c := testClient(t)
-	item, _ := c.Add("myrepo", "Task", "", 1)
-
-	count, err := c.IncrementAttempts(item.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Errorf("count = %d, want 1", count)
-	}
-
-	count, err = c.IncrementAttempts(item.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 2 {
-		t.Errorf("count = %d, want 2", count)
-	}
-}
-
 func TestAddNote_And_GetNotes(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("myrepo", "Task", "", 1)

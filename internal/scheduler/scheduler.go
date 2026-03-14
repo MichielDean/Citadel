@@ -24,7 +24,7 @@ import (
 type QueueClient interface {
 	GetReady(repo string) (*queue.WorkItem, error)
 	Assign(id, worker, step string) error
-	IncrementAttempts(id string) (int, error)
+
 	AddNote(id, step, content string) error
 	GetNotes(id string) ([]queue.StepNote, error)
 	Escalate(id, reason string) error
@@ -296,22 +296,6 @@ func (s *Scheduler) runStep(
 	// Mark item as in-progress with the assigned worker and step.
 	if err := client.Assign(item.ID, worker.Name, step.Name); err != nil {
 		s.logger.Error("assign failed", "item", item.ID, "error", err)
-		return
-	}
-
-	// Increment attempts and check retry budget.
-	attempts, err := client.IncrementAttempts(item.ID)
-	if err != nil {
-		s.logger.Error("increment attempts failed", "item", item.ID, "error", err)
-		return
-	}
-
-	if step.MaxIterations > 0 && attempts > step.MaxIterations {
-		reason := fmt.Sprintf("step %q exceeded max iterations (%d)", step.Name, step.MaxIterations)
-		s.logger.Warn("escalating", "item", item.ID, "reason", reason)
-		if err := client.Escalate(item.ID, reason); err != nil {
-			s.logger.Error("escalate failed", "item", item.ID, "error", err)
-		}
 		return
 	}
 

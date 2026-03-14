@@ -38,9 +38,6 @@ func TestParseValidWorkflow(t *testing.T) {
 	if impl.Context != ContextFullCodebase {
 		t.Errorf("step[0].Context = %q, want %q", impl.Context, ContextFullCodebase)
 	}
-	if impl.MaxIterations != 3 {
-		t.Errorf("step[0].MaxIterations = %d, want 3", impl.MaxIterations)
-	}
 	if impl.TimeoutMinutes != 30 {
 		t.Errorf("step[0].TimeoutMinutes = %d, want 30", impl.TimeoutMinutes)
 	}
@@ -101,15 +98,7 @@ func TestUnknownTypeError(t *testing.T) {
 	}
 }
 
-func TestMaxIterationsError(t *testing.T) {
-	_, err := ParseWorkflow(testdataPath("bad_max_iterations.yaml"))
-	if err == nil {
-		t.Fatal("expected max_iterations error, got nil")
-	}
-	if !strings.Contains(err.Error(), "max_iterations") {
-		t.Errorf("error = %q, want it to contain 'max_iterations'", err)
-	}
-}
+
 
 func TestParseWorkflowBytes(t *testing.T) {
 	yaml := `

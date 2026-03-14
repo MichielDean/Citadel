@@ -26,7 +26,7 @@ type WorkflowStep struct {
 	Role           string       `yaml:"role,omitempty"`
 	Model          string       `yaml:"model,omitempty"`
 	Context        ContextLevel `yaml:"context,omitempty"`
-	MaxIterations  int          `yaml:"max_iterations,omitempty"`
+
 	TimeoutMinutes int          `yaml:"timeout_minutes,omitempty"`
 	OnPass         string       `yaml:"on_pass,omitempty"`
 	OnFail         string       `yaml:"on_fail,omitempty"`

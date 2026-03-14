@@ -22,7 +22,6 @@ type mockClient struct {
 	readyItems []*queue.WorkItem
 	readyCalls int
 	steps      map[string]string
-	attempts   map[string]int
 	notes      map[string][]queue.StepNote
 	escalated  map[string]string
 	attached   []attachedNote
@@ -36,7 +35,6 @@ type attachedNote struct {
 func newMockClient() *mockClient {
 	return &mockClient{
 		steps:     make(map[string]string),
-		attempts:  make(map[string]int),
 		notes:     make(map[string][]queue.StepNote),
 		escalated: make(map[string]string),
 		closed:    make(map[string]bool),
@@ -58,19 +56,8 @@ func (m *mockClient) GetReady(repo string) (*queue.WorkItem, error) {
 func (m *mockClient) Assign(id, worker, step string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Reset attempts when step changes (matches real queue behavior).
-	if m.steps[id] != step {
-		m.attempts[id] = 0
-	}
 	m.steps[id] = step
 	return nil
-}
-
-func (m *mockClient) IncrementAttempts(id string) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.attempts[id]++
-	return m.attempts[id], nil
 }
 
 func (m *mockClient) AddNote(id, fromStep, notes string) error {
@@ -424,81 +411,6 @@ func TestTick_GlobalCap(t *testing.T) {
 	}
 
 	close(runner.ch)
-}
-
-func TestTick_RetryBudgetOK(t *testing.T) {
-	client := newMockClient()
-	client.attempts["b1"] = 2     // will become 3
-	client.steps["b1"] = "implement" // pre-set so Assign doesn't reset
-	client.readyItems = []*queue.WorkItem{{ID: "b1", CurrentStep: "implement"}}
-
-	runner := newMockRunner()
-
-	wf := &workflow.Workflow{
-		Name: "test",
-		Steps: []workflow.WorkflowStep{
-			{
-				Name:          "implement",
-				Type:          workflow.StepTypeAgent,
-				MaxIterations: 3,
-				OnPass:        "done",
-				OnFail:        "blocked",
-			},
-		},
-	}
-
-	config := testConfig()
-	clients := map[string]QueueClient{"test-repo": client}
-	workflows := map[string]*workflow.Workflow{"test-repo": wf}
-	sched := NewFromParts(config, workflows, clients, runner)
-	sched.Tick(context.Background())
-
-	if !runner.waitCalls(1, time.Second) {
-		t.Fatal("timed out — runner should be called when attempts <= max")
-	}
-}
-
-func TestTick_RetryBudgetExceeded(t *testing.T) {
-	client := newMockClient()
-	client.attempts["b1"] = 3        // will become 4, exceeds max of 3
-	client.steps["b1"] = "implement" // pre-set so Assign doesn't reset
-	client.readyItems = []*queue.WorkItem{{ID: "b1", CurrentStep: "implement"}}
-
-	runner := newMockRunner()
-
-	wf := &workflow.Workflow{
-		Name: "test",
-		Steps: []workflow.WorkflowStep{
-			{
-				Name:          "implement",
-				Type:          workflow.StepTypeAgent,
-				MaxIterations: 3,
-				OnPass:        "done",
-				OnFail:        "blocked",
-			},
-		},
-	}
-
-	config := testConfig()
-	clients := map[string]QueueClient{"test-repo": client}
-	workflows := map[string]*workflow.Workflow{"test-repo": wf}
-	sched := NewFromParts(config, workflows, clients, runner)
-	sched.Tick(context.Background())
-
-	// Wait a beat for the goroutine to complete.
-	time.Sleep(200 * time.Millisecond)
-
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	if _, ok := client.escalated["b1"]; !ok {
-		t.Error("expected escalation when retry budget exceeded")
-	}
-
-	runner.mu.Lock()
-	defer runner.mu.Unlock()
-	if len(runner.calls) != 0 {
-		t.Error("runner should not be called when retry budget exceeded")
-	}
 }
 
 func TestTick_CrashRequeue(t *testing.T) {

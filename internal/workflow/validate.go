@@ -65,15 +65,6 @@ func validateStep(w *Workflow, s WorkflowStep, stepNames map[string]bool) error 
 		return fmt.Errorf("workflow %q step %q: unknown context %q", w.Name, s.Name, s.Context)
 	}
 
-	if s.MaxIterations < 0 {
-		return fmt.Errorf("workflow %q step %q: max_iterations must be >= 1, got %d", w.Name, s.Name, s.MaxIterations)
-	}
-	if s.MaxIterations == 0 {
-		// 0 means unset, which is fine — runtime will use defaults.
-	} else if s.MaxIterations < 1 {
-		return fmt.Errorf("workflow %q step %q: max_iterations must be >= 1, got %d", w.Name, s.Name, s.MaxIterations)
-	}
-
 	// Validate step references in routing fields.
 	for _, ref := range stepRefs(s) {
 		if ref.target == "" {

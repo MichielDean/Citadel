@@ -21,7 +21,6 @@ func featureWorkflow() *workflow.Workflow {
 				Type:           workflow.StepTypeAgent,
 				Role:           "implementer",
 				Context:        workflow.ContextFullCodebase,
-				MaxIterations:  3,
 				TimeoutMinutes: 30,
 				OnPass:         "review",
 				OnFail:         "blocked",

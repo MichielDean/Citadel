@@ -30,7 +30,7 @@ type WorkItem struct {
 	Status       string    `json:"status"`
 	Assignee     string    `json:"assignee"`      // empty string when unassigned
 	CurrentStep  string    `json:"current_step"`
-	AttemptCount int       `json:"attempt_count"`
+
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -122,7 +122,7 @@ func (c *Client) GetReady(repo string) (*WorkItem, error) {
 	defer tx.Rollback()
 
 	row := tx.QueryRow(
-		`SELECT id, repo, title, description, priority, status, assignee, current_step, attempt_count, created_at, updated_at
+		`SELECT id, repo, title, description, priority, status, assignee, current_step, created_at, updated_at
 		 FROM work_items
 		 WHERE repo = ? AND status = 'open'
 		 ORDER BY priority ASC, created_at ASC
@@ -135,7 +135,7 @@ func (c *Client) GetReady(repo string) (*WorkItem, error) {
 	err = row.Scan(
 		&item.ID, &item.Repo, &item.Title, &item.Description,
 		&item.Priority, &item.Status, &assignee, &currentStep,
-		&item.AttemptCount, &item.CreatedAt, &item.UpdatedAt,
+		&item.CreatedAt, &item.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -174,18 +174,14 @@ func (c *Client) Assign(id, worker, step string) error {
 	if worker == "" {
 		res, err = c.db.Exec(
 			`UPDATE work_items SET assignee = ?, current_step = ?, status = 'open',
-			 attempt_count = CASE WHEN current_step != ? THEN 0 ELSE attempt_count END,
-			 updated_at = ?
-			 WHERE id = ?`,
-			worker, step, step, now, id,
+			 updated_at = ? WHERE id = ?`,
+			worker, step, now, id,
 		)
 	} else {
 		res, err = c.db.Exec(
 			`UPDATE work_items SET assignee = ?, current_step = ?,
-			 attempt_count = CASE WHEN current_step != ? THEN 0 ELSE attempt_count END,
-			 updated_at = ?
-			 WHERE id = ?`,
-			worker, step, step, now, id,
+			 updated_at = ? WHERE id = ?`,
+			worker, step, now, id,
 		)
 	}
 	if err != nil {
@@ -204,24 +200,6 @@ func (c *Client) UpdateStatus(id, status string) error {
 		return fmt.Errorf("queue: update status %s: %w", id, err)
 	}
 	return checkRowsAffected(res, id)
-}
-
-// IncrementAttempts bumps the attempt counter and returns the new count.
-func (c *Client) IncrementAttempts(id string) (int, error) {
-	_, err := c.db.Exec(
-		`UPDATE work_items SET attempt_count = attempt_count + 1, updated_at = ? WHERE id = ?`,
-		time.Now().UTC(), id,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("queue: increment attempts %s: %w", id, err)
-	}
-
-	var count int
-	err = c.db.QueryRow(`SELECT attempt_count FROM work_items WHERE id = ?`, id).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("queue: read attempts %s: %w", id, err)
-	}
-	return count, nil
 }
 
 // AddNote attaches a step note to a work item.
@@ -299,7 +277,7 @@ func (c *Client) CloseItem(id string) error {
 // Get retrieves a single work item by ID. Returns an error if not found.
 func (c *Client) Get(id string) (*WorkItem, error) {
 	row := c.db.QueryRow(
-		`SELECT id, repo, title, description, priority, status, assignee, current_step, attempt_count, created_at, updated_at
+		`SELECT id, repo, title, description, priority, status, assignee, current_step, created_at, updated_at
 		 FROM work_items WHERE id = ?`,
 		id,
 	)
@@ -315,7 +293,7 @@ func (c *Client) Get(id string) (*WorkItem, error) {
 
 // List returns work items filtered by repo and/or status. Empty strings mean no filter.
 func (c *Client) List(repo, status string) ([]*WorkItem, error) {
-	query := `SELECT id, repo, title, description, priority, status, assignee, current_step, attempt_count, created_at, updated_at
+	query := `SELECT id, repo, title, description, priority, status, assignee, current_step, created_at, updated_at
 		 FROM work_items WHERE 1=1`
 	var args []any
 	if repo != "" {
@@ -341,7 +319,7 @@ func (c *Client) List(repo, status string) ([]*WorkItem, error) {
 		if err := rows.Scan(
 			&item.ID, &item.Repo, &item.Title, &item.Description,
 			&item.Priority, &item.Status, &assignee, &currentStep,
-			&item.AttemptCount, &item.CreatedAt, &item.UpdatedAt,
+			&item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("queue: scan item: %w", err)
 		}
@@ -359,7 +337,7 @@ func scanWorkItem(row *sql.Row) (*WorkItem, error) {
 	err := row.Scan(
 		&item.ID, &item.Repo, &item.Title, &item.Description,
 		&item.Priority, &item.Status, &assignee, &currentStep,
-		&item.AttemptCount, &item.CreatedAt, &item.UpdatedAt,
+		&item.CreatedAt, &item.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

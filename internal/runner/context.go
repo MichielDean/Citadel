@@ -134,9 +134,7 @@ func writeContextFile(path string, p ContextParams) error {
 	if p.Step.Context != "" {
 		b.WriteString(fmt.Sprintf("- **Context:** %s\n", p.Step.Context))
 	}
-	if p.Step.MaxIterations > 0 {
-		b.WriteString(fmt.Sprintf("- **Max iterations:** %d\n", p.Step.MaxIterations))
-	}
+
 	b.WriteString("\n")
 
 	if len(p.Notes) > 0 {

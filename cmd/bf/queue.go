@@ -131,7 +131,7 @@ var queueShowCmd = &cobra.Command{
 		fmt.Printf("Priority:    %d\n", item.Priority)
 		fmt.Printf("Assignee:    %s\n", item.Assignee)
 		fmt.Printf("Step:        %s\n", item.CurrentStep)
-		fmt.Printf("Attempts:    %d\n", item.AttemptCount)
+
 		fmt.Printf("Created:     %s\n", item.CreatedAt.Format("2006-01-02 15:04:05"))
 		fmt.Printf("Updated:     %s\n", item.UpdatedAt.Format("2006-01-02 15:04:05"))
 
