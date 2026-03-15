@@ -1,74 +1,71 @@
 name: PR build (self-hosted)
 
 permissions:
-  contents: write
+    contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
-  cancel-in-progress: true
+    group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+    cancel-in-progress: true
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 jobs:
-  build:
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
+    build:
+        runs-on: [self-hosted, linux, x64]
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  persist-credentials: true
+            - uses: actions/setup-go@v5
+              with:
+                  go-version: "1.26"
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+            - name: Cache Go modules
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cache/go-build
+                      ~/go/pkg/mod
+                  key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+                  restore-keys: |
+                      ${{ runner.os }}-go-
 
-      - name: Install deps
-        run: go mod download
+            - name: Install deps
+              run: go mod download
 
-      - name: Format Go files
-        run: |
-          # Auto-format Go files so CI doesn't fail on formatting differences
-          gofmt -s -w .
-          echo "gofmt applied"
+            - name: Format Go files
+              run: |
+                  # Auto-format Go files so CI doesn't fail on formatting differences
+                  gofmt -s -w .
+                  echo "gofmt applied"
 
-      - name: Commit formatting changes back to the branch
-        env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          # Only commit when running in a PR (github.head_ref present)
-          if [ -z "$BRANCH" ]; then
-            echo "Not a pull_request event; skipping push-back"
-            exit 0
-          fi
-          if [ -n "$(git status --porcelain)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "chore(ci): gofmt fixes [skip ci]"
-            # push using the token attached by actions/checkout (persist-credentials: true)
-            git push origin HEAD:$BRANCH
-          else
-            echo "No formatting changes to commit"
-          fi
+            - name: Commit formatting changes back to the branch
+              env:
+                  BRANCH: ${{ github.head_ref }}
+              run: |
+                  # Only commit when running in a PR (github.head_ref present)
+                  if [ -z "$BRANCH" ]; then
+                    echo "Not a pull_request event; skipping push-back"
+                    exit 0
+                  fi
+                  if [ -n "$(git status --porcelain)" ]; then
+                    git config user.name "github-actions[bot]"
+                    git config user.email "github-actions[bot]@users.noreply.github.com"
+                    git add -A
+                    git commit -m "chore(ci): gofmt fixes [skip ci]"
+                    # push using the token attached by actions/checkout (persist-credentials: true)
+                    git push origin HEAD:$BRANCH
+                  else
+                    echo "No formatting changes to commit"
+                  fi
 
-      - name: vet
-        run: go vet ./...
+            - name: vet
+              run: go vet ./...
 
-      - name: Build
-        run: go build ./...
+            - name: Build
+              run: go build ./...
 
-      - name: Test
-        run: go test ./... -v
+            - name: Test
+              run: go test ./... -v
