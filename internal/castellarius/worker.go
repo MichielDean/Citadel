@@ -82,3 +82,30 @@ func (p *WorkerPool) Release(w *Worker) {
 	w.DropletID = ""
 	w.Step = ""
 }
+
+// IsWorkerBusy returns true if the named worker exists and is currently busy.
+func (p *WorkerPool) IsWorkerBusy(name string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, w := range p.workers {
+		if w.Name == name {
+			return w.Status == WorkerBusy
+		}
+	}
+	return false
+}
+
+// FindAndClaimWorkerByName atomically finds the named worker and marks it busy
+// if it is currently available. Returns nil if the worker is not found or is
+// already busy — this prevents races between the heartbeat and the main tick.
+func (p *WorkerPool) FindAndClaimWorkerByName(name string) *Worker {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, w := range p.workers {
+		if w.Name == name && w.Status == WorkerAvailable {
+			w.Status = WorkerBusy
+			return w
+		}
+	}
+	return nil
+}

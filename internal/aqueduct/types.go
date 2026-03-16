@@ -124,10 +124,14 @@ type DroughtHook struct {
 
 // AqueductConfig is the top-level configuration for a Cistern instance.
 type AqueductConfig struct {
-	Repos                 []RepoConfig `yaml:"repos"`
-	MaxCataractae       int          `yaml:"max_cataractae"`
-	HandoffTokenThreshold int          `yaml:"handoff_token_threshold"`
-	RetentionDays         int          `yaml:"retention_days"`
-	CleanupInterval       string       `yaml:"cleanup_interval"`
-	DroughtHooks             []DroughtHook `yaml:"drought_hooks,omitempty"`
+	Repos                 []RepoConfig  `yaml:"repos"`
+	MaxCataractae         int           `yaml:"max_cataractae"`
+	HandoffTokenThreshold int           `yaml:"handoff_token_threshold"`
+	RetentionDays         int           `yaml:"retention_days"`
+	CleanupInterval       string        `yaml:"cleanup_interval"`
+	// HeartbeatInterval controls how often the Castellarius scans in-progress
+	// droplets for orphaned or stalled sessions. Accepts Go duration strings
+	// (e.g. "30s", "1m"). Defaults to "30s" when empty.
+	HeartbeatInterval     string        `yaml:"heartbeat_interval,omitempty"`
+	DroughtHooks          []DroughtHook `yaml:"drought_hooks,omitempty"`
 }

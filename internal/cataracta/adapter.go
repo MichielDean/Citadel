@@ -74,6 +74,19 @@ func (a *Adapter) Run(ctx context.Context, req castellarius.CataractaRequest) (*
 	}
 
 	step := req.Step
+
+	// ReattachSession: monitor an already-running session without killing it.
+	// Falls back to a normal RunStep if the step context cannot be re-adopted
+	// (diff_only / spec_only contexts have ephemeral tmpdirs that may be gone).
+	if req.ReattachSession {
+		outcome, err := r.WatchStep(worker, req.Item, &step)
+		if err == nil {
+			return convertOutcome(outcome), nil
+		}
+		// WatchStep declined (wrong context type or dead session) — fall through
+		// to a normal RunStep so the item gets processed cleanly.
+	}
+
 	outcome, err := r.RunStep(worker, req.Item, &step)
 	if err != nil {
 		return nil, err

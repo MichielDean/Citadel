@@ -244,5 +244,5 @@ func printInspectTable(out inspectOutput) error {
 
 func init() {
 	flowInspectCmd.Flags().BoolVar(&inspectTable, "table", false, "show human-readable table instead of JSON")
-	flowCmd.AddCommand(flowInspectCmd)
+	aqueductCmd.AddCommand(flowInspectCmd)
 }

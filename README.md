@@ -1,6 +1,6 @@
-# Cistern
-
-> Water is life. Code is water. The Cistern keeps it moving.
+<p align="center">
+  <img src="cistern_logo.png" alt="Cistern Logo" />
+</p>
 
 Cistern is an agentic workflow orchestrator built around a water metaphor. Droplets of work enter the cistern, flow through an aqueduct tended by named cataracta operators, are refined by adversarial reviewers and quality gatekeepers, and what emerges at the other end is clean enough to ship.
 
@@ -34,11 +34,11 @@ ct init
 # Add a droplet to the cistern
 ct droplet add --title "Add retry logic to fetch" --repo myproject
 
-# Open the aqueducts
-ct flow start
+# Wake the Castellarius — he watches the cistern and routes droplets automatically
+ct castellarius start
 
-# Watch the water flow
-ct flow status
+# See the overall picture
+ct status
 
 # See what's in the cistern
 ct droplet list
@@ -132,7 +132,7 @@ Requirements:
 
 ```bash
 ct init                        # Create ~/.cistern/ with default config and aqueduct files
-ct flow config validate        # Check config and all aqueduct files
+ct aqueduct validate           # Check config and all aqueduct files
 ct doctor                      # Full health check
 ```
 
@@ -141,11 +141,21 @@ Config lives at `~/.cistern/cistern.yaml`. See `cistern.yaml` for all options.
 ## CLI Reference
 
 ```
-ct flow start                  Open the aqueducts (start processing)
-ct flow status                 Show cataractae and cistern state
-ct flow config validate        Validate config
+# Castellarius — the overseer that watches the cistern and routes droplets
+ct castellarius start          Wake the Castellarius (start processing)
+ct castellarius status         Show operator assignments and idle capacity
 
-ct droplet add --title "..." --repo myproject   Add a droplet
+# Status — observe the system
+ct status                      Overall status: cistern level, operators, aqueducts
+ct cataractae status           Pipeline view: which steps are active and what is flowing through them
+ct aqueduct status             Aqueduct definitions: repos, workflows, and step chains
+
+# Aqueduct — inspect and validate workflows
+ct aqueduct validate           Validate cistern.yaml and all referenced workflow files
+ct aqueduct inspect            JSON snapshot of current Cistern state
+
+# Droplets — manage work items
+ct droplet add --title "..." --repo myproject   Add a droplet to the cistern
 ct droplet list                                 List droplets
 ct droplet show <id>                            Show droplet details
 ct droplet close <id>                           Mark delivered
@@ -153,11 +163,13 @@ ct droplet reopen <id>                          Return to cistern
 ct droplet purge --older-than 30d               Drain old droplets
 ct droplet escalate <id> --reason "..."         Mark a droplet stagnant
 
-ct cataractae list                List cataracta definitions with edit hints
+# Cataractae — manage cataracta operator definitions
+ct cataractae list                   See all cataracta definitions and how to edit them
 ct cataractae edit <cataracta>       Edit cataracta definition in $EDITOR
-ct cataractae generate            Regenerate CLAUDE.md files from YAML
+ct cataractae generate               Regenerate CLAUDE.md files from YAML
 ct cataractae reset <cataracta>      Restore cataracta definition to built-in default
 
+# Utilities
 ct doctor                      Health check
 ct version                     Version info
 ```

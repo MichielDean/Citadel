@@ -9,8 +9,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -415,6 +418,72 @@ func cisternCataractaeDir() string {
 	return filepath.Join(home, ".cistern", "cataractae")
 }
 
+// --- cataractae status ---
+
+// cataractaeStatusCmd shows which workflow steps are currently occupied and by
+// which operator and droplet. This is the pipeline view — steps on the left,
+// what's flowing through each on the right.
+var cataractaeStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show which cataractae are active — steps, operators, and droplets in flight",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfgPath := resolveConfigPath()
+		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		dbPath := resolveDBPath()
+		c, err := cistern.New(dbPath, "")
+		if err != nil {
+			return fmt.Errorf("cistern: %w", err)
+		}
+		defer c.Close()
+
+		allItems, err := c.List("", "in_progress")
+		if err != nil {
+			return fmt.Errorf("list in-progress droplets: %w", err)
+		}
+
+		// Index in-progress items by current cataracta step (per repo).
+		type stepKey struct{ repo, step string }
+		active := map[stepKey]*cistern.Droplet{}
+		for _, item := range allItems {
+			active[stepKey{item.Repo, item.CurrentCataracta}] = item
+		}
+
+		cfgDir := filepath.Dir(cfgPath)
+		for _, repo := range cfg.Repos {
+			wfPath := repo.WorkflowPath
+			if !filepath.IsAbs(wfPath) {
+				wfPath = filepath.Join(cfgDir, wfPath)
+			}
+			wf, err := aqueduct.ParseWorkflow(wfPath)
+			if err != nil {
+				fmt.Printf("%s  (workflow could not be loaded: %v)\n\n", repo.Name, err)
+				continue
+			}
+
+			fmt.Printf("%s  (%s)\n", repo.Name, wf.Name)
+			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			for i, step := range wf.Cataractae {
+				marker := fmt.Sprintf("%d.", i+1)
+				item, ok := active[stepKey{repo.Name, step.Name}]
+				if ok {
+					elapsed := int(time.Since(item.UpdatedAt).Minutes())
+					fmt.Fprintf(tw, "  %s\t%-22s\t← %s\t(%s)\t%dm\n",
+						marker, step.Name, item.ID, item.Assignee, elapsed)
+				} else {
+					fmt.Fprintf(tw, "  %s\t%-22s\t—\n", marker, step.Name)
+				}
+			}
+			tw.Flush()
+			fmt.Println()
+		}
+		return nil
+	},
+}
+
 func init() {
 	cataractaeGenerateCmd.Flags().StringVar(&cataractaeGenerateWorkflow, "workflow", "", "path to workflow YAML file")
 	cataractaeListCmd.Flags().StringVar(&cataractaeGenerateWorkflow, "workflow", "", "path to workflow YAML file")
@@ -422,6 +491,6 @@ func init() {
 
 	cataractaeResetCmd.Flags().StringVar(&cataractaeGenerateWorkflow, "workflow", "", "path to workflow YAML file")
 
-	cataractaeCmd.AddCommand(cataractaeGenerateCmd, cataractaeListCmd, cataractaeEditCmd, cataractaeResetCmd)
+	cataractaeCmd.AddCommand(cataractaeGenerateCmd, cataractaeListCmd, cataractaeEditCmd, cataractaeResetCmd, cataractaeStatusCmd)
 	rootCmd.AddCommand(cataractaeCmd)
 }
