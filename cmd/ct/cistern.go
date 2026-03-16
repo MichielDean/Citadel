@@ -9,13 +9,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/spf13/cobra"
 )
 
-var cisternCmd = &cobra.Command{
-	Use:   "cistern",
-	Short: "Manage drops in the cistern",
+var dropletCmd = &cobra.Command{
+	Use:   "droplet",
+	Short: "Manage droplets in the cistern",
 }
 
 // --- cistern add ---
@@ -28,9 +28,9 @@ var (
 	addComplexity  string
 )
 
-var cisternAddCmd = &cobra.Command{
+var dropletAddCmd = &cobra.Command{
 	Use:   "add",
-	Short: "Add a new drop to the cistern",
+		Short: "Add a new droplet to the cistern",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if addTitle == "" {
 			return fmt.Errorf("--title is required")
@@ -38,7 +38,7 @@ var cisternAddCmd = &cobra.Command{
 		if addRepo == "" {
 			return fmt.Errorf("--repo is required")
 		}
-		c, err := queue.New(resolveDBPath(), inferPrefix(addRepo))
+		c, err := cistern.New(resolveDBPath(), inferPrefix(addRepo))
 		if err != nil {
 			return err
 		}
@@ -52,7 +52,7 @@ var cisternAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Drop added to cistern. %s: %s\n", item.ID, item.Title)
+		fmt.Printf("Droplet added to cistern. %s: %s\n", item.ID, item.Title)
 		return nil
 	},
 }
@@ -65,14 +65,14 @@ var (
 	listOutput string
 )
 
-var cisternListCmd = &cobra.Command{
+var dropletListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List drops in the cistern",
+		Short: "List droplets in the cistern",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if listOutput != "table" && listOutput != "json" {
 			return fmt.Errorf("--output must be table or json")
 		}
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -85,7 +85,7 @@ var cisternListCmd = &cobra.Command{
 
 		if listOutput == "json" {
 			if items == nil {
-				items = []*queue.WorkItem{}
+				items = []*cistern.Droplet{}
 			}
 			out, err := json.MarshalIndent(items, "", "  ")
 			if err != nil {
@@ -101,14 +101,14 @@ var cisternListCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tCOMPLEXITY\tTITLE\tSTATUS\tVALVE")
+		fmt.Fprintln(tw, "ID\tCOMPLEXITY\tTITLE\tSTATUS\tSLUICE")
 		for _, item := range items {
-			valve := item.CurrentStep
-			if valve == "" {
-				valve = "\u2014"
+			cataracta := item.CurrentCataracta
+			if cataracta == "" {
+				cataracta = "\u2014"
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-				item.ID, complexityName(item.Complexity), item.Title, displayStatus(item.Status), valve)
+				item.ID, complexityName(item.Complexity), item.Title, displayStatus(item.Status), cataracta)
 		}
 		return tw.Flush()
 	},
@@ -122,7 +122,7 @@ func displayStatus(status string) string {
 	case "open":
 		return "queued"
 	case "escalated":
-		return "poisoned"
+		return "stagnant"
 	case "closed":
 		return "flows free"
 	default:
@@ -132,12 +132,12 @@ func displayStatus(status string) string {
 
 // --- cistern show ---
 
-var cisternShowCmd = &cobra.Command{
+var dropletShowCmd = &cobra.Command{
 	Use:   "show <id>",
-	Short: "Show details of a drop",
+		Short: "Show details of a droplet",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -154,8 +154,8 @@ var cisternShowCmd = &cobra.Command{
 		fmt.Printf("Status:      %s\n", displayStatus(item.Status))
 		fmt.Printf("Priority:    %d\n", item.Priority)
 		fmt.Printf("Complexity:  %s (%d)\n", complexityName(item.Complexity), item.Complexity)
-		fmt.Printf("Channel:     %s\n", item.Assignee)
-		fmt.Printf("Valve:       %s\n", item.CurrentStep)
+		fmt.Printf("Cataracta:      %s\n", item.Assignee)
+		fmt.Printf("Stage:       %s\n", item.CurrentCataracta)
 
 		fmt.Printf("Created:     %s\n", item.CreatedAt.Format("2006-01-02 15:04:05"))
 		fmt.Printf("Updated:     %s\n", item.UpdatedAt.Format("2006-01-02 15:04:05"))
@@ -171,7 +171,7 @@ var cisternShowCmd = &cobra.Command{
 		if len(notes) > 0 {
 			fmt.Printf("\nNotes:\n")
 			for _, n := range notes {
-				fmt.Printf("  [%s] %s\n", n.StepName, n.Content)
+				fmt.Printf("  [%s] %s\n", n.CataractaName, n.Content)
 			}
 		}
 
@@ -181,12 +181,12 @@ var cisternShowCmd = &cobra.Command{
 
 // --- cistern note ---
 
-var cisternNoteCmd = &cobra.Command{
+var dropletNoteCmd = &cobra.Command{
 	Use:   "note <id> <content>",
-	Short: "Add a note to a drop",
+		Short: "Add a note to a droplet",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -195,19 +195,19 @@ var cisternNoteCmd = &cobra.Command{
 		if err := c.AddNote(args[0], "manual", args[1]); err != nil {
 			return err
 		}
-		fmt.Printf("note added to drop %s\n", args[0])
+			fmt.Printf("note added to droplet %s\n", args[0])
 		return nil
 	},
 }
 
 // --- cistern close ---
 
-var cisternCloseCmd = &cobra.Command{
+var dropletCloseCmd = &cobra.Command{
 	Use:   "close <id>",
-	Short: "Close a drop — it flows free",
+		Short: "Close a droplet — it flows free",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -216,19 +216,19 @@ var cisternCloseCmd = &cobra.Command{
 		if err := c.CloseItem(args[0]); err != nil {
 			return err
 		}
-		fmt.Printf("drop %s flows free\n", args[0])
+			fmt.Printf("droplet %s flows free\n", args[0])
 		return nil
 	},
 }
 
 // --- cistern reopen ---
 
-var cisternReopenCmd = &cobra.Command{
+var dropletReopenCmd = &cobra.Command{
 	Use:   "reopen <id>",
-	Short: "Return a drop to the cistern",
+		Short: "Return a droplet to the cistern",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -237,7 +237,7 @@ var cisternReopenCmd = &cobra.Command{
 		if err := c.UpdateStatus(args[0], "open"); err != nil {
 			return err
 		}
-		fmt.Printf("drop %s returned to cistern\n", args[0])
+			fmt.Printf("droplet %s returned to cistern\n", args[0])
 		return nil
 	},
 }
@@ -246,15 +246,15 @@ var cisternReopenCmd = &cobra.Command{
 
 var escalateReason string
 
-var cisternEscalateCmd = &cobra.Command{
+var dropletEscalateCmd = &cobra.Command{
 	Use:   "escalate <id>",
-	Short: "Poison a drop — escalate for human attention",
+		Short: "Mark a droplet stagnant — escalate for human attention",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if escalateReason == "" {
 			return fmt.Errorf("--reason is required")
 		}
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -263,7 +263,7 @@ var cisternEscalateCmd = &cobra.Command{
 		if err := c.Escalate(args[0], escalateReason); err != nil {
 			return err
 		}
-		fmt.Printf("drop %s poisoned\n", args[0])
+			fmt.Printf("droplet %s stagnant\n", args[0])
 		return nil
 	},
 }
@@ -275,9 +275,9 @@ var (
 	purgeDryRun    bool
 )
 
-var cisternPurgeCmd = &cobra.Command{
+var dropletPurgeCmd = &cobra.Command{
 	Use:   "purge",
-	Short: "Delete closed/poisoned drops older than a threshold",
+		Short: "Delete closed/stagnant droplets older than a threshold",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if purgeOlderThan == "" {
 			return fmt.Errorf("--older-than is required")
@@ -286,7 +286,7 @@ var cisternPurgeCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid --older-than value: %w", err)
 		}
-		c, err := queue.New(resolveDBPath(), "")
+		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err
 		}
@@ -297,9 +297,9 @@ var cisternPurgeCmd = &cobra.Command{
 			return err
 		}
 		if purgeDryRun {
-			fmt.Printf("dry-run: would purge %d drop(s)\n", n)
-		} else {
-			fmt.Printf("purged %d drop(s)\n", n)
+				fmt.Printf("dry-run: would purge %d droplet(s)\n", n)
+			} else {
+				fmt.Printf("purged %d droplet(s)\n", n)
 		}
 		return nil
 	},
@@ -326,30 +326,30 @@ var queueAliasCmd = &cobra.Command{
 	Short:              "Deprecated: use 'ct cistern'",
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Fprintln(os.Stderr, "The Citadel speaks water now. Use 'ct cistern' instead of 'ct queue'.")
+		fmt.Fprintln(os.Stderr, "Cistern speaks water now. Use 'ct cistern' instead of 'ct queue'.")
 		return nil
 	},
 }
 
 func init() {
-	cisternAddCmd.Flags().StringVar(&addTitle, "title", "", "drop title (required)")
-	cisternAddCmd.Flags().StringVar(&addDescription, "description", "", "drop description")
-	cisternAddCmd.Flags().IntVar(&addPriority, "priority", 2, "priority (1=highest)")
-	cisternAddCmd.Flags().StringVar(&addRepo, "repo", "", "target repository (required)")
-	cisternAddCmd.Flags().StringVarP(&addComplexity, "complexity", "x", "3", "drop complexity: 1/trivial, 2/standard, 3/full (default), 4/critical")
+	dropletAddCmd.Flags().StringVar(&addTitle, "title", "", "droplet title (required)")
+	dropletAddCmd.Flags().StringVar(&addDescription, "description", "", "droplet description")
+	dropletAddCmd.Flags().IntVar(&addPriority, "priority", 2, "priority (1=highest)")
+	dropletAddCmd.Flags().StringVar(&addRepo, "repo", "", "target repository (required)")
+	dropletAddCmd.Flags().StringVarP(&addComplexity, "complexity", "x", "3", "droplet complexity: 1/trivial, 2/standard, 3/full (default), 4/critical")
 
-	cisternListCmd.Flags().StringVar(&listRepo, "repo", "", "filter by repo")
-	cisternListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (open|in_progress|closed|escalated)")
-	cisternListCmd.Flags().StringVar(&listOutput, "output", "table", "output format: table or json")
+	dropletListCmd.Flags().StringVar(&listRepo, "repo", "", "filter by repo")
+	dropletListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (open|in_progress|closed|escalated)")
+	dropletListCmd.Flags().StringVar(&listOutput, "output", "table", "output format: table or json")
 
-	cisternEscalateCmd.Flags().StringVar(&escalateReason, "reason", "", "escalation reason (required)")
+	dropletEscalateCmd.Flags().StringVar(&escalateReason, "reason", "", "escalation reason (required)")
 
-	cisternPurgeCmd.Flags().StringVar(&purgeOlderThan, "older-than", "", "delete drops older than this duration (e.g. 30d, 24h) (required)")
-	cisternPurgeCmd.Flags().BoolVar(&purgeDryRun, "dry-run", false, "show what would be deleted without deleting")
+	dropletPurgeCmd.Flags().StringVar(&purgeOlderThan, "older-than", "", "delete droplets older than this duration (e.g. 30d, 24h) (required)")
+	dropletPurgeCmd.Flags().BoolVar(&purgeDryRun, "dry-run", false, "show what would be deleted without deleting")
 
-	cisternCmd.AddCommand(cisternAddCmd, cisternListCmd, cisternShowCmd, cisternNoteCmd,
-		cisternCloseCmd, cisternReopenCmd, cisternEscalateCmd, cisternPurgeCmd)
-	rootCmd.AddCommand(cisternCmd)
+	dropletCmd.AddCommand(dropletAddCmd, dropletListCmd, dropletShowCmd, dropletNoteCmd,
+		dropletCloseCmd, dropletReopenCmd, dropletEscalateCmd, dropletPurgeCmd)
+	rootCmd.AddCommand(dropletCmd)
 
 	// Hidden "queue" alias — prints deprecation message for any usage.
 	rootCmd.AddCommand(queueAliasCmd)

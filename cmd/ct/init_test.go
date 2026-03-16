@@ -9,17 +9,18 @@ import (
 func TestInit_CreatesDirectoryStructure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	citadelDir := filepath.Join(home, ".citadel")
+	cisternDir := filepath.Join(home, ".cistern")
 	for _, dir := range []string{
-		citadelDir,
-		filepath.Join(citadelDir, "workflows"),
-		filepath.Join(citadelDir, "roles"),
+		cisternDir,
+		filepath.Join(cisternDir, "aqueduct"),
+		filepath.Join(cisternDir, "cataractae"),
 	} {
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			t.Errorf("expected directory to exist: %s", dir)
@@ -27,48 +28,50 @@ func TestInit_CreatesDirectoryStructure(t *testing.T) {
 	}
 }
 
-func TestInit_WritesCitadelYAML(t *testing.T) {
+func TestInit_WritesCisternYAML(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	configFile := filepath.Join(home, ".citadel", "citadel.yaml")
+	configFile := filepath.Join(home, ".cistern", "cistern.yaml")
 	data, err := os.ReadFile(configFile)
 	if err != nil {
-		t.Fatalf("citadel.yaml not created: %v", err)
+		t.Fatalf("cistern.yaml not created: %v", err)
 	}
 	if len(data) == 0 {
-		t.Fatal("citadel.yaml is empty")
+		t.Fatal("cistern.yaml is empty")
 	}
 	// Verify it matches the embedded template.
-	if string(data) != string(defaultCitadelConfig) {
-		t.Error("citadel.yaml content does not match embedded template")
+	if string(data) != string(defaultCisternConfig) {
+		t.Error("cistern.yaml content does not match embedded template")
 	}
 }
 
 func TestInit_CopiesWorkflowFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	workflowsDir := filepath.Join(home, ".citadel", "workflows")
+	aqueductDir := filepath.Join(home, ".cistern", "aqueduct")
 	for _, name := range []string{"feature.yaml", "bug.yaml"} {
-		path := filepath.Join(workflowsDir, name)
+		path := filepath.Join(aqueductDir, name)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("expected workflow file to exist: %s", name)
 		}
 	}
 
 	// Verify feature.yaml content matches embedded template.
-	featureData, err := os.ReadFile(filepath.Join(workflowsDir, "feature.yaml"))
+	featureData, err := os.ReadFile(filepath.Join(aqueductDir, "feature.yaml"))
 	if err != nil {
 		t.Fatalf("read feature.yaml: %v", err)
 	}
@@ -80,14 +83,15 @@ func TestInit_CopiesWorkflowFiles(t *testing.T) {
 func TestInit_GeneratesRoles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	rolesDir := filepath.Join(home, ".citadel", "roles")
-	entries, err := os.ReadDir(rolesDir)
+	cataractaeDir := filepath.Join(home, ".cistern", "cataractae")
+	entries, err := os.ReadDir(cataractaeDir)
 	if err != nil {
 		t.Fatalf("read roles dir: %v", err)
 	}
@@ -100,7 +104,7 @@ func TestInit_GeneratesRoles(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		claudeMD := filepath.Join(rolesDir, entry.Name(), "CLAUDE.md")
+		claudeMD := filepath.Join(cataractaeDir, entry.Name(), "CLAUDE.md")
 		if _, err := os.Stat(claudeMD); os.IsNotExist(err) {
 			t.Errorf("missing CLAUDE.md for role %q", entry.Name())
 		}
@@ -110,6 +114,7 @@ func TestInit_GeneratesRoles(t *testing.T) {
 func TestInit_SkipsExistingFilesWithoutForce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	// First run to create files.
@@ -117,8 +122,8 @@ func TestInit_SkipsExistingFilesWithoutForce(t *testing.T) {
 		t.Fatalf("first run error: %v", err)
 	}
 
-	// Overwrite citadel.yaml with sentinel content.
-	configFile := filepath.Join(home, ".citadel", "citadel.yaml")
+	// Overwrite cistern.yaml with sentinel content.
+	configFile := filepath.Join(home, ".cistern", "cistern.yaml")
 	sentinel := []byte("# sentinel — must not be overwritten")
 	if err := os.WriteFile(configFile, sentinel, 0o644); err != nil {
 		t.Fatalf("write sentinel: %v", err)
@@ -135,13 +140,14 @@ func TestInit_SkipsExistingFilesWithoutForce(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(data) != string(sentinel) {
-		t.Error("citadel.yaml was overwritten without --force")
+		t.Error("cistern.yaml was overwritten without --force")
 	}
 }
 
 func TestInit_ForceOverwritesExistingFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 
 	// First run to create files.
 	initForce = false
@@ -149,8 +155,8 @@ func TestInit_ForceOverwritesExistingFiles(t *testing.T) {
 		t.Fatalf("first run error: %v", err)
 	}
 
-	// Overwrite citadel.yaml with sentinel content.
-	configFile := filepath.Join(home, ".citadel", "citadel.yaml")
+	// Overwrite cistern.yaml with sentinel content.
+	configFile := filepath.Join(home, ".cistern", "cistern.yaml")
 	sentinel := []byte("# sentinel — must be overwritten with --force")
 	if err := os.WriteFile(configFile, sentinel, 0o644); err != nil {
 		t.Fatalf("write sentinel: %v", err)
@@ -169,16 +175,17 @@ func TestInit_ForceOverwritesExistingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(data) == string(sentinel) {
-		t.Error("citadel.yaml was not overwritten with --force")
+		t.Error("cistern.yaml was not overwritten with --force")
 	}
-	if string(data) != string(defaultCitadelConfig) {
-		t.Error("citadel.yaml does not match embedded template after --force")
+	if string(data) != string(defaultCisternConfig) {
+		t.Error("cistern.yaml does not match embedded template after --force")
 	}
 }
 
 func TestInit_IdempotentWithoutForce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	// Run twice — both must succeed with no errors.

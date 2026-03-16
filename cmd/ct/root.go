@@ -12,11 +12,11 @@ var dbPath string
 
 var rootCmd = &cobra.Command{
 	Use:   "ct",
-	Short: "Citadel CLI — the Citadel controls the water",
+	Short: "Cistern CLI — where droplets flow and code runs clean",
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to queue database (default: ~/.citadel/queue.db)")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to queue database (default: ~/.cistern/cistern.db)")
 }
 
 func resolveDBPath() string {
@@ -31,7 +31,7 @@ func resolveDBPath() string {
 		fmt.Fprintf(os.Stderr, "error: cannot determine home directory: %v\n", err)
 		os.Exit(1)
 	}
-	dir := filepath.Join(home, ".citadel")
+	dir := filepath.Join(home, ".cistern")
 	os.MkdirAll(dir, 0o755)
-	return filepath.Join(dir, "queue.db")
+	return filepath.Join(dir, "cistern.db")
 }

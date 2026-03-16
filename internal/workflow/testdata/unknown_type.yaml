@@ -1,5 +1,0 @@
-name: bad-type
-steps:
-  - name: step1
-    type: magic
-    on_pass: done

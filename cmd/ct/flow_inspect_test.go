@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/cistern/internal/cistern"
 )
 
 func TestFlowInspectJSON(t *testing.T) {
@@ -39,11 +39,11 @@ func TestFlowInspectJSON(t *testing.T) {
 	}
 
 	// Top-level arrays must not be null.
-	if out.Channels == nil {
-		t.Error("channels array must not be null")
+	if out.Cataractae == nil {
+		t.Error("cataractae array must not be null")
 	}
-	if out.Drops == nil {
-		t.Error("drops array must not be null")
+	if out.Droplets == nil {
+		t.Error("droplets array must not be null")
 	}
 	if out.RecentEvents == nil {
 		t.Error("recent_events array must not be null")
@@ -56,7 +56,7 @@ func TestFlowInspectCisternCounts(t *testing.T) {
 	t.Setenv("CT_DB", db)
 	t.Setenv("CT_CONFIG", filepath.Join(dir, "missing.yaml"))
 
-	c, err := queue.New(db, "ts")
+	c, err := cistern.New(db, "ts")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestFlowInspectCisternCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	// escalated item
-	item3, err := c.Add("repo", "poisoned item", "", 2, 2)
+	item3, err := c.Add("repo", "stagnant item", "", 2, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,25 +113,25 @@ func TestFlowInspectCisternCounts(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	if out.Cistern.Flowing != 1 {
-		t.Errorf("flowing: got %d, want 1", out.Cistern.Flowing)
+	if out.Queue.Flowing != 1 {
+		t.Errorf("flowing: got %d, want 1", out.Queue.Flowing)
 	}
-	if out.Cistern.Queued != 1 {
-		t.Errorf("queued: got %d, want 1", out.Cistern.Queued)
+	if out.Queue.Queued != 1 {
+		t.Errorf("queued: got %d, want 1", out.Queue.Queued)
 	}
-	if out.Cistern.Poisoned != 1 {
-		t.Errorf("poisoned: got %d, want 1", out.Cistern.Poisoned)
+	if out.Queue.Stagnant != 1 {
+		t.Errorf("stagnant: got %d, want 1", out.Queue.Stagnant)
 	}
-	if out.Cistern.Closed != 1 {
-		t.Errorf("closed: got %d, want 1", out.Cistern.Closed)
+	if out.Queue.Closed != 1 {
+		t.Errorf("closed: got %d, want 1", out.Queue.Closed)
 	}
-	if out.Cistern.Total != 3 { // flowing + queued + poisoned, not closed
-		t.Errorf("total: got %d, want 3", out.Cistern.Total)
+	if out.Queue.Total != 3 { // flowing + queued + stagnant, not closed
+		t.Errorf("total: got %d, want 3", out.Queue.Total)
 	}
 
-	// Drops array should exclude closed items.
-	if len(out.Drops) != 3 {
-		t.Errorf("drops: got %d, want 3 (closed excluded)", len(out.Drops))
+	// Droplets array should exclude closed items.
+	if len(out.Droplets) != 3 {
+		t.Errorf("droplets: got %d, want 3 (closed excluded)", len(out.Droplets))
 	}
 }
 
@@ -141,7 +141,7 @@ func TestFlowInspectElapsedSeconds(t *testing.T) {
 	t.Setenv("CT_DB", db)
 	t.Setenv("CT_CONFIG", filepath.Join(dir, "missing.yaml"))
 
-	c, err := queue.New(db, "ts")
+	c, err := cistern.New(db, "ts")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestFlowInspectElapsedSeconds(t *testing.T) {
 	if err := c.UpdateStatus(item.ID, "in_progress"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Assign(item.ID, "furiosa", "implement"); err != nil {
+	if err := c.Assign(item.ID, "upstream", "implement"); err != nil {
 		t.Fatal(err)
 	}
 	c.Close()
@@ -179,35 +179,35 @@ func TestFlowInspectElapsedSeconds(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	if len(out.Drops) != 1 {
-		t.Fatalf("expected 1 drop, got %d", len(out.Drops))
+	if len(out.Droplets) != 1 {
+		t.Fatalf("expected 1 droplet, got %d", len(out.Droplets))
 	}
-	d := out.Drops[0]
+	d := out.Droplets[0]
 	if d.Status != "in_progress" {
 		t.Errorf("status: got %q, want in_progress", d.Status)
 	}
-	if d.Assignee != "furiosa" {
-		t.Errorf("assignee: got %q, want furiosa", d.Assignee)
+	if d.Operator != "upstream" {
+		t.Errorf("operator: got %q, want upstream", d.Operator)
 	}
 }
 
 func TestTmuxSessionAlive(t *testing.T) {
 	// A session with a random name should not exist.
-	if tmuxSessionAlive("citadel-inspect-test-nonexistent-xyz987") {
+	if tmuxSessionAlive("cistern-inspect-test-nonexistent-xyz987") {
 		t.Error("expected non-existent tmux session to return false")
 	}
 }
 
-func TestBuildInspectOutput_UsesProvidedPathsAndIncludesPoisoned(t *testing.T) {
+func TestBuildInspectOutput_UsesProvidedPathsAndIncludesStagnant(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	cfgPath := tempCfg(t)
 
-	c, err := queue.New(db, "mr")
+	c, err := cistern.New(db, "mr")
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := c.Add("myrepo", "poisoned item", "", 2, 2)
+	item, err := c.Add("myrepo", "stagnant item", "", 2, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,16 +221,16 @@ func TestBuildInspectOutput_UsesProvidedPathsAndIncludesPoisoned(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if out.Citadel.Config != cfgPath {
-		t.Errorf("config: got %q, want %q", out.Citadel.Config, cfgPath)
+	if out.Cistern.Config != cfgPath {
+		t.Errorf("config: got %q, want %q", out.Cistern.Config, cfgPath)
 	}
-	if out.Cistern.Poisoned != 1 {
-		t.Errorf("poisoned: got %d, want 1", out.Cistern.Poisoned)
+	if out.Queue.Stagnant != 1 {
+		t.Errorf("stagnant: got %d, want 1", out.Queue.Stagnant)
 	}
-	if len(out.Drops) != 1 {
-		t.Fatalf("drops: got %d, want 1", len(out.Drops))
+	if len(out.Droplets) != 1 {
+		t.Fatalf("droplets: got %d, want 1", len(out.Droplets))
 	}
-	if out.Drops[0].Status != "escalated" {
-		t.Errorf("drop status: got %q, want escalated", out.Drops[0].Status)
+	if out.Droplets[0].Status != "escalated" {
+		t.Errorf("droplet status: got %q, want escalated", out.Droplets[0].Status)
 	}
 }

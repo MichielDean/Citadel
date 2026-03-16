@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/MichielDean/citadel/internal/workflow"
+	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/spf13/cobra"
 )
 
@@ -52,14 +52,14 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}) && ok
 
 	home, _ := os.UserHomeDir()
-	cfgPath := filepath.Join(home, ".citadel", "citadel.yaml")
+	cfgPath := filepath.Join(home, ".cistern", "cistern.yaml")
 	ok = check("config exists and parses", func() error {
-		_, err := workflow.ParseFarmConfig(cfgPath)
+		_, err := aqueduct.ParseAqueductConfig(cfgPath)
 		return err
 	}) && ok
 
-	dbFile := filepath.Join(home, ".citadel", "queue.db")
-	ok = check("queue.db accessible", func() error {
+	dbFile := filepath.Join(home, ".cistern", "cistern.db")
+	ok = check("cistern.db accessible", func() error {
 		f, err := os.OpenFile(dbFile, os.O_RDWR, 0)
 		if err != nil {
 			return err
@@ -68,7 +68,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return nil
 	}) && ok
 
-	sandboxDir := filepath.Join(home, ".citadel", "sandboxes")
+	sandboxDir := filepath.Join(home, ".cistern", "sandboxes")
 	ok = check("sandboxes/ writable", func() error {
 		if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
 			return err
