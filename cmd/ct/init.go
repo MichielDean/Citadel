@@ -6,24 +6,24 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/MichielDean/citadel/internal/workflow"
+	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/spf13/cobra"
 )
 
-//go:embed assets/citadel.yaml
-var defaultCitadelConfig []byte
+//go:embed assets/cistern.yaml
+var defaultCisternConfig []byte
 
-//go:embed assets/workflows/feature.yaml
+//go:embed assets/aqueduct/feature.yaml
 var defaultFeatureWorkflow []byte
 
-//go:embed assets/workflows/bug.yaml
+//go:embed assets/aqueduct/bug.yaml
 var defaultBugWorkflow []byte
 
 var initForce bool
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Bootstrap a new Citadel installation",
+	Short: "Bootstrap a new Cistern installation",
 	RunE:  runInit,
 }
 
@@ -33,20 +33,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
-	citadelDir := filepath.Join(home, ".citadel")
-	workflowsDir := filepath.Join(citadelDir, "workflows")
-	rolesDir := filepath.Join(citadelDir, "roles")
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	cataractaeDir := filepath.Join(cisternDir, "cataractae")
 
 	// 1. Create directory structure.
-	for _, dir := range []string{citadelDir, workflowsDir, rolesDir} {
+	for _, dir := range []string{cisternDir, aqueductDir, cataractaeDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
 
-	// 2. Write citadel.yaml from embedded template.
-	configDst := filepath.Join(citadelDir, "citadel.yaml")
-	if err := writeFileIfAbsent(configDst, defaultCitadelConfig, initForce); err != nil {
+	// 2. Write cistern.yaml from embedded template.
+	configDst := filepath.Join(cisternDir, "cistern.yaml")
+	if err := writeFileIfAbsent(configDst, defaultCisternConfig, initForce); err != nil {
 		return err
 	}
 
@@ -59,33 +59,33 @@ func runInit(cmd *cobra.Command, args []string) error {
 		{"bug.yaml", defaultBugWorkflow},
 	}
 	for _, wf := range workflows {
-		dst := filepath.Join(workflowsDir, wf.name)
+		dst := filepath.Join(aqueductDir, wf.name)
 		if err := writeFileIfAbsent(dst, wf.data, initForce); err != nil {
 			return err
 		}
 	}
 
-	// 4. Generate role files from the feature workflow.
-	featureWfPath := filepath.Join(workflowsDir, "feature.yaml")
-	w, err := workflow.ParseWorkflow(featureWfPath)
+	// 4. Generate role files from the feature aqueduct.
+	featureWfPath := filepath.Join(aqueductDir, "feature.yaml")
+	w, err := aqueduct.ParseWorkflow(featureWfPath)
 	if err != nil {
 		return fmt.Errorf("parse feature workflow: %w", err)
 	}
-	if len(w.Roles) > 0 {
-		if _, err := workflow.GenerateRoleFiles(w, rolesDir); err != nil {
-			return fmt.Errorf("generate roles: %w", err)
+	if len(w.CataractaDefinitions) > 0 {
+		if _, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir); err != nil {
+			return fmt.Errorf("generate cataractae: %w", err)
 		}
 	}
 
 	// 5. Print next-steps message.
-	fmt.Printf(`Citadel initialized.
-  Config   : ~/.citadel/citadel.yaml
-  Workflows: ~/.citadel/workflows/
-  Roles    : ~/.citadel/roles/
+	fmt.Printf(`Cistern initialized.
+  Config   : ~/.cistern/cistern.yaml
+  Aqueduct : ~/.cistern/aqueduct/
+  Cataractae  : ~/.cistern/cataractae/
 
 Next:
-  1. Edit ~/.citadel/citadel.yaml — add your repos
-  2. ct cistern add --title "Your first drop" --repo yourrepo
+  1. Edit ~/.cistern/cistern.yaml — add your repos
+  2. ct cistern add --title "Your first droplet" --repo yourrepo
   3. ct flow start
 `)
 	return nil

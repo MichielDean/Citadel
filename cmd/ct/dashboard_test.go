@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/citadel/internal/queue"
-	"github.com/MichielDean/citadel/internal/workflow"
+	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/aqueduct"
 )
 
 // --- helpers ---
@@ -20,7 +20,7 @@ func tempDB(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "test.db")
 }
 
-// tempCfg writes a minimal citadel.yaml referencing a feature.yaml stub.
+// tempCfg writes a minimal cistern.yaml referencing a feature.yaml stub.
 // Returns the path to the config file.
 func tempCfg(t *testing.T) string {
 	t.Helper()
@@ -28,7 +28,7 @@ func tempCfg(t *testing.T) string {
 
 	// Minimal workflow YAML.
 	wfContent := `name: test
-steps:
+cataractae:
   - name: implement
     type: agent
   - name: review
@@ -41,19 +41,19 @@ steps:
 		t.Fatal(err)
 	}
 
-	// Config referencing two workers named "furiosa" and "nux".
+	// Config referencing two operators named "upstream" and "tributary".
 	cfgContent := `repos:
   - name: myrepo
     url: https://example.com/repo
     workflow_path: feature.yaml
-    workers: 2
+    cataractae: 2
     names:
-      - furiosa
-      - nux
+      - upstream
+      - tributary
     prefix: mr
-max_total_workers: 4
+max_cataractae: 4
 `
-	cfgPath := filepath.Join(dir, "citadel.yaml")
+	cfgPath := filepath.Join(dir, "cistern.yaml")
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -67,15 +67,15 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 	dbPath := tempDB(t)
 
 	// Seed the queue with known items.
-	c, err := queue.New(dbPath, "mr")
+	c, err := cistern.New(dbPath, "mr")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Add: 1 flowing assigned to "furiosa", 1 queued, 1 closed.
+	// Add: 1 flowing assigned to "upstream", 1 queued, 1 closed.
 	flowing, _ := c.Add("myrepo", "Feature A", "", 1, 2)
 	c.GetReady("myrepo") // marks it in_progress
-	c.Assign(flowing.ID, "furiosa", "implement")
+	c.Assign(flowing.ID, "upstream", "implement")
 
 	_, _ = c.Add("myrepo", "Feature B", "", 2, 2) // stays open/queued
 
@@ -85,8 +85,8 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 
 	data := fetchDashboardData(cfgPath, dbPath)
 
-	if data.ChannelCount != 2 {
-		t.Errorf("ChannelCount = %d, want 2", data.ChannelCount)
+	if data.CataractaCount != 2 {
+		t.Errorf("CataractaCount = %d, want 2", data.CataractaCount)
 	}
 	if data.FlowingCount != 1 {
 		t.Errorf("FlowingCount = %d, want 1", data.FlowingCount)
@@ -104,41 +104,41 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 		t.Error("FetchedAt should be set")
 	}
 
-	// Channel "furiosa" should be assigned to the flowing item.
-	var furiosa *ChannelInfo
-	for i := range data.Channels {
-		if data.Channels[i].Name == "furiosa" {
-			furiosa = &data.Channels[i]
+	// Cataracta "upstream" should be assigned to the flowing item.
+	var upstream *CataractaInfo
+	for i := range data.Cataractae {
+		if data.Cataractae[i].Name == "upstream" {
+			upstream = &data.Cataractae[i]
 		}
 	}
-	if furiosa == nil {
-		t.Fatal("channel furiosa not found in data.Channels")
+	if upstream == nil {
+		t.Fatal("cataracta upstream not found in data.Cataractae")
 	}
-	if furiosa.ItemID != flowing.ID {
-		t.Errorf("furiosa.ItemID = %q, want %q", furiosa.ItemID, flowing.ID)
+	if upstream.DropletID != flowing.ID {
+		t.Errorf("upstream.DropletID = %q, want %q", upstream.DropletID, flowing.ID)
 	}
-	if furiosa.Step != "implement" {
-		t.Errorf("furiosa.Step = %q, want %q", furiosa.Step, "implement")
+	if upstream.Step != "implement" {
+		t.Errorf("upstream.Step = %q, want %q", upstream.Step, "implement")
 	}
-	if furiosa.StepIndex != 1 {
-		t.Errorf("furiosa.StepIndex = %d, want 1", furiosa.StepIndex)
+	if upstream.CataractaIndex != 1 {
+		t.Errorf("upstream.CataractaIndex = %d, want 1", upstream.CataractaIndex)
 	}
-	if furiosa.TotalSteps != 3 {
-		t.Errorf("furiosa.TotalSteps = %d, want 3", furiosa.TotalSteps)
+	if upstream.TotalCataractae != 3 {
+		t.Errorf("upstream.TotalCataractae = %d, want 3", upstream.TotalCataractae)
 	}
 
-	// Channel "nux" should be idle.
-	var nux *ChannelInfo
-	for i := range data.Channels {
-		if data.Channels[i].Name == "nux" {
-			nux = &data.Channels[i]
+	// Cataracta "tributary" should be dry.
+	var tributary *CataractaInfo
+	for i := range data.Cataractae {
+		if data.Cataractae[i].Name == "tributary" {
+			tributary = &data.Cataractae[i]
 		}
 	}
-	if nux == nil {
-		t.Fatal("channel nux not found in data.Channels")
+	if tributary == nil {
+		t.Fatal("cataracta tributary not found in data.Cataractae")
 	}
-	if nux.ItemID != "" {
-		t.Errorf("nux.ItemID = %q, want empty (idle)", nux.ItemID)
+	if tributary.DropletID != "" {
+		t.Errorf("tributary.DropletID = %q, want empty (dry)", tributary.DropletID)
 	}
 
 	// Cistern should contain flowing + queued (2 items).
@@ -152,11 +152,11 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 	}
 }
 
-// --- TestFetchDashboardData_FarmNotRunning_ShowsIdleState ---
+// --- TestFetchDashboardData_FarmNotRunning_ShowsDroughtState ---
 
-func TestFetchDashboardData_FarmNotRunning_ShowsIdleState(t *testing.T) {
+func TestFetchDashboardData_FarmNotRunning_ShowsDroughtState(t *testing.T) {
 	t.Run("missing config returns empty data", func(t *testing.T) {
-		data := fetchDashboardData("/nonexistent/citadel.yaml", "/nonexistent/queue.db")
+		data := fetchDashboardData("/nonexistent/cistern.yaml", "/nonexistent/cistern.db")
 
 		if data == nil {
 			t.Fatal("expected non-nil DashboardData even on error")
@@ -164,27 +164,27 @@ func TestFetchDashboardData_FarmNotRunning_ShowsIdleState(t *testing.T) {
 		if data.FarmRunning {
 			t.Error("FarmRunning should be false when config is missing")
 		}
-		if data.ChannelCount != 0 {
-			t.Errorf("ChannelCount = %d, want 0", data.ChannelCount)
+		if data.CataractaCount != 0 {
+			t.Errorf("CataractaCount = %d, want 0", data.CataractaCount)
 		}
 		if data.FetchedAt.IsZero() {
 			t.Error("FetchedAt should always be set")
 		}
 	})
 
-	t.Run("valid config but missing DB shows channels idle", func(t *testing.T) {
+	t.Run("valid config but missing DB shows cataractae dry", func(t *testing.T) {
 		cfgPath := tempCfg(t)
 		dbPath := filepath.Join(t.TempDir(), "nonexistent.db")
 		// Don't create the DB — remove it if it exists.
 		os.Remove(dbPath)
 
-		// queue.New creates the DB if missing, so we can't test a truly missing DB
+		// cistern.New creates the DB if missing, so we can't test a truly missing DB
 		// at the queue level without making the path unwritable. Instead, test
-		// that a fresh empty DB yields all-idle channels and zero counts.
+		// that a fresh empty DB yields all-dry cataractae and zero counts.
 		data := fetchDashboardData(cfgPath, dbPath)
 
-		if data.ChannelCount != 2 {
-			t.Errorf("ChannelCount = %d, want 2 (from config)", data.ChannelCount)
+		if data.CataractaCount != 2 {
+			t.Errorf("CataractaCount = %d, want 2 (from config)", data.CataractaCount)
 		}
 		if data.FlowingCount != 0 {
 			t.Errorf("FlowingCount = %d, want 0 for empty DB", data.FlowingCount)
@@ -192,9 +192,9 @@ func TestFetchDashboardData_FarmNotRunning_ShowsIdleState(t *testing.T) {
 		if data.QueuedCount != 0 {
 			t.Errorf("QueuedCount = %d, want 0 for empty DB", data.QueuedCount)
 		}
-		for _, ch := range data.Channels {
-			if ch.ItemID != "" {
-				t.Errorf("channel %q should be idle (empty ItemID), got %q", ch.Name, ch.ItemID)
+		for _, ch := range data.Cataractae {
+			if ch.DropletID != "" {
+				t.Errorf("cataracta %q should be dry (empty DropletID), got %q", ch.Name, ch.DropletID)
 			}
 		}
 	})
@@ -266,19 +266,19 @@ func TestDashboard_ExitsWhenInputClosed(t *testing.T) {
 
 func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 	data := &DashboardData{
-		ChannelCount: 2,
+		CataractaCount:  2,
 		FlowingCount: 1,
 		QueuedCount:  1,
 		DoneCount:    3,
-		Channels: []ChannelInfo{
-			{Name: "furiosa", ItemID: "ci-abc12", Step: "implement", StepIndex: 1, TotalSteps: 6, Elapsed: 2*time.Minute + 14*time.Second},
-			{Name: "nux"},
+		Cataractae: []CataractaInfo{
+			{Name: "upstream", DropletID: "ci-abc12", Step: "implement", CataractaIndex: 1, TotalCataractae: 6, Elapsed: 2*time.Minute + 14*time.Second},
+			{Name: "tributary"},
 		},
-		CisternItems: []*queue.WorkItem{
-			{ID: "ci-abc12", Repo: "citadel", Status: "in_progress", CurrentStep: "implement", Complexity: 2},
+		CisternItems: []*cistern.Droplet{
+			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataracta: "implement", Complexity: 2},
 		},
-		RecentItems: []*queue.WorkItem{
-			{ID: "ci-xyz99", Status: "closed", CurrentStep: "merge", UpdatedAt: time.Now()},
+		RecentItems: []*cistern.Droplet{
+			{ID: "ci-xyz99", Status: "closed", CurrentCataracta: "merge", UpdatedAt: time.Now()},
 		},
 		FarmRunning: true,
 		FetchedAt:   time.Date(2026, 3, 14, 15, 7, 42, 0, time.UTC),
@@ -286,17 +286,17 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 
 	out := renderDashboard(data)
 
-	sections := []string{"CITADEL", "CHANNELS", "CISTERN", "RECENT FLOW"}
+	sections := []string{"CISTERN", "SLUICES", "CISTERN", "RECENT FLOW"}
 	for _, s := range sections {
 		if !strings.Contains(out, s) {
 			t.Errorf("output missing section %q", s)
 		}
 	}
-	if !strings.Contains(out, "furiosa") {
-		t.Error("output missing channel name furiosa")
+	if !strings.Contains(out, "upstream") {
+		t.Error("output missing cataracta name upstream")
 	}
-	if !strings.Contains(out, "nux") {
-		t.Error("output missing channel name nux")
+	if !strings.Contains(out, "tributary") {
+		t.Error("output missing cataracta name tributary")
 	}
 	if !strings.Contains(out, "15:07:42") {
 		t.Error("output missing last update timestamp")
@@ -306,9 +306,9 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 	}
 }
 
-func TestRenderDashboard_AqueductsClosedWhenNoChannels(t *testing.T) {
+func TestRenderDashboard_AqueductsClosedWhenNoCataractae(t *testing.T) {
 	data := &DashboardData{
-		Channels:  []ChannelInfo{},
+		Cataractae:   []CataractaInfo{},
 		FetchedAt: time.Now(),
 	}
 	out := renderDashboard(data)
@@ -318,14 +318,14 @@ func TestRenderDashboard_AqueductsClosedWhenNoChannels(t *testing.T) {
 }
 
 func TestRenderDashboardHTML_ContainsEasterEggHoverText(t *testing.T) {
-	dropID := "ct-ab123"
-	valve := "implement"
+	dropletID := "ct-ab123"
+	stage := "implement"
 	elapsed := 42
 	snapshot := inspectOutput{
-		Channels: []channelInfo{
-			{Name: "furiosa", DropID: &dropID, Valve: &valve, ElapsedSeconds: &elapsed},
+		Cataractae: []cataractaInfo{
+			{Name: "upstream", DropletID: &dropletID, Stage: &stage, ElapsedSeconds: &elapsed},
 		},
-		Cistern: cisternInfo{Flowing: 1, Queued: 0, Closed: 0},
+		Queue: cisternInfo{Flowing: 1, Queued: 0, Closed: 0},
 	}
 
 	out := renderDashboardHTML(snapshot)
@@ -350,12 +350,12 @@ func TestDashboardListenAddr_UsesProvidedPort(t *testing.T) {
 
 func TestRenderDashboardHTML_ShowsEscalatedDropFromInspectSnapshot(t *testing.T) {
 	snapshot := inspectOutput{
-		Drops: []dropInfo{{ID: "ct-poisn1", Status: "escalated", Valve: "qa", UpdatedAt: time.Now()}},
+		Droplets: []dropletInfo{{ID: "ct-poisn1", Status: "escalated", Stage: "qa", UpdatedAt: time.Now()}},
 	}
 
 	out := renderDashboardHTML(snapshot)
 	if !strings.Contains(out, "ct-poisn1") {
-		t.Error("html dashboard should render drop id from inspect snapshot")
+		t.Error("html dashboard should render droplet id from inspect snapshot")
 	}
 	if !strings.Contains(out, displayStatus("escalated")) {
 		t.Error("html dashboard should render escalated display status from inspect snapshot")
@@ -392,19 +392,19 @@ func TestProgressBar_FilledAndEmpty(t *testing.T) {
 // --- TestStepIndexInWorkflow ---
 
 func TestStepIndexInWorkflow_ReturnsCorrectIndex(t *testing.T) {
-	steps := []workflow.WorkflowStep{
+	steps := []aqueduct.WorkflowCataracta{
 		{Name: "implement"},
 		{Name: "review"},
 		{Name: "merge"},
 	}
 
-	if idx := stepIndexInWorkflow("implement", steps); idx != 1 {
+	if idx := cataractaIndexInWorkflow("implement", steps); idx != 1 {
 		t.Errorf("stepIndex(implement) = %d, want 1", idx)
 	}
-	if idx := stepIndexInWorkflow("merge", steps); idx != 3 {
+	if idx := cataractaIndexInWorkflow("merge", steps); idx != 3 {
 		t.Errorf("stepIndex(merge) = %d, want 3", idx)
 	}
-	if idx := stepIndexInWorkflow("unknown", steps); idx != 0 {
+	if idx := cataractaIndexInWorkflow("unknown", steps); idx != 0 {
 		t.Errorf("stepIndex(unknown) = %d, want 0", idx)
 	}
 }

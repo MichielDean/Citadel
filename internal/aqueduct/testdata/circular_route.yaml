@@ -1,0 +1,16 @@
+name: circular
+cataractae:
+  - name: step-a
+    type: agent
+    identity: implementer
+    on_pass: step-b
+
+  - name: step-b
+    type: agent
+    identity: reviewer
+    on_pass: step-c
+
+  - name: step-c
+    type: agent
+    identity: qa
+    on_pass: step-a

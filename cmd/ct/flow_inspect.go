@@ -9,26 +9,26 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/MichielDean/citadel/internal/queue"
-	"github.com/MichielDean/citadel/internal/workflow"
+	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/spf13/cobra"
 )
 
 var inspectTable bool
 
-type citadelInfo struct {
+type cisternStateInfo struct {
 	Config      string `json:"config"`
-	FarmRunning bool   `json:"farm_running"`
+	Running     bool   `json:"running"`
 }
 
-type channelInfo struct {
+type cataractaInfo struct {
 	Name           string  `json:"name"`
 	Repo           string  `json:"repo"`
 	Session        *string `json:"session"`
 	SessionAlive   bool    `json:"session_alive"`
-	DropID         *string `json:"drop_id"`
-	DropTitle      *string `json:"drop_title"`
-	Valve          *string `json:"valve"`
+	DropletID      *string `json:"droplet_id"`
+	DropletTitle   *string `json:"droplet_title"`
+	Stage          *string `json:"stage"`
 	ElapsedSeconds *int    `json:"elapsed_seconds"`
 }
 
@@ -36,38 +36,38 @@ type cisternInfo struct {
 	Total    int `json:"total"`
 	Flowing  int `json:"flowing"`
 	Queued   int `json:"queued"`
-	Poisoned int `json:"poisoned"`
+	Stagnant int `json:"stagnant"`
 	Closed   int `json:"closed"`
 }
 
-type dropInfo struct {
+type dropletInfo struct {
 	ID             string    `json:"id"`
 	Title          string    `json:"title"`
 	Complexity     int       `json:"complexity"`
 	ComplexityName string    `json:"complexity_name"`
 	Status         string    `json:"status"`
-	Valve          string    `json:"valve"`
-	Assignee       string    `json:"assignee"`
+	Stage          string    `json:"stage"`
+	Operator       string    `json:"operator"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type recentEvent struct {
-	Time  time.Time `json:"time"`
-	Drop  string    `json:"drop"`
-	Event string    `json:"event"`
+	Time    time.Time `json:"time"`
+	Droplet string    `json:"droplet"`
+	Event   string    `json:"event"`
 }
 
 type inspectOutput struct {
-	Citadel      citadelInfo   `json:"citadel"`
-	Channels     []channelInfo `json:"channels"`
-	Cistern      cisternInfo   `json:"cistern"`
-	Drops        []dropInfo    `json:"drops"`
-	RecentEvents []recentEvent `json:"recent_events"`
+	Cistern      cisternStateInfo `json:"cistern"`
+	Cataractae      []cataractaInfo     `json:"cataractae"`
+	Queue        cisternInfo      `json:"queue"`
+	Droplets     []dropletInfo    `json:"droplets"`
+	RecentEvents []recentEvent    `json:"recent_events"`
 }
 
 var flowInspectCmd = &cobra.Command{
 	Use:   "inspect",
-	Short: "Output a JSON snapshot of current Citadel state",
+	Short: "Output a JSON snapshot of current Cistern state",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out, err := buildInspectOutput(resolveConfigPath(), resolveDBPath())
 		if err != nil {
@@ -85,31 +85,31 @@ var flowInspectCmd = &cobra.Command{
 }
 
 func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
-	// Farm running: check for lock file.
+	// Running: check for lock file.
 	home, _ := os.UserHomeDir()
-	lockFile := filepath.Join(home, ".citadel", "citadel.lock")
+	lockFile := filepath.Join(home, ".cistern", "cistern.lock")
 	_, lockErr := os.Stat(lockFile)
 
 	out := inspectOutput{
-		Citadel: citadelInfo{
-			Config:      cfgPath,
-			FarmRunning: lockErr == nil,
+		Cistern: cisternStateInfo{
+			Config:  cfgPath,
+			Running: lockErr == nil,
 		},
-		Channels:     []channelInfo{},
-		Drops:        []dropInfo{},
+		Cataractae:      []cataractaInfo{},
+		Droplets:     []dropletInfo{},
 		RecentEvents: []recentEvent{},
 	}
 
 	// Load config best-effort — may not exist in test environments.
-	cfg, err := workflow.ParseFarmConfig(cfgPath)
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 	if err != nil {
-		cfg = &workflow.FarmConfig{}
+		cfg = &aqueduct.AqueductConfig{}
 	}
 
-	// Open queue.
-	c, err := queue.New(dbPath, "")
+	// Open cistern.
+	c, err := cistern.New(dbPath, "")
 	if err != nil {
-		return out, fmt.Errorf("queue: %w", err)
+		return out, fmt.Errorf("cistern: %w", err)
 	}
 	defer c.Close()
 
@@ -119,43 +119,43 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 		return out, fmt.Errorf("list items: %w", err)
 	}
 
-	// Build assignee lookup and cistern counts.
+	// Build assignee lookup and queue counts.
 	type assignInfo struct {
-		id, title, valve string
+		id, title, stage string
 		updatedAt        time.Time
 	}
 	assigneeMap := map[string]assignInfo{}
 
-	cistern := cisternInfo{}
+	queueState := cisternInfo{}
 	for _, item := range allItems {
 		switch item.Status {
 		case "in_progress":
-			cistern.Flowing++
-			cistern.Total++
+			queueState.Flowing++
+			queueState.Total++
 		case "open":
-			cistern.Queued++
-			cistern.Total++
+			queueState.Queued++
+			queueState.Total++
 		case "escalated":
-			cistern.Poisoned++
-			cistern.Total++
+			queueState.Stagnant++
+			queueState.Total++
 		case "closed":
-			cistern.Closed++
+			queueState.Closed++
 		}
 		if item.Assignee != "" {
 			assigneeMap[item.Assignee] = assignInfo{
 				id:        item.ID,
 				title:     item.Title,
-				valve:     item.CurrentStep,
+				stage:     item.CurrentCataracta,
 				updatedAt: item.UpdatedAt,
 			}
 		}
 	}
-	out.Cistern = cistern
+	out.Queue = queueState
 
-	// Build channels from config workers.
+	// Build cataractae from config operators.
 	for _, repo := range cfg.Repos {
 		for _, name := range repoWorkerNames(repo) {
-			ch := channelInfo{
+			ch := cataractaInfo{
 				Name: name,
 				Repo: repo.Name,
 			}
@@ -165,36 +165,36 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 				elapsed := int(time.Since(info.updatedAt).Seconds())
 				ch.Session = &session
 				ch.SessionAlive = alive
-				ch.DropID = &info.id
-				ch.DropTitle = &info.title
-				ch.Valve = &info.valve
+				ch.DropletID = &info.id
+				ch.DropletTitle = &info.title
+				ch.Stage = &info.stage
 				ch.ElapsedSeconds = &elapsed
 			}
-			out.Channels = append(out.Channels, ch)
+			out.Cataractae = append(out.Cataractae, ch)
 		}
 	}
-	if out.Channels == nil {
-		out.Channels = []channelInfo{}
+	if out.Cataractae == nil {
+		out.Cataractae = []cataractaInfo{}
 	}
 
-	// Build drops (exclude closed).
+	// Build droplets (exclude closed).
 	for _, item := range allItems {
 		if item.Status == "closed" {
 			continue
 		}
-		out.Drops = append(out.Drops, dropInfo{
+		out.Droplets = append(out.Droplets, dropletInfo{
 			ID:             item.ID,
 			Title:          item.Title,
 			Complexity:     item.Complexity,
 			ComplexityName: complexityName(item.Complexity),
 			Status:         item.Status,
-			Valve:          item.CurrentStep,
-			Assignee:       item.Assignee,
+			Stage:          item.CurrentCataracta,
+			Operator:       item.Assignee,
 			UpdatedAt:      item.UpdatedAt,
 		})
 	}
-	if out.Drops == nil {
-		out.Drops = []dropInfo{}
+	if out.Droplets == nil {
+		out.Droplets = []dropletInfo{}
 	}
 
 	// Recent events.
@@ -202,9 +202,9 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 	if err == nil && len(events) > 0 {
 		for _, e := range events {
 			out.RecentEvents = append(out.RecentEvents, recentEvent{
-				Time:  e.Time,
-				Drop:  e.Drop,
-				Event: e.Event,
+				Time:    e.Time,
+				Droplet: e.Droplet,
+				Event:   e.Event,
 			})
 		}
 	}
@@ -219,13 +219,13 @@ func tmuxSessionAlive(name string) bool {
 func printInspectTable(out inspectOutput) error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	defer tw.Flush()
-	fmt.Fprintf(tw, "Config:\t%s\n", out.Citadel.Config)
-	fmt.Fprintf(tw, "Farm running:\t%v\n", out.Citadel.FarmRunning)
-	fmt.Fprintf(tw, "\nCistern:\ttotal=%d  flowing=%d  queued=%d  poisoned=%d  closed=%d\n",
-		out.Cistern.Total, out.Cistern.Flowing, out.Cistern.Queued, out.Cistern.Poisoned, out.Cistern.Closed)
-	if len(out.Channels) > 0 {
-		fmt.Fprintf(tw, "\nChannels:\n")
-		for _, ch := range out.Channels {
+	fmt.Fprintf(tw, "Config:\t%s\n", out.Cistern.Config)
+	fmt.Fprintf(tw, "Running:\t%v\n", out.Cistern.Running)
+	fmt.Fprintf(tw, "\nQueue:\ttotal=%d  flowing=%d  queued=%d  stagnant=%d  closed=%d\n",
+		out.Queue.Total, out.Queue.Flowing, out.Queue.Queued, out.Queue.Stagnant, out.Queue.Closed)
+	if len(out.Cataractae) > 0 {
+		fmt.Fprintf(tw, "\\nCataractae:\n")
+		for _, ch := range out.Cataractae {
 			session := "-"
 			if ch.Session != nil {
 				session = *ch.Session
@@ -233,10 +233,10 @@ func printInspectTable(out inspectOutput) error {
 			fmt.Fprintf(tw, "  %s\t%s\talive=%v\n", ch.Name, session, ch.SessionAlive)
 		}
 	}
-	if len(out.Drops) > 0 {
-		fmt.Fprintf(tw, "\nDrops:\n")
-		for _, d := range out.Drops {
-			fmt.Fprintf(tw, "  %s\t%s\t[%s]\t%s\n", d.ID, d.Title, d.Status, d.Assignee)
+	if len(out.Droplets) > 0 {
+		fmt.Fprintf(tw, "\nDroplets:\n")
+		for _, d := range out.Droplets {
+			fmt.Fprintf(tw, "  %s\t%s\t[%s]\t%s\n", d.ID, d.Title, d.Status, d.Operator)
 		}
 	}
 	return nil

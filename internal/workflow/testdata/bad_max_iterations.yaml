@@ -1,7 +1,0 @@
-name: bad-iterations
-steps:
-  - name: step1
-    type: agent
-    role: implementer
-    max_iterations: -1
-    on_pass: done

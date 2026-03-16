@@ -1,0 +1,5 @@
+name: bad-type
+cataractae:
+  - name: step1
+    type: magic
+    on_pass: done

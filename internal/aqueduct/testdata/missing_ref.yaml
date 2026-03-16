@@ -1,0 +1,7 @@
+name: broken-ref
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    on_pass: nonexistent-step
+    on_fail: blocked

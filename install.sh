@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Citadel installer
-# Usage: curl -sSf https://raw.githubusercontent.com/MichielDean/citadel/main/install.sh | bash
+# Cistern installer
+# Usage: curl -sSf https://raw.githubusercontent.com/MichielDean/cistern/main/install.sh | bash
 
-REPO='github.com/MichielDean/citadel'
-CT_DIR="${HOME}/.citadel"
+REPO='github.com/MichielDean/cistern'
+CT_DIR="${HOME}/.cistern"
 MIN_GO_VERSION="1.22"
 
 # --- colors (disabled if not a tty) ---
@@ -102,7 +102,7 @@ check_api_key() {
   if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
     printf "\n"
     warn "ANTHROPIC_API_KEY is not set."
-    warn "Citadel needs this to run AI agent steps."
+    warn "Cistern needs this to run AI agent steps."
     printf "\n"
     printf "  Add to your shell profile (~/.bashrc, ~/.zshrc, etc.):\n"
     printf "    export ANTHROPIC_API_KEY='sk-ant-...'\n"
@@ -133,15 +133,15 @@ install_ct() {
   fi
 }
 
-# --- setup_dirs: create ~/.citadel structure ---
+# --- setup_dirs: create ~/.cistern structure ---
 setup_dirs() {
   info "Setting up ${CT_DIR}..."
   mkdir -p "${CT_DIR}/sandboxes" "${CT_DIR}/logs"
 }
 
-# --- create_config: write starter citadel.yaml if none exists ---
+# --- create_config: write starter cistern.yaml if none exists ---
 create_config() {
-  local cfg="${CT_DIR}/citadel.yaml"
+  local cfg="${CT_DIR}/cistern.yaml"
 
   if [ -f "${cfg}" ]; then
     info "Config already exists at ${cfg} — skipping"
@@ -150,13 +150,13 @@ create_config() {
 
   info "Creating starter config at ${cfg}..."
   cat > "${cfg}" << 'YAML'
-# Citadel configuration
+# Cistern configuration
 # Edit this file to add your repos and configure your farm.
 #
-# See https://github.com/MichielDean/citadel for full documentation.
+# See https://github.com/MichielDean/cistern for full documentation.
 
 # Maximum total workers across all repos (0 = unlimited).
-max_total_workers: 4
+max_sluices: 4
 
 # How long to keep closed/escalated work items before purging.
 retention_days: 90
@@ -169,7 +169,7 @@ repos:
   # - name: my-project
   #   url: git@github.com:you/my-project.git
   #   prefix: mp
-  #   workflow_path: ~/.citadel/workflows/feature.yaml
+  #   workflow_path: ~/.cistern/workflows/feature.yaml
   #   max_workers: 2
   #   workers:
   #     - name: worker-a
@@ -260,32 +260,32 @@ add_shell_completion() {
 # --- print_success ---
 print_success() {
   printf "\n"
-  printf "${GREEN}${BOLD}✓ Citadel installed${NC}\n"
+  printf "${GREEN}${BOLD}✓ Cistern installed${NC}\n"
   printf "\n"
   printf "${BOLD}Next steps:${NC}\n"
   printf "\n"
   printf "  1. Edit your config:\n"
-  printf "     ${BLUE}%s/citadel.yaml${NC}\n" "${CT_DIR}"
+  printf "     ${BLUE}%s/cistern.yaml${NC}\n" "${CT_DIR}"
   printf "     Add at least one repo with a URL, prefix, and workers.\n"
   printf "\n"
   printf "  2. Add a work item:\n"
   printf "     ${BLUE}ct queue add --title \"My first task\" --repo <repo-name>${NC}\n"
   printf "\n"
   printf "  3. Start the farm:\n"
-  printf "     ${BLUE}ct flow start --config ~/.citadel/citadel.yaml${NC}\n"
+  printf "     ${BLUE}ct flow start --config ~/.cistern/cistern.yaml${NC}\n"
   printf "\n"
   printf "${BOLD}Paths:${NC}\n"
-  printf "  Config:     %s/citadel.yaml\n" "${CT_DIR}"
+  printf "  Config:     %s/cistern.yaml\n" "${CT_DIR}"
   printf "  Workflows:  %s/workflows/\n" "${CT_DIR}"
-  printf "  Queue DB:   %s/queue.db\n" "${CT_DIR}"
+  printf "  Queue DB:   %s/cistern.db\n" "${CT_DIR}"
   printf "  Sandboxes:  %s/sandboxes/\n" "${CT_DIR}"
   printf "\n"
-  printf "${BOLD}Docs:${NC} https://github.com/MichielDean/citadel\n"
+  printf "${BOLD}Docs:${NC} https://github.com/MichielDean/cistern\n"
   printf "\n"
 }
 
 main() {
-  printf "${BOLD}Citadel Installer${NC}\n\n"
+  printf "${BOLD}Cistern Installer${NC}\n\n"
   step "Checking Go"
   check_go
   step "Checking dependencies"

@@ -1,0 +1,7 @@
+name: bad-iterations
+cataractae:
+  - name: step1
+    type: agent
+    identity: implementer
+    max_iterations: -1
+    on_pass: done

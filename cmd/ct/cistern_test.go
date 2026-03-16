@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MichielDean/citadel/internal/queue"
+	"github.com/MichielDean/cistern/internal/cistern"
 )
 
 func TestCisternListOutputFlag(t *testing.T) {
@@ -17,7 +17,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 	t.Setenv("CT_DB", db)
 
 	// Verify default flag value is "table".
-	f := cisternListCmd.Flags().Lookup("output")
+	f := dropletListCmd.Flags().Lookup("output")
 	if f == nil {
 		t.Fatal("--output flag not registered")
 	}
@@ -25,7 +25,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 		t.Fatalf("expected default 'table', got %q", f.DefValue)
 	}
 
-	// Test json output with empty queue.
+	// Test json output with empty cistern.
 	t.Run("json empty", func(t *testing.T) {
 		old := os.Stdout
 		r, w, _ := os.Pipe()
@@ -34,7 +34,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 		listOutput = "json"
 		listRepo = ""
 		listStatus = ""
-		err := cisternListCmd.RunE(cisternListCmd, nil)
+		err := dropletListCmd.RunE(dropletListCmd, nil)
 
 		w.Close()
 		os.Stdout = old
@@ -47,7 +47,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 		buf.ReadFrom(r)
 		out := buf.String()
 
-		var items []*queue.WorkItem
+		var items []*cistern.Droplet
 		if err := json.Unmarshal([]byte(out), &items); err != nil {
 			t.Fatalf("output is not valid JSON: %v\noutput: %s", err, out)
 		}
@@ -58,7 +58,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 
 	// Test json output with one item.
 	t.Run("json with items", func(t *testing.T) {
-		c, err := queue.New(db, "ts")
+		c, err := cistern.New(db, "ts")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,7 +75,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 		listOutput = "json"
 		listRepo = ""
 		listStatus = ""
-		err = cisternListCmd.RunE(cisternListCmd, nil)
+		err = dropletListCmd.RunE(dropletListCmd, nil)
 
 		w.Close()
 		os.Stdout = old
@@ -88,7 +88,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 		buf.ReadFrom(r)
 		out := buf.String()
 
-		var items []*queue.WorkItem
+		var items []*cistern.Droplet
 		if err := json.Unmarshal([]byte(out), &items); err != nil {
 			t.Fatalf("output is not valid JSON: %v\noutput: %s", err, out)
 		}
@@ -103,7 +103,7 @@ func TestCisternListOutputFlag(t *testing.T) {
 	// Test invalid output flag.
 	t.Run("invalid output flag", func(t *testing.T) {
 		listOutput = "csv"
-		err := cisternListCmd.RunE(cisternListCmd, nil)
+		err := dropletListCmd.RunE(dropletListCmd, nil)
 		if err == nil {
 			t.Fatal("expected error for invalid --output value")
 		}

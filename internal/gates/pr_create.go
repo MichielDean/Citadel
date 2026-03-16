@@ -1,0 +1,85 @@
+package gates
+
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// PRCreate creates a GitHub pull request using the gh CLI.
+// Title and body come from DropletContext. The PR URL is returned in
+// Annotations[AnnoPRURL] for the caller to persist to droplet metadata.
+func (e *Executor) PRCreate(ctx context.Context, bc DropletContext) (*StepOutcome, error) {
+	branch := bc.Branch
+	if branch == "" {
+		out, err := e.ExecFn(ctx, bc.WorkDir, "git", "branch", "--show-current")
+		if err != nil {
+			return &StepOutcome{
+				Result: ResultFail,
+				Notes:  fmt.Sprintf("detect branch: %s: %s", err, out),
+			}, nil
+		}
+		branch = strings.TrimSpace(string(out))
+	}
+	if branch == "" {
+		return &StepOutcome{
+			Result: ResultFail,
+			Notes:  "could not determine head branch",
+		}, nil
+	}
+
+	baseBranch := bc.BaseBranch
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+
+	title := bc.Title
+	if title == "" {
+		title = fmt.Sprintf("droplet %s", bc.ID)
+	}
+
+	body := bc.Description
+	if body == "" {
+		body = fmt.Sprintf("Automated PR for droplet %s", bc.ID)
+	}
+
+	// Push the feature branch before creating the PR.
+	pushOut, pushErr := e.ExecFn(ctx, bc.WorkDir, "git", "push", "-u", "origin", branch)
+	if pushErr != nil {
+		return &StepOutcome{
+			Result: ResultFail,
+			Notes:  fmt.Sprintf("git push failed: %s: %s", pushErr, pushOut),
+		}, nil
+	}
+
+	out, err := e.ExecFn(ctx, bc.WorkDir, "gh",
+		"pr", "create",
+		"--title", title,
+		"--body", body,
+		"--base", baseBranch,
+		"--head", branch,
+	)
+	if err != nil {
+		return &StepOutcome{
+			Result: ResultFail,
+			Notes:  fmt.Sprintf("gh pr create failed: %s: %s", err, out),
+		}, nil
+	}
+
+	prURL := strings.TrimSpace(string(out))
+
+	// Extract PR number from URL (e.g., https://github.com/owner/repo/pull/123).
+	prNumber := ""
+	if parts := strings.Split(prURL, "/"); len(parts) > 0 {
+		prNumber = parts[len(parts)-1]
+	}
+
+	return &StepOutcome{
+		Result: ResultPass,
+		Notes:  fmt.Sprintf("created PR: %s", prURL),
+		Annotations: map[string]string{
+			AnnoPRURL:    prURL,
+			AnnoPRNumber: prNumber,
+		},
+	}, nil
+}

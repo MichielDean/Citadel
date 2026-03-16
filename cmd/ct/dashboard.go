@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MichielDean/citadel/internal/queue"
-	"github.com/MichielDean/citadel/internal/workflow"
+	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -47,89 +47,89 @@ Then trim away what’s second in time.
 What’s left behind, when placed in a row,
 Reveals the port where you must go.`
 
-// ChannelInfo describes the state of a single channel (worker).
-type ChannelInfo struct {
+// CataractaInfo describes the state of a single cataracta (operator).
+type CataractaInfo struct {
 	Name       string
-	ItemID     string
+	DropletID  string
 	Step       string
 	Elapsed    time.Duration
-	StepIndex  int // 1-based index of current step; 0 if unknown
-	TotalSteps int
+	CataractaIndex  int // 1-based index of current step; 0 if unknown
+	TotalCataractae int
 }
 
 // DashboardData holds all data required to render the dashboard.
 type DashboardData struct {
-	ChannelCount int
+	CataractaCount  int
 	FlowingCount int
 	QueuedCount  int
 	DoneCount    int
-	Channels     []ChannelInfo
-	CisternItems []*queue.WorkItem // flowing + queued
-	RecentItems  []*queue.WorkItem // recently closed/escalated
+	Cataractae      []CataractaInfo
+	CisternItems []*cistern.Droplet // flowing + queued
+	RecentItems  []*cistern.Droplet // recently closed/escalated
 	FarmRunning  bool
 	FetchedAt    time.Time
 }
 
 // fetchDashboardData loads config and queue state into a DashboardData.
-// On any error (missing config, missing DB) it returns a partial/idle result
+// On any error (missing config, missing DB) it returns a partial/drought result
 // rather than an error, so the dashboard degrades gracefully.
 func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	data := &DashboardData{FetchedAt: time.Now()}
 
-	cfg, err := workflow.ParseFarmConfig(cfgPath)
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 	if err != nil {
 		// Config not found — show aqueducts closed.
 		return data
 	}
 
-	// Build channel list and load workflow steps for each repo.
-	type channelEntry struct {
+	// Build cataracta list and load workflow steps for each repo.
+	type cataractaEntry struct {
 		name string
 		repo string
 	}
-	var configChannels []channelEntry
-	allSteps := map[string][]workflow.WorkflowStep{}
+	var configCataractae []cataractaEntry
+	allSteps := map[string][]aqueduct.WorkflowCataracta{}
 	cfgDir := filepath.Dir(cfgPath)
 	for _, repo := range cfg.Repos {
 		names := repoWorkerNames(repo)
 		for _, name := range names {
-			configChannels = append(configChannels, channelEntry{name, repo.Name})
+			configCataractae = append(configCataractae, cataractaEntry{name, repo.Name})
 		}
-		data.ChannelCount += len(names)
+		data.CataractaCount += len(names)
 
 		wfPath := repo.WorkflowPath
 		if !filepath.IsAbs(wfPath) {
 			wfPath = filepath.Join(cfgDir, wfPath)
 		}
-		if wf, wfErr := workflow.ParseWorkflow(wfPath); wfErr == nil {
-			allSteps[repo.Name] = wf.Steps
+		if wf, wfErr := aqueduct.ParseWorkflow(wfPath); wfErr == nil {
+			allSteps[repo.Name] = wf.Cataractae
 		}
 	}
 
-	// Open queue — if it fails, show channels as idle.
-	c, err := queue.New(dbPath, "")
+	// Open queue — if it fails, show cataractae as dry.
+	c, err := cistern.New(dbPath, "")
 	if err != nil {
-		channels := make([]ChannelInfo, len(configChannels))
-		for i, ch := range configChannels {
-			channels[i] = ChannelInfo{Name: ch.name}
+		cataractae := make([]CataractaInfo, len(configCataractae))
+		for i, ch := range configCataractae {
+			cataractae[i] = CataractaInfo{Name: ch.name}
 		}
-		data.Channels = channels
+		data.Cataractae = cataractae
 		return data
 	}
 	defer c.Close()
 
 	allItems, err := c.List("", "")
 	if err != nil {
-		channels := make([]ChannelInfo, len(configChannels))
-		for i, ch := range configChannels {
-			channels[i] = ChannelInfo{Name: ch.name}
+		cataractae := make([]CataractaInfo, len(configCataractae))
+		for i, ch := range configCataractae {
+			cataractae[i] = CataractaInfo{Name: ch.name}
 		}
-		data.Channels = channels
+		data.Cataractae = cataractae
 		return data
 	}
 
 	// Tally counts and build assignee map.
-	assigneeMap := map[string]*queue.WorkItem{}
+	assigneeMap := map[string]*cistern.Droplet{}
 	for _, item := range allItems {
 		switch item.Status {
 		case "in_progress":
@@ -144,21 +144,21 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 		}
 	}
 
-	// Build channel infos.
-	channels := make([]ChannelInfo, len(configChannels))
-	for i, ch := range configChannels {
-		ci := ChannelInfo{Name: ch.name}
+	// Build cataracta infos.
+	cataractae := make([]CataractaInfo, len(configCataractae))
+	for i, ch := range configCataractae {
+		ci := CataractaInfo{Name: ch.name}
 		if item, ok := assigneeMap[ch.name]; ok {
-			ci.ItemID = item.ID
-			ci.Step = item.CurrentStep
+			ci.DropletID = item.ID
+			ci.Step = item.CurrentCataracta
 			ci.Elapsed = time.Since(item.UpdatedAt)
-			steps := allSteps[ch.repo]
-			ci.TotalSteps = len(steps)
-			ci.StepIndex = stepIndexInWorkflow(item.CurrentStep, steps)
+			wfCataractae := allSteps[ch.repo]
+			ci.TotalCataractae = len(wfCataractae)
+			ci.CataractaIndex = cataractaIndexInWorkflow(item.CurrentCataracta, wfCataractae)
 		}
-		channels[i] = ci
+		cataractae[i] = ci
 	}
-	data.Channels = channels
+	data.Cataractae = cataractae
 
 	// Cistern: in_progress and open items.
 	for _, item := range allItems {
@@ -168,7 +168,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	}
 
 	// Recent flow: most recently updated closed/escalated items.
-	var recent []*queue.WorkItem
+	var recent []*cistern.Droplet
 	for _, item := range allItems {
 		if item.Status == "closed" || item.Status == "escalated" {
 			recent = append(recent, item)
@@ -186,9 +186,9 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	return data
 }
 
-// stepIndexInWorkflow returns the 1-based index of stepName in steps, or 0 if not found.
-func stepIndexInWorkflow(stepName string, steps []workflow.WorkflowStep) int {
-	for i, s := range steps {
+// cataractaIndexInWorkflow returns the 1-based index of stepName in the cataracta list, or 0 if not found.
+func cataractaIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCataracta) int {
+	for i, s := range cataractae {
 		if s.Name == stepName {
 			return i + 1
 		}
@@ -248,26 +248,26 @@ func renderDashboard(data *DashboardData) string {
 	totalWidth := dashboardInnerWidth + 4 // "║ " + content + " ║"
 
 	// Header.
-	title := " CITADEL "
+	title := " CISTERN "
 	padTotal := totalWidth - 2 - len(title)
 	leftPad := padTotal / 2
 	rightPad := padTotal - leftPad
 	sb.WriteString("╔" + strings.Repeat("═", leftPad) + title + strings.Repeat("═", rightPad) + "╗\n")
 
 	// Summary line.
-	summary := fmt.Sprintf("%d channels open  •  %d flowing  •  %d queued  •  %d done",
-		data.ChannelCount, data.FlowingCount, data.QueuedCount, data.DoneCount)
+	summary := fmt.Sprintf("%d cataractae open  •  %d flowing  •  %d queued  •  %d done",
+		data.CataractaCount, data.FlowingCount, data.QueuedCount, data.DoneCount)
 	sb.WriteString(contentLine(summary) + "\n")
 
-	// CHANNELS section.
+	// SLUICES section.
 	sb.WriteString(borderLine() + "\n")
-	sb.WriteString(contentLine("CHANNELS") + "\n")
+	sb.WriteString(contentLine("SLUICES") + "\n")
 
-	if len(data.Channels) == 0 {
+	if len(data.Cataractae) == 0 {
 		sb.WriteString(contentLine("  Aqueducts closed") + "\n")
 	} else {
-		for _, ch := range data.Channels {
-			sb.WriteString(contentLine(renderChannelLine(ch)) + "\n")
+		for _, ch := range data.Cataractae {
+			sb.WriteString(contentLine(renderCataractaLine(ch)) + "\n")
 		}
 	}
 
@@ -303,19 +303,19 @@ func renderDashboard(data *DashboardData) string {
 	return sb.String()
 }
 
-// renderChannelLine builds the channel row string (without borders).
-func renderChannelLine(ch ChannelInfo) string {
-	if ch.ItemID == "" {
-		// Idle channel.
+// renderCataractaLine builds the cataracta row string (without borders).
+func renderCataractaLine(ch CataractaInfo) string {
+	if ch.DropletID == "" {
+		// Dry cataracta.
 		name := padRight(ch.Name, 10)
-		return colorDim + "  " + name + "—         idle" + colorReset
+		return colorDim + "  " + name + "—         dry" + colorReset
 	}
 
 	name := padRight(ch.Name, 10)
-	id := padRight(ch.ItemID, 10)
+	id := padRight(ch.DropletID, 10)
 	step := "[" + ch.Step + "]"
 	elapsed := formatElapsed(ch.Elapsed)
-	bar := progressBar(ch.StepIndex, ch.TotalSteps, 6)
+	bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 6)
 
 	// Line: "  name  id  [step]  elapsed  bar"
 	line := fmt.Sprintf("%s%s%s  %-18s  %-8s  %s%s",
@@ -324,11 +324,11 @@ func renderChannelLine(ch ChannelInfo) string {
 }
 
 // renderCisternLine builds a cistern row string.
-func renderCisternLine(item *queue.WorkItem) string {
+func renderCisternLine(item *cistern.Droplet) string {
 	id := padRight(item.ID, 10)
 	cx := padRight(complexityName(item.Complexity), 9)
 	status := displayStatus(item.Status)
-	step := item.CurrentStep
+	step := item.CurrentCataracta
 	if step == "" {
 		step = "—"
 	}
@@ -353,10 +353,10 @@ func renderCisternLine(item *queue.WorkItem) string {
 }
 
 // renderRecentLine builds a recent-flow row string.
-func renderRecentLine(item *queue.WorkItem) string {
+func renderRecentLine(item *cistern.Droplet) string {
 	t := item.UpdatedAt.Format("15:04")
 	id := padRight(item.ID, 10)
-	step := item.CurrentStep
+	step := item.CurrentCataracta
 	if step == "" {
 		step = "—"
 	}
@@ -447,7 +447,7 @@ func startKeyboardReader() <-chan byte {
 
 var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
-	Short: "Live dashboard showing channels, cistern, and flow events",
+	Short: "Live dashboard showing cataractae, cistern, and flow events",
 	RunE:  runDashboard,
 }
 
@@ -483,40 +483,40 @@ h1,h2{margin:0 0 10px}h1{font-size:20px}h2{font-size:15px;color:#9db1db}
 </style></head><body>`)
 	sb.WriteString(`<div class="wrap">`)
 	sb.WriteString(`<div class="card"><h1>CT Dashboard</h1>`)
-	sb.WriteString(fmt.Sprintf(`<div class="muted">%d channels open • <span class="ok">%d flowing</span> • <span class="warn">%d queued</span> • %d done</div>`,
-		len(snapshot.Channels), snapshot.Cistern.Flowing, snapshot.Cistern.Queued, snapshot.Cistern.Closed))
+	sb.WriteString(fmt.Sprintf(`<div class="muted">%d cataractae open • <span class="ok">%d flowing</span> • <span class="warn">%d queued</span> • %d done</div>`,
+		len(snapshot.Cataractae), snapshot.Queue.Flowing, snapshot.Queue.Queued, snapshot.Queue.Closed))
 	sb.WriteString(fmt.Sprintf(`<div class="muted" style="margin-top:6px">last update: %s</div>`, time.Now().Format("15:04:05")))
 	sb.WriteString(`</div>`)
 
-	sb.WriteString(`<div class="card"><h2>Channels</h2><table><thead><tr><th>Name</th><th>Drop</th><th>Valve</th><th>Elapsed</th></tr></thead><tbody>`)
-	if len(snapshot.Channels) == 0 {
+	sb.WriteString(`<div class="card"><h2>Cataractae</h2><table><thead><tr><th>Name</th><th>Droplet</th><th>Stage</th><th>Elapsed</th></tr></thead><tbody>`)
+	if len(snapshot.Cataractae) == 0 {
 		sb.WriteString(`<tr><td colspan="4" class="muted">Aqueducts closed</td></tr>`)
 	} else {
-		for _, ch := range snapshot.Channels {
-			drop := "-"
-			valve := "idle"
+		for _, ch := range snapshot.Cataractae {
+			droplet := "-"
+			stage := "dry"
 			elapsed := "-"
-			if ch.DropID != nil {
-				drop = html.EscapeString(*ch.DropID)
+			if ch.DropletID != nil {
+				droplet = html.EscapeString(*ch.DropletID)
 			}
-			if ch.Valve != nil {
-				valve = html.EscapeString(*ch.Valve)
+			if ch.Stage != nil {
+				stage = html.EscapeString(*ch.Stage)
 			}
 			if ch.ElapsedSeconds != nil {
 				elapsed = formatElapsed(time.Duration(*ch.ElapsedSeconds) * time.Second)
 			}
 			sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-				html.EscapeString(ch.Name), drop, valve, elapsed))
+				html.EscapeString(ch.Name), droplet, stage, elapsed))
 		}
 	}
 	sb.WriteString(`</tbody></table></div>`)
 
-	sb.WriteString(`<div class="card"><h2>Cistern</h2><table><thead><tr><th>Drop</th><th>Status</th><th>Valve</th></tr></thead><tbody>`)
-	if len(snapshot.Drops) == 0 {
+	sb.WriteString(`<div class="card"><h2>Cistern</h2><table><thead><tr><th>Droplet</th><th>Status</th><th>Stage</th></tr></thead><tbody>`)
+	if len(snapshot.Droplets) == 0 {
 		sb.WriteString(`<tr><td colspan="3" class="muted">Cistern dry.</td></tr>`)
 	} else {
-		for _, d := range snapshot.Drops {
-			step := d.Valve
+		for _, d := range snapshot.Droplets {
+			step := d.Stage
 			if step == "" {
 				step = "-"
 			}
@@ -526,13 +526,13 @@ h1,h2{margin:0 0 10px}h1{font-size:20px}h2{font-size:15px;color:#9db1db}
 	}
 	sb.WriteString(`</tbody></table></div>`)
 
-	sb.WriteString(`<div class="card"><h2>Recent Flow</h2><table><thead><tr><th>Time</th><th>Drop</th><th>Event</th></tr></thead><tbody>`)
+	sb.WriteString(`<div class="card"><h2>Recent Flow</h2><table><thead><tr><th>Time</th><th>Droplet</th><th>Event</th></tr></thead><tbody>`)
 	if len(snapshot.RecentEvents) == 0 {
 		sb.WriteString(`<tr><td colspan="3" class="muted">No recent flow.</td></tr>`)
 	} else {
 		for _, evt := range snapshot.RecentEvents {
 			sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-				html.EscapeString(evt.Time.Format("15:04")), html.EscapeString(evt.Drop), html.EscapeString(evt.Event)))
+				html.EscapeString(evt.Time.Format("15:04")), html.EscapeString(evt.Droplet), html.EscapeString(evt.Event)))
 		}
 	}
 	sb.WriteString(`</tbody></table></div></div>`)
