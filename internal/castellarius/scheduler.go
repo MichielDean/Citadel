@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -48,23 +50,32 @@ type CataractaRequest struct {
 	RepoConfig aqueduct.RepoConfig
 	WorkerName string
 	Notes      []cistern.CataractaNote // context from previous steps
+
+	// ReattachSession instructs the runner to monitor an already-running tmux
+	// session rather than killing and respawning it. Set by the heartbeat when
+	// re-adopting a live session after a Castellarius restart.
+	// Only effective for full_codebase context steps.
+	ReattachSession bool
 }
 
 // Castellarius is the core loop that polls for work, assigns it to operators,
 // and routes outcomes through workflow cataractae.
-// and routes outcomes through workflow cataractae.
 type Castellarius struct {
-	config          aqueduct.AqueductConfig
-	workflows       map[string]*aqueduct.Workflow
-	clients         map[string]CisternClient
-	pools           map[string]*WorkerPool
-	runner          CataractaRunner
-	logger          *slog.Logger
-	pollInterval    time.Duration
-	sandboxRoot     string
-	cleanupInterval time.Duration
-	dbPath          string
-	wasDrought         bool
+	config            aqueduct.AqueductConfig
+	workflows         map[string]*aqueduct.Workflow
+	clients           map[string]CisternClient
+	pools             map[string]*WorkerPool
+	runner            CataractaRunner
+	logger            *slog.Logger
+	pollInterval      time.Duration
+	// heartbeatInterval controls how often orphaned in-progress droplets are
+	// checked. Independent of pollInterval so it fires even when the main tick
+	// is busy. Defaults to 30s.
+	heartbeatInterval time.Duration
+	sandboxRoot       string
+	cleanupInterval   time.Duration
+	dbPath            string
+	wasDrought        bool
 }
 
 // Option configures a flow.
@@ -90,14 +101,15 @@ func WithSandboxRoot(root string) Option {
 // Each repo gets its own cistern.Client scoped by prefix.
 func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaRunner, opts ...Option) (*Castellarius, error) {
 	s := &Castellarius{
-		config:       config,
-		workflows:    make(map[string]*aqueduct.Workflow),
-		clients:      make(map[string]CisternClient),
-		pools:        make(map[string]*WorkerPool),
-		runner:       runner,
-		logger:       slog.Default(),
-		pollInterval: 10 * time.Second,
-		dbPath:       dbPath,
+		config:            config,
+		workflows:         make(map[string]*aqueduct.Workflow),
+		clients:           make(map[string]CisternClient),
+		pools:             make(map[string]*WorkerPool),
+		runner:            runner,
+		logger:            slog.Default(),
+		pollInterval:      10 * time.Second,
+		heartbeatInterval: 30 * time.Second,
+		dbPath:            dbPath,
 	}
 	for _, o := range opts {
 		o(s)
@@ -119,6 +131,14 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaRunner, 
 		s.cleanupInterval = d
 	} else {
 		s.cleanupInterval = 24 * time.Hour
+	}
+
+	if config.HeartbeatInterval != "" {
+		d, err := time.ParseDuration(config.HeartbeatInterval)
+		if err != nil {
+			return nil, fmt.Errorf("castellarius: invalid heartbeat_interval %q: %w", config.HeartbeatInterval, err)
+		}
+		s.heartbeatInterval = d
 	}
 
 	for _, repo := range config.Repos {
@@ -153,13 +173,14 @@ func NewFromParts(
 	opts ...Option,
 ) *Castellarius {
 	s := &Castellarius{
-		config:       config,
-		workflows:    workflows,
-		clients:      clients,
-		pools:        make(map[string]*WorkerPool),
-		runner:       runner,
-		logger:       slog.Default(),
-		pollInterval: 10 * time.Second,
+		config:            config,
+		workflows:         workflows,
+		clients:           clients,
+		pools:             make(map[string]*WorkerPool),
+		runner:            runner,
+		logger:            slog.Default(),
+		pollInterval:      10 * time.Second,
+		heartbeatInterval: 30 * time.Second,
 	}
 	for _, o := range opts {
 		o(s)
@@ -211,6 +232,39 @@ func (s *Castellarius) Run(ctx context.Context) error {
 		}()
 	}
 
+	// Heartbeat goroutine — runs independently of the main poll loop.
+	// It scans for orphaned in-progress droplets (sessions that died or whose
+	// monitoring goroutine exited without advancing the droplet) and either
+	// re-adopts live sessions or resets stalled ones back to open.
+	//
+	// Designed for maximum reliability:
+	//   • Separate ticker so a slow main tick never delays the heartbeat.
+	//   • Panic recovery ensures a misbehaving handler never crashes the process.
+	//   • The goroutine exits cleanly when ctx is cancelled.
+	go func() {
+		hbTicker := time.NewTicker(s.heartbeatInterval)
+		defer hbTicker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hbTicker.C:
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							stack := debug.Stack()
+							s.logger.Error("heartbeat: panic recovered",
+								"panic", r,
+								"stack", string(stack),
+							)
+						}
+					}()
+					s.heartbeatInProgress(ctx)
+				}()
+			}
+		}
+	}()
+
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 
@@ -255,6 +309,16 @@ func (s *Castellarius) Tick(ctx context.Context) {
 }
 
 func (s *Castellarius) tick(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			s.logger.Error("tick: panic recovered",
+				"panic", r,
+				"stack", string(stack),
+			)
+		}
+	}()
+
 	for _, repo := range s.config.Repos {
 		if err := ctx.Err(); err != nil {
 			return
@@ -523,9 +587,18 @@ func (s *Castellarius) handleTerminal(client CisternClient, itemID, terminal, fr
 }
 
 // recoverInProgress recovers items left in_progress after a restart.
-// For each in_progress item, it checks for an outcome.json in the worker
-// sandbox directory. If found, the outcome is processed and the item is
-// advanced. If not found, the item is reset to open at its current step.
+// For each in_progress item it first checks for a leftover outcome.json and
+// processes it if found.  When there is no outcome it inspects the tmux session:
+//
+//   - Session alive → the process was restarted while Claude was still running.
+//     Reset to open so the heartbeat can re-adopt the live session on its next
+//     beat, or the main tick can re-queue it after the session finishes.
+//   - Session dead  → reset to open so the main tick re-queues the step.
+//
+// In all "no outcome" cases the item is reset to open. The distinction between
+// alive and dead sessions is logged for observability but the action is the same
+// because RunStep's spawn() will kill any stale session before starting fresh,
+// and feature branches preserve incremental implement work across restarts.
 func (s *Castellarius) recoverInProgress() {
 	for _, repo := range s.config.Repos {
 		client := s.clients[repo.Name]
@@ -541,6 +614,14 @@ func (s *Castellarius) recoverInProgress() {
 			step := currentCataracta(item, wf)
 			if step == nil {
 				s.logger.Warn("recovery: no step found", "repo", repo.Name, "droplet", item.ID, "cataracta", item.CurrentCataracta)
+				// Reset to open at first step so it can be re-queued.
+				cataracta := item.CurrentCataracta
+				if cataracta == "" && len(wf.Cataractae) > 0 {
+					cataracta = wf.Cataractae[0].Name
+				}
+				if err := client.Assign(item.ID, "", cataracta); err != nil {
+					s.logger.Error("recovery: reset (no step) failed", "droplet", item.ID, "error", err)
+				}
 				continue
 			}
 
@@ -548,55 +629,262 @@ func (s *Castellarius) recoverInProgress() {
 			sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, item.Assignee)
 			outcomePath := filepath.Join(sandboxDir, "outcome.json")
 
-			outcome, err := ReadOutcome(outcomePath)
-			if err != nil {
-				// No outcome found — reset item to open at current step for retry.
-				s.logger.Info("recovery: resetting to open",
+			if outcome, err := ReadOutcome(outcomePath); err == nil {
+				s.logger.Info("recovery: processing leftover outcome",
+					"repo", repo.Name,
+					"droplet", item.ID,
+					"cataracta", item.CurrentCataracta,
+					"result", outcome.Result,
+				)
+				s.processDropletOutcome(client, wf, item, step, outcome, "recovery")
+				continue
+			}
+
+			// No outcome.json. Log whether the session is still alive so operators
+			// are aware, then unconditionally reset to open for re-processing.
+			sessionID := repo.Name + "-" + item.Assignee
+			if item.Assignee != "" && isTmuxAlive(sessionID) {
+				s.logger.Info("recovery: live session found — resetting to open (heartbeat will re-adopt)",
+					"repo", repo.Name,
+					"droplet", item.ID,
+					"session", sessionID,
+					"cataracta", item.CurrentCataracta,
+				)
+			} else {
+				s.logger.Info("recovery: dead session — resetting to open",
 					"repo", repo.Name,
 					"droplet", item.ID,
 					"cataracta", item.CurrentCataracta,
 				)
-				if err := client.Assign(item.ID, "", item.CurrentCataracta); err != nil {
-					s.logger.Error("recovery: reset failed", "droplet", item.ID, "error", err)
-				}
-				continue
 			}
 
-			s.logger.Info("recovery: processing leftover outcome",
-				"repo", repo.Name,
-				"droplet", item.ID,
-				"cataracta", item.CurrentCataracta,
-				"result", outcome.Result,
-			)
-
-			// Attach notes from the recovered outcome.
-			if outcome.Notes != "" {
-				if err := client.AddNote(item.ID, step.Name, outcome.Notes); err != nil {
-					s.logger.Error("recovery: add note failed", "droplet", item.ID, "error", err)
-				}
-			}
-
-			// Route to next step.
-			next := route(*step, outcome.Result)
-			if next == "" {
-				reason := fmt.Sprintf("recovery: no route from step %q for result %q", step.Name, outcome.Result)
-				s.logger.Warn("recovery: no route", "droplet", item.ID)
-				if err := client.Escalate(item.ID, reason); err != nil {
-					s.logger.Error("recovery: escalate failed", "droplet", item.ID, "error", err)
-				}
-				continue
-			}
-
-			if isTerminal(next) {
-				s.handleTerminal(client, item.ID, next, step.Name)
-				continue
-			}
-
-			if err := client.Assign(item.ID, "", next); err != nil {
-				s.logger.Error("recovery: advance failed", "droplet", item.ID, "next", next, "error", err)
+			if err := client.Assign(item.ID, "", item.CurrentCataracta); err != nil {
+				s.logger.Error("recovery: reset failed", "droplet", item.ID, "error", err)
 			}
 		}
 	}
+}
+
+// heartbeatInProgress scans every repo for in_progress droplets that are
+// orphaned — i.e. their assigned worker is not currently managing them in
+// memory. This catches items left behind by abnormal goroutine exits or by a
+// process restart that ran recoverInProgress and reset items to open, then
+// another tick assigned new open items to those same workers before the
+// orphaned items were noticed.
+//
+// For each orphaned droplet:
+//  1. If outcome.json exists in the sandbox → process it and advance.
+//  2. If a tmux session is alive → re-adopt: mark the worker busy and spawn a
+//     monitoring goroutine with ReattachSession=true so the session is not
+//     killed needlessly.
+//  3. Otherwise → reset to open so the main tick re-queues the step.
+func (s *Castellarius) heartbeatInProgress(ctx context.Context) {
+	for _, repo := range s.config.Repos {
+		if ctx.Err() != nil {
+			return
+		}
+		s.heartbeatRepo(ctx, repo)
+	}
+}
+
+func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConfig) {
+	client := s.clients[repo.Name]
+	wf := s.workflows[repo.Name]
+	pool := s.pools[repo.Name]
+
+	items, err := client.List(repo.Name, "in_progress")
+	if err != nil {
+		s.logger.Error("heartbeat: list in_progress failed", "repo", repo.Name, "error", err)
+		return
+	}
+
+	for _, item := range items {
+		if ctx.Err() != nil {
+			return
+		}
+
+		// A valid in-memory pool entry means a goroutine owns this item — skip it.
+		if item.Assignee != "" && pool.IsWorkerBusy(item.Assignee) {
+			continue
+		}
+
+		s.logger.Info("heartbeat: orphaned droplet detected",
+			"repo", repo.Name,
+			"droplet", item.ID,
+			"cataracta", item.CurrentCataracta,
+			"assignee", item.Assignee,
+		)
+
+		step := currentCataracta(item, wf)
+		if step == nil {
+			// Unknown step — reset to first step.
+			cataracta := item.CurrentCataracta
+			if cataracta == "" && len(wf.Cataractae) > 0 {
+				cataracta = wf.Cataractae[0].Name
+			}
+			s.logger.Warn("heartbeat: orphaned droplet has unknown step, resetting",
+				"droplet", item.ID, "cataracta", item.CurrentCataracta)
+			if err := client.Assign(item.ID, "", cataracta); err != nil {
+				s.logger.Error("heartbeat: reset (unknown step) failed", "droplet", item.ID, "error", err)
+			}
+			continue
+		}
+
+		// 1. Check for a leftover outcome.json in the sandbox.
+		sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, item.Assignee)
+		if outcome, err := ReadOutcome(filepath.Join(sandboxDir, "outcome.json")); err == nil {
+			s.logger.Info("heartbeat: found orphaned outcome, processing",
+				"droplet", item.ID, "result", outcome.Result)
+			s.processDropletOutcome(client, wf, item, step, outcome, "heartbeat")
+			continue
+		}
+
+		// 2. Check if the tmux session is still alive. If so, re-adopt it without
+		//    killing the current Claude process.
+		sessionID := repo.Name + "-" + item.Assignee
+		if item.Assignee != "" && isTmuxAlive(sessionID) {
+			worker := pool.FindAndClaimWorkerByName(item.Assignee)
+			if worker != nil {
+				s.logger.Info("heartbeat: re-adopting live session",
+					"droplet", item.ID, "session", sessionID)
+				pool.Assign(worker, item.ID, step.Name)
+				go s.runStepReattach(ctx, worker, pool, item, *step, repo)
+				continue
+			}
+			// Worker was claimed by the main tick between our check and claim — fall
+			// through to reset so the item doesn't stay in_progress indefinitely.
+		}
+
+		// 3. Session dead, no outcome — reset to open for re-processing.
+		s.logger.Info("heartbeat: resetting stalled droplet to open",
+			"repo", repo.Name, "droplet", item.ID, "cataracta", item.CurrentCataracta)
+		if err := client.Assign(item.ID, "", item.CurrentCataracta); err != nil {
+			s.logger.Error("heartbeat: reset failed", "droplet", item.ID, "error", err)
+		}
+	}
+}
+
+// processDropletOutcome applies a recovered or heartbeat-detected outcome to
+// an in_progress droplet, attaches notes, routes to next step, and handles
+// terminal states. The source string is used only for log context.
+func (s *Castellarius) processDropletOutcome(
+	client CisternClient,
+	wf *aqueduct.Workflow,
+	item *cistern.Droplet,
+	step *aqueduct.WorkflowCataracta,
+	outcome *Outcome,
+	source string,
+) {
+	if outcome.Notes != "" {
+		if err := client.AddNote(item.ID, step.Name, outcome.Notes); err != nil {
+			s.logger.Error(source+": add note failed", "droplet", item.ID, "error", err)
+		}
+	}
+	for _, mn := range outcome.MetaNotes {
+		if err := client.AddNote(item.ID, step.Name, mn); err != nil {
+			s.logger.Error(source+": add meta note failed", "droplet", item.ID, "error", err)
+		}
+	}
+
+	next := route(*step, outcome.Result)
+	if next == "" {
+		reason := fmt.Sprintf("%s: no route from step %q for result %q", source, step.Name, outcome.Result)
+		s.logger.Warn(source+": no route", "droplet", item.ID)
+		if err := client.Escalate(item.ID, reason); err != nil {
+			s.logger.Error(source+": escalate failed", "droplet", item.ID, "error", err)
+		}
+		return
+	}
+
+	skipSteps := wf.SkipCataractaeForLevel(item.Complexity)
+	next = advanceSkippedCataractae(next, wf, skipSteps)
+
+	if wf.Complexity.RequireHumanForLevel(item.Complexity) && next == "merge" {
+		next = "human"
+	}
+
+	if isTerminal(next) {
+		s.handleTerminal(client, item.ID, next, step.Name)
+		return
+	}
+
+	if err := client.Assign(item.ID, "", next); err != nil {
+		s.logger.Error(source+": advance failed", "droplet", item.ID, "next", next, "error", err)
+	}
+}
+
+// runStepReattach is identical to runStep but sets ReattachSession=true on the
+// CataractaRequest so the runner monitors an existing tmux session rather than
+// killing and respawning it. Used exclusively by the heartbeat re-adopt path.
+func (s *Castellarius) runStepReattach(
+	ctx context.Context,
+	worker *Worker,
+	pool *WorkerPool,
+	item *cistern.Droplet,
+	step aqueduct.WorkflowCataracta,
+	repo aqueduct.RepoConfig,
+) {
+	defer pool.Release(worker)
+
+	client := s.clients[repo.Name]
+	wf := s.workflows[repo.Name]
+
+	s.logger.Info("Heartbeat re-adopting session",
+		"droplet", item.ID,
+		"operator", worker.Name,
+		"cataracta", step.Name,
+	)
+
+	notes, err := client.GetNotes(item.ID)
+	if err != nil {
+		s.logger.Error("re-adopt: get notes failed", "droplet", item.ID, "error", err)
+		notes = nil
+	}
+
+	req := CataractaRequest{
+		Item:            item,
+		Step:            step,
+		Workflow:        wf,
+		RepoConfig:      repo,
+		WorkerName:      worker.Name,
+		Notes:           notes,
+		ReattachSession: true,
+	}
+
+	stepCtx := ctx
+	if step.TimeoutMinutes > 0 {
+		var cancel context.CancelFunc
+		stepCtx, cancel = context.WithTimeout(ctx, time.Duration(step.TimeoutMinutes)*time.Minute)
+		defer cancel()
+	}
+
+	outcome, err := s.runner.Run(stepCtx, req)
+	if err != nil {
+		// Re-adopt failed (e.g. session died immediately, wrong context type).
+		// Reset so the main tick requeues.
+		s.logger.Error("re-adopt: run failed, resetting to open",
+			"droplet", item.ID, "cataracta", step.Name, "error", err)
+		if err := client.Assign(item.ID, "", item.CurrentCataracta); err != nil {
+			s.logger.Error("re-adopt: reset failed", "droplet", item.ID, "error", err)
+		}
+		return
+	}
+
+	switch outcome.Result {
+	case ResultPass:
+		s.logger.Info("Re-adopted droplet cleared cataracta", "droplet", item.ID, "cataracta", step.Name)
+	case ResultRecirculate:
+		s.logger.Info("Re-adopted droplet recirculated", "droplet", item.ID, "cataracta", step.Name)
+	case ResultFail:
+		s.logger.Info("Re-adopted droplet stagnant", "droplet", item.ID, "cataracta", step.Name)
+	}
+
+	s.processDropletOutcome(client, wf, item, &step, outcome, "re-adopt")
+}
+
+// isTmuxAlive returns true if a tmux session with the given name is running.
+func isTmuxAlive(sessionID string) bool {
+	return exec.Command("tmux", "has-session", "-t", sessionID).Run() == nil
 }
 
 // WriteContext writes a CONTEXT.md file with notes from previous steps.

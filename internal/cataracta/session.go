@@ -32,6 +32,12 @@ type Session struct {
 
 	// HandoffThreshold is the token count at which to trigger session handoff.
 	HandoffThreshold int
+
+	// SkipSpawn instructs Run to skip spawning a new tmux session and instead
+	// monitor an already-running session. Use this when re-adopting a session
+	// that survived a Castellarius restart. If the session is dead when Run is
+	// called with SkipSpawn=true, it returns a fail outcome immediately.
+	SkipSpawn bool
 }
 
 const (
@@ -42,17 +48,31 @@ const (
 
 // Run spawns a Claude Code session in tmux, polls for outcome.json, and returns
 // the parsed outcome. Handles session handoff when the token limit approaches.
+// When SkipSpawn is true the session is expected to already be running; Run
+// begins polling immediately and returns a fail outcome if the session is dead.
 func (s *Session) Run() (*Outcome, error) {
 	timeout := time.Duration(s.TimeoutMinutes) * time.Minute
 	if timeout == 0 {
 		timeout = 60 * time.Minute
 	}
 
-	// Remove stale outcome file from previous runs.
-	os.Remove(filepath.Join(s.WorkDir, outcomeFile))
+	if s.SkipSpawn {
+		// Re-adopting an existing session — verify it is actually alive before
+		// committing to watch. If dead, report failure so the caller can reset.
+		if !s.isAlive() {
+			return &Outcome{
+				Result: "fail",
+				Notes:  "re-adopt: session not found, treated as failed",
+			}, nil
+		}
+		log.Printf("session %s: re-adopted (skip spawn), watching for outcome", s.ID)
+	} else {
+		// Remove stale outcome file from previous runs.
+		os.Remove(filepath.Join(s.WorkDir, outcomeFile))
 
-	if err := s.spawn(); err != nil {
-		return nil, err
+		if err := s.spawn(); err != nil {
+			return nil, err
+		}
 	}
 
 	deadline := time.Now().Add(timeout)

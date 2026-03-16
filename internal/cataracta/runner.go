@@ -234,6 +234,31 @@ func (r *Runner) CataractaByName(name string) *aqueduct.WorkflowCataracta {
 	return nil
 }
 
+// WatchStep re-adopts an existing tmux session for the given worker and step
+// without killing and respawning it. It is used by the heartbeat to monitor
+// sessions that survived a Castellarius restart.
+//
+// Only full_codebase steps have a stable workdir (the sandbox dir itself).
+// For diff_only / spec_only steps the context tmpdir may no longer exist, so
+// this method returns an error and the caller should reset the droplet to open.
+func (r *Runner) WatchStep(w *Worker, item *cistern.Droplet, step *aqueduct.WorkflowCataracta) (*Outcome, error) {
+	if step.Context == aqueduct.ContextDiffOnly || step.Context == aqueduct.ContextSpecOnly {
+		return nil, fmt.Errorf("WatchStep: cannot re-adopt %q context step (tmpdir may be gone)", step.Context)
+	}
+
+	sess := &Session{
+		ID:             w.SessionID,
+		WorkDir:        w.SandboxDir,
+		TimeoutMinutes: step.TimeoutMinutes,
+		SkipSpawn:      true,
+	}
+	outcome, err := sess.Run()
+	if err != nil {
+		return nil, err
+	}
+	return outcome, nil
+}
+
 // Workers returns the worker pool (read-only snapshot).
 func (r *Runner) Workers() []Worker {
 	r.mu.Lock()

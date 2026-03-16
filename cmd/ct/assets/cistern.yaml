@@ -27,13 +27,20 @@ repos:
 max_cataractae: 4
 handoff_token_threshold: 100000
 
+# heartbeat_interval controls how often the Castellarius scans for orphaned or
+# stalled in-progress sessions and resets / re-adopts them. Accepts Go duration
+# strings. Shorter values make recovery faster; longer values reduce overhead.
+# Default: 30s
+heartbeat_interval: 30s
+
 # Drought protocols — run automatically when the Cistern is idle
 drought_hooks:
   - name: sync-cataractae
-    action: cataractae_generate  # Regenerate role files when workflow YAML is newer
+    action: cataractae_generate # Regenerate role files when workflow YAML is newer
 
   - name: prune-worktrees
-    action: worktree_prune  # Prune stale aqueduct registrations
+    action: worktree_prune # Prune stale aqueduct registrations
+
 
   # - name: vacuum-db
   #   action: db_vacuum     # Compact the cistern database

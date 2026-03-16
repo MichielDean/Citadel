@@ -318,19 +318,6 @@ func parseDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
-// --- hidden "queue" alias (deprecated) ---
-
-var queueAliasCmd = &cobra.Command{
-	Use:                "queue",
-	Hidden:             true,
-	Short:              "Deprecated: use 'ct cistern'",
-	DisableFlagParsing: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Fprintln(os.Stderr, "Cistern speaks water now. Use 'ct cistern' instead of 'ct queue'.")
-		return nil
-	},
-}
-
 func init() {
 	dropletAddCmd.Flags().StringVar(&addTitle, "title", "", "droplet title (required)")
 	dropletAddCmd.Flags().StringVar(&addDescription, "description", "", "droplet description")
@@ -350,9 +337,6 @@ func init() {
 	dropletCmd.AddCommand(dropletAddCmd, dropletListCmd, dropletShowCmd, dropletNoteCmd,
 		dropletCloseCmd, dropletReopenCmd, dropletEscalateCmd, dropletPurgeCmd)
 	rootCmd.AddCommand(dropletCmd)
-
-	// Hidden "queue" alias — prints deprecation message for any usage.
-	rootCmd.AddCommand(queueAliasCmd)
 }
 
 // parseComplexity accepts "1"-"4" or names "trivial","standard","full","critical".
