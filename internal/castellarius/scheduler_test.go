@@ -889,13 +889,28 @@ func TestDefaultWorkerNames(t *testing.T) {
 	if len(names) != 3 {
 		t.Fatalf("expected 3 names, got %d", len(names))
 	}
-	if names[0] != "worker-0" {
-		t.Errorf("expected 'worker-0', got %q", names[0])
+	// First three names should be Roman aqueducts
+	if names[0] != "virgo" {
+		t.Errorf("expected 'virgo', got %q", names[0])
+	}
+	if names[1] != "marcia" {
+		t.Errorf("expected 'marcia', got %q", names[1])
+	}
+	if names[2] != "claudia" {
+		t.Errorf("expected 'claudia', got %q", names[2])
 	}
 
+	// n=0 should return at least 1
 	names = defaultWorkerNames(0)
 	if len(names) != 1 {
 		t.Errorf("expected 1 name for n=0, got %d", len(names))
+	}
+
+	// Beyond pool size falls back to operator-N
+	names = defaultWorkerNames(len(romanAqueducts) + 1)
+	last := names[len(names)-1]
+	if last != fmt.Sprintf("operator-%d", len(romanAqueducts)) {
+		t.Errorf("expected fallback name, got %q", last)
 	}
 }
 
