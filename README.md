@@ -18,7 +18,6 @@ Cistern is an agentic workflow orchestrator built around a water metaphor. Dropl
 | **Recirculate** | Send a droplet back to a previous cataracta for further processing — revision from reviewer or QA. |
 | **Delivered** | A droplet that made it: PR merged, delivered. |
 | **Stagnant** | A droplet that can't flow without human intervention. |
-||
 
 ![Cistern](Cistern.png)
 
