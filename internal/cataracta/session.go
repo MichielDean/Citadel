@@ -112,7 +112,13 @@ func (s *Session) Run() (*Outcome, error) {
 
 		// Check if tmux session is still alive.
 		if !s.isAlive() {
-			// Session died without writing outcome — treat as failure.
+			// Session died — do one final outcome check before declaring failure.
+			// There is a race between the agent writing outcome.json and the tmux
+			// session window closing; we must not miss an outcome written in the
+			// last moments of the session.
+			if outcome, err := s.checkOutcome(); err == nil && outcome != nil {
+				return outcome, nil
+			}
 			return &Outcome{
 				Result: "fail",
 				Notes:  "session exited without writing outcome.json",
