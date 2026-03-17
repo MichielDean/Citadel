@@ -273,7 +273,11 @@ cataractae:
     identity: implementer
     model: sonnet
     context: full_codebase
-    skills: []
+    skills:
+      - name: cistern-droplet-state
+        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+      - name: git-commit-best-practices
+        url: https://raw.githubusercontent.com/getsentry/skills/main/plugins/sentry-skills/skills/commit/SKILL.md
     timeout_minutes: 30
     on_pass: adversarial-review
     on_fail: blocked
@@ -284,9 +288,31 @@ cataractae:
     identity: reviewer
     model: sonnet
     context: diff_only
-    skills: []
+    skills:
+      - name: cistern-droplet-state
+        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+      - name: differential-review
+        url: https://raw.githubusercontent.com/trailofbits/skills/main/plugins/differential-review/skills/differential-review/SKILL.md
     timeout_minutes: 15
     skip_for: [1] # trivial droplets skip this cataracta
+    on_pass: security-review
+    on_fail: implement
+    on_recirculate: implement
+    on_escalate: human
+
+  - name: security-review
+    type: agent
+    identity: security
+    model: sonnet
+    context: diff_only
+    skills:
+      - name: cistern-droplet-state
+        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+      - name: insecure-defaults
+        url: https://raw.githubusercontent.com/trailofbits/skills/main/plugins/insecure-defaults/skills/insecure-defaults/SKILL.md
+      - name: sharp-edges
+        url: https://raw.githubusercontent.com/trailofbits/skills/main/plugins/sharp-edges/skills/sharp-edges/SKILL.md
+    timeout_minutes: 15
     on_pass: qa
     on_fail: implement
     on_recirculate: implement
@@ -297,7 +323,11 @@ cataractae:
     identity: qa
     model: sonnet
     context: full_codebase
-    skills: []
+    skills:
+      - name: cistern-droplet-state
+        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+      - name: find-bugs
+        url: https://raw.githubusercontent.com/getsentry/skills/main/plugins/sentry-skills/skills/find-bugs/SKILL.md
     timeout_minutes: 20
     skip_for: [1, 2] # trivial and standard droplets skip this cataracta
     on_pass: pr-create
