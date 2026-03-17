@@ -94,6 +94,22 @@ func TestForceUpdate_PathTraversal(t *testing.T) {
 	}
 }
 
+func TestInstall_DownloadExceedsMaxSize(t *testing.T) {
+	// Serve a body larger than the 1 MiB cap; Install must return an error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, maxSkillSize+1)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	err := Install("oversized-skill", srv.URL+"/SKILL.md")
+	if err == nil {
+		t.Fatal("expected error for response exceeding max size, got nil")
+	}
+}
+
 func TestInstall_ForceUpdate(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
