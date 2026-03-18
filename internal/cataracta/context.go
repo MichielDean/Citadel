@@ -127,21 +127,6 @@ func writeContextFile(path string, p ContextParams) error {
 
 	b.WriteString("# Context\n\n")
 
-	// Surface revision notes at the very top when this is a recirculation.
-	// Agents anchor to the first thing they read — fixes must be unmissable.
-	revisionNotes := revisionCycleNotes(p.Notes)
-	if len(revisionNotes) > 0 {
-		b.WriteString("## ⚠️ REVISION REQUIRED — Fix these issues before anything else\n\n")
-		b.WriteString("This droplet was recirculated. The following issues were found and **must** be fixed.\n")
-		b.WriteString("Do not proceed to implementation until you have read and understood each issue.\n\n")
-		for i, n := range revisionNotes {
-			b.WriteString(fmt.Sprintf("### Issue %d (from: %s)\n\n", i+1, n.CataractaName))
-			b.WriteString(n.Content)
-			b.WriteString("\n\n")
-		}
-		b.WriteString("---\n\n")
-	}
-
 	b.WriteString(fmt.Sprintf("## Item: %s\n\n", p.Item.ID))
 	b.WriteString(fmt.Sprintf("**Title:** %s\n", p.Item.Title))
 	b.WriteString(fmt.Sprintf("**Status:** %s\n", p.Item.Status))
@@ -168,9 +153,45 @@ func writeContextFile(path string, p ContextParams) error {
 
 	b.WriteString("\n")
 
-	// Show only the last 4 notes — long histories poison LLM context by repeating
-	// the same bug pattern, causing reviewers to hallucinate the old issue even
-	// after it has been fixed.
+	isReviewer := isReviewerCataracta(p.Step)
+	revisionNotes := revisionCycleNotes(p.Notes)
+
+	if isReviewer && len(revisionNotes) > 0 {
+		// Reviewer with prior issues: two-phase structure.
+		// Phase 1 is evidence-based verification — no opinions, just grep/test results.
+		// Phase 2 is a clean fresh review of the diff for new issues.
+		b.WriteString("## ⚠️ TWO-PHASE REVIEW — Read carefully before doing anything\n\n")
+		b.WriteString("This droplet was recirculated after a prior review. You have TWO distinct jobs:\n\n")
+		b.WriteString("### Phase 1 — Verify prior issues are resolved\n\n")
+		b.WriteString("For EACH issue below, run the exact check (grep, test, cat) and output:\n")
+		b.WriteString("- `RESOLVED: <evidence>` — paste the command and output proving it is fixed\n")
+		b.WriteString("- `UNRESOLVED: <evidence>` — paste the command and output proving it is still present\n\n")
+		b.WriteString("No opinions. No pattern-matching from memory. Run the command. Paste the output.\n")
+		b.WriteString("If you cannot verify with a command, state what you checked and what you found.\n\n")
+		for i, n := range revisionNotes {
+			b.WriteString(fmt.Sprintf("#### Prior Issue %d (flagged by: %s)\n\n", i+1, n.CataractaName))
+			b.WriteString(n.Content)
+			b.WriteString("\n\n")
+		}
+		b.WriteString("### Phase 2 — Fresh review of new changes\n\n")
+		b.WriteString("After completing Phase 1, do a full adversarial review of the diff for NEW issues.\n")
+		b.WriteString("Do NOT re-examine issues from Phase 1 — they are already handled.\n")
+		b.WriteString("Treat this as a clean review of a fresh diff.\n\n")
+		b.WriteString("---\n\n")
+	} else if !isReviewer && len(revisionNotes) > 0 {
+		// Implementer/QA with prior issues: surface fixes at the top.
+		b.WriteString("## ⚠️ REVISION REQUIRED — Fix these issues before anything else\n\n")
+		b.WriteString("This droplet was recirculated. The following issues were found and **must** be fixed.\n")
+		b.WriteString("Do not proceed to implementation until you have read and understood each issue.\n\n")
+		for i, n := range revisionNotes {
+			b.WriteString(fmt.Sprintf("### Issue %d (from: %s)\n\n", i+1, n.CataractaName))
+			b.WriteString(n.Content)
+			b.WriteString("\n\n")
+		}
+		b.WriteString("---\n\n")
+	}
+
+	// Always show the last 4 notes as background context (capped to prevent anchoring hallucination).
 	if len(p.Notes) > 0 {
 		recent := p.Notes
 		if len(recent) > 4 {
@@ -288,4 +309,17 @@ func revisionCycleNotes(notes []cistern.CataractaNote) []cistern.CataractaNote {
 		}
 	}
 	return filtered
+}
+
+// isReviewerCataracta returns true if the step is a review or QA cataracta —
+// i.e. one that should use the two-phase verification protocol.
+func isReviewerCataracta(step *aqueduct.WorkflowCataracta) bool {
+	if step == nil {
+		return false
+	}
+	name := strings.ToLower(step.Name)
+	identity := strings.ToLower(step.Identity)
+	return strings.Contains(name, "review") || strings.Contains(name, "qa") ||
+		strings.Contains(identity, "review") || strings.Contains(identity, "qa") ||
+		strings.Contains(name, "security") || strings.Contains(identity, "security")
 }
