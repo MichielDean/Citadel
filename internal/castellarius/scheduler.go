@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 )
 
 // CisternClient is the interface for interacting with the work cistern.
@@ -371,9 +371,13 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 
 		step := currentCataracta(item, wf)
 
-		// Release the worker before routing so it can accept new work in dispatchRepo.
+		// Park the worktree (detach HEAD) before releasing the worker, so the
+		// feature branch is free for any aqueduct to check out on the next step.
+		// This is the fix for "already used by worktree" errors between cataractae.
 		if item.Assignee != "" {
 			if w := pool.FindByName(item.Assignee); w != nil {
+				sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, w.Name)
+				parkWorktree(sandboxDir)
 				pool.Release(w)
 			}
 		}
@@ -763,4 +767,14 @@ func WriteContext(dir string, notes []cistern.CataractaNote) error {
 	}
 
 	return os.WriteFile(filepath.Join(dir, "CONTEXT.md"), b, 0o644)
+}
+
+// parkWorktree detaches HEAD in a worker's sandbox so the feature branch is
+// not held by any worktree between steps. This allows any aqueduct to check
+// out the same branch on the next cataracta without a "already used by worktree" error.
+// Inlined here to avoid an import cycle with the cataracta package.
+func parkWorktree(dir string) {
+	cmd := exec.Command("git", "checkout", "--detach", "HEAD")
+	cmd.Dir = dir
+	_ = cmd.Run() // best-effort; failure means next checkout may conflict
 }
