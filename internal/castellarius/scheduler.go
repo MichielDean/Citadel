@@ -25,6 +25,8 @@ import (
 // *cistern.Client satisfies this interface.
 type CisternClient interface {
 	GetReady(repo string) (*cistern.Droplet, error)
+	GetReadyForAqueduct(repo, aqueductName string) (*cistern.Droplet, error)
+	SetAssignedAqueduct(id, aqueductName string) error
 	Assign(id, worker, step string) error
 
 	AddNote(id, step, content string) error
@@ -377,13 +379,10 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 
 		step := currentCataracta(item, wf)
 
-		// Park the worktree (detach HEAD) before releasing the worker, so the
-		// feature branch is free for any aqueduct to check out on the next step.
-		// This is the fix for "already used by worktree" errors between cataractae.
+		// Release the aqueduct so it can pick up its next droplet.
+		// With dedicated clones (no worktrees), no HEAD parking is needed.
 		if item.Assignee != "" {
 			if w := pool.FindByName(item.Assignee); w != nil {
-				sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, w.Name)
-				parkWorktree(sandboxDir)
 				pool.Release(w)
 			}
 		}
@@ -469,18 +468,29 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 			return
 		}
 
-		item, err := client.GetReady(repo.Name)
+		// Sticky dispatch: only pick up droplets that are either unassigned or
+		// already assigned to this aqueduct. This ensures a droplet never moves
+		// between aqueducts once it enters one.
+		item, err := client.GetReadyForAqueduct(repo.Name, worker.Name)
 		if err != nil {
 			s.logger.Error("poll failed", "repo", repo.Name, "error", err)
+			pool.Release(worker)
 			return
 		}
 		if item == nil {
+			pool.Release(worker)
 			return
+		}
+
+		// Pin the aqueduct on first dispatch (no-op if already set).
+		if err := client.SetAssignedAqueduct(item.ID, worker.Name); err != nil {
+			s.logger.Error("set assigned_aqueduct failed", "droplet", item.ID, "error", err)
 		}
 
 		step := currentCataracta(item, wf)
 		if step == nil {
 			s.logger.Error("no step found", "repo", repo.Name, "droplet", item.ID)
+			pool.Release(worker)
 			return
 		}
 
@@ -522,11 +532,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 					"cataracta", req.Step.Name,
 					"error", err,
 				)
-				// Detach HEAD before releasing so the branch isn't left locked
-				// in this sandbox, which would block any other aqueduct from
-				// checking out the same branch on retry.
-				parkWorktree(filepath.Join(s.sandboxRoot, repo.Name, w.Name))
-				// Reset to open so the item can be re-dispatched.
+				// Reset to open so the item can be re-dispatched to same aqueduct.
 				if err2 := client.Assign(req.Item.ID, "", req.Step.Name); err2 != nil {
 					s.logger.Error("reset after spawn failure",
 						"droplet", req.Item.ID, "error", err2)
@@ -785,15 +791,6 @@ func WriteContext(dir string, notes []cistern.CataractaNote) error {
 }
 
 // parkWorktree detaches HEAD in a worker's sandbox so the feature branch is
-// not held by any worktree between steps. This allows any aqueduct to check
-// out the same branch on the next cataracta without a "already used by worktree" error.
-// Inlined here to avoid an import cycle with the cataracta package.
-func parkWorktree(dir string) {
-	cmd := exec.Command("git", "checkout", "--detach", "HEAD")
-	cmd.Dir = dir
-	_ = cmd.Run() // best-effort; failure means next checkout may conflict
-}
-
 // ensureCataractaeIntegrity checks each agent cataracta's CLAUDE.md for the
 // sentinel string that proves it was generated from the YAML (not corrupted).
 // If any file is missing or lacks the sentinel, it is regenerated automatically.

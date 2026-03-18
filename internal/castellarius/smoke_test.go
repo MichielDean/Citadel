@@ -83,13 +83,30 @@ func newPipelineClient(item cistern.Droplet) *pipelineClient {
 
 // GetReady returns the item only when it is open and awaiting dispatch.
 func (c *pipelineClient) GetReady(repo string) (*cistern.Droplet, error) {
+	return c.GetReadyForAqueduct(repo, "")
+}
+
+func (c *pipelineClient) GetReadyForAqueduct(repo, aqueductName string) (*cistern.Droplet, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.terminal || c.item.Status != "open" {
 		return nil, nil
 	}
+	// Respect sticky assignment.
+	if aqueductName != "" && c.item.AssignedAqueduct != "" && c.item.AssignedAqueduct != aqueductName {
+		return nil, nil
+	}
 	item := c.item
 	return &item, nil
+}
+
+func (c *pipelineClient) SetAssignedAqueduct(id, aqueductName string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.item.AssignedAqueduct == "" {
+		c.item.AssignedAqueduct = aqueductName
+	}
+	return nil
 }
 
 func (c *pipelineClient) Assign(id, worker, step string) error {

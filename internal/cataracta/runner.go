@@ -84,11 +84,13 @@ func New(cfg Config) (*Runner, error) {
 		return nil, err
 	}
 
-	// Ensure the shared clone exists once at startup — workers share it via worktrees.
+	// Ensure each aqueduct has its own dedicated clone.
 	// SkipInitialClone is set in tests that use fake repo URLs.
 	if !cfg.SkipInitialClone {
-		if err := EnsureSharedClone(repoSandboxDir, cfg.Repo.URL); err != nil {
-			return nil, fmt.Errorf("cataracta: initial clone for %q: %w", cfg.Repo.Name, err)
+		for _, w := range workers {
+			if err := EnsureDedicatedClone(w.SandboxDir, cfg.Repo.URL); err != nil {
+				return nil, fmt.Errorf("cataracta: initial clone for %q/%s: %w", cfg.Repo.Name, w.Name, err)
+			}
 		}
 	}
 
@@ -184,16 +186,8 @@ func (r *Runner) findWorkerByName(name string) *Worker {
 func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.WorkflowCataracta) error {
 	log.Printf("cataracta: %s/%s: spawning step %q for item %s", r.repo.Name, w.Name, step.Name, item.ID)
 
-	// 1. Fetch latest from remote (shared clone already exists), then ensure this worker's worktree.
-	if err := fetchSandbox(r.sharedCloneDir); err != nil {
-		log.Printf("cataracta: warning: git fetch failed for %s: %v", r.repo.Name, err)
-	}
-	if err := EnsureWorktree(w.SandboxDir, r.sharedCloneDir); err != nil {
-		return fmt.Errorf("worktree: %w", err)
-	}
-
-	// For full_codebase agent steps (implement), position the worktree on the
-	// item's persistent feature branch so revision cycles are incremental.
+		// 1. Position the dedicated clone on the item's feature branch.
+	// PrepareBranch fetches latest origin/main and creates or resumes the branch.
 	if step.Context == aqueduct.ContextFullCodebase || step.Context == "" {
 		if step.Type == aqueduct.CataractaTypeAgent {
 			if err := PrepareBranch(w.SandboxDir, item.ID); err != nil {

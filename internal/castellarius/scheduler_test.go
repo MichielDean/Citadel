@@ -44,18 +44,34 @@ func newMockClient() *mockClient {
 }
 
 func (m *mockClient) GetReady(repo string) (*cistern.Droplet, error) {
+	return m.GetReadyForAqueduct(repo, "")
+}
+
+func (m *mockClient) GetReadyForAqueduct(repo, aqueductName string) (*cistern.Droplet, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.readyCalls++
-	if len(m.readyItems) == 0 {
-		return nil, nil
+	for i, b := range m.readyItems {
+		// Sticky: skip droplets assigned to a different aqueduct.
+		if aqueductName != "" && b.AssignedAqueduct != "" && b.AssignedAqueduct != aqueductName {
+			continue
+		}
+		m.readyItems = append(m.readyItems[:i], m.readyItems[i+1:]...)
+		b.Status = "in_progress"
+		cp := *b
+		m.items[b.ID] = &cp
+		return b, nil
 	}
-	b := m.readyItems[0]
-	m.readyItems = m.readyItems[1:]
-	b.Status = "in_progress"
-	cp := *b
-	m.items[b.ID] = &cp
-	return b, nil
+	return nil, nil
+}
+
+func (m *mockClient) SetAssignedAqueduct(id, aqueductName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if item, ok := m.items[id]; ok && item.AssignedAqueduct == "" {
+		item.AssignedAqueduct = aqueductName
+	}
+	return nil
 }
 
 func (m *mockClient) Assign(id, worker, step string) error {
