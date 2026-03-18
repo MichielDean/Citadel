@@ -231,6 +231,11 @@ func (s *Castellarius) Run(ctx context.Context) error {
 		"cataractae", s.config.MaxCataractae,
 	)
 
+	// Integrity check: regenerate any missing or corrupt CLAUDE.md files before
+	// accepting work. A corrupted CLAUDE.md (e.g. "test\n\nold instructions") means
+	// the agent runs with no role instructions — silent and catastrophic.
+	s.ensureCataractaeIntegrity()
+
 	s.recoverInProgress()
 
 	if s.cleanupInterval > 0 {
@@ -777,4 +782,45 @@ func parkWorktree(dir string) {
 	cmd := exec.Command("git", "checkout", "--detach", "HEAD")
 	cmd.Dir = dir
 	_ = cmd.Run() // best-effort; failure means next checkout may conflict
+}
+
+// ensureCataractaeIntegrity checks each agent cataracta's CLAUDE.md for the
+// sentinel string that proves it was generated from the YAML (not corrupted).
+// If any file is missing or lacks the sentinel, it is regenerated automatically.
+// This runs at Castellarius startup so corrupted prompts never silently persist.
+func (s *Castellarius) ensureCataractaeIntegrity() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	cataractaeDir := filepath.Join(home, ".cistern", "cataractae")
+	sentinel := "ct droplet pass" // present in every correctly-generated CLAUDE.md
+
+	needsRegen := false
+	// Collect all unique identities across all repo workflows.
+	seen := map[string]bool{}
+	for _, wf := range s.workflows {
+		for _, step := range wf.Cataractae {
+			if step.Identity == "" || seen[step.Identity] {
+				continue
+			}
+			seen[step.Identity] = true
+			claudePath := filepath.Join(cataractaeDir, step.Identity, "CLAUDE.md")
+			content, err := os.ReadFile(claudePath)
+			if err != nil || !strings.Contains(string(content), sentinel) {
+				s.logger.Warn("CLAUDE.md missing or corrupt — will regenerate",
+					"identity", step.Identity, "path", claudePath)
+				needsRegen = true
+			}
+		}
+	}
+
+	if needsRegen {
+		s.logger.Info("Regenerating cataractae CLAUDE.md files")
+		if err := hookCataractaeGenerate(&s.config, s.logger); err != nil {
+			s.logger.Error("Failed to regenerate CLAUDE.md files", "error", err)
+		} else {
+			s.logger.Info("Cataractae CLAUDE.md files regenerated successfully")
+		}
+	}
 }

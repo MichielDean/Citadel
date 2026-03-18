@@ -10,48 +10,65 @@ cataracta_definitions:
       ## Context
       Read CONTEXT.md first — it contains your droplet ID, requirements, and all revision notes from prior cycles. Every revision note is a bug report. Fix all of them.
 
-      ## Protocol
-      1. Read CONTEXT.md — understand requirements AND every revision note
-      2. Check if already done — if the described change is already fully implemented, run:
-         ct droplet pass <id> --notes "Fix already in place — no changes required."
-         and stop. Do NOT commit a no-op.
-      3. Write failing tests first (TDD)
-      4. Implement — make the tests pass
-      5. Refactor — clean up without changing behaviour; keep tests green
-      6. Run the full test suite — do not signal pass until all tests pass
-      7. Pre-pass checklist (MANDATORY — run ALL of these before signaling pass):
+      ## Protocol — follow in exact order, no skipping
 
-         a. REVISION NOTE VERIFICATION — for every fix mentioned in revision notes from prior cycles:
-            - Extract the exact identifier (variable name, string value, line number) that was wrong
-            - Run: grep -n "<exact_identifier>" <file>
-            - Confirm the corrected value is present. If grep shows the old value, you have NOT fixed it.
-            - Example: note says 'change Step: "implement" → Step: "review"'
-              → grep -n '"implement"' dashboard_test.go  (must NOT appear where the note says)
-              → grep -n '"review"' dashboard_test.go     (must appear)
-            - Do NOT skip this. Do NOT trust your memory. Check the file.
+      ### Step 1 — Read CONTEXT.md
+      Read CONTEXT.md completely. Note your droplet ID. Read every revision note.
+      If there are revision notes: those are your primary requirements — fix them first.
 
-         b. go test ./... — must all pass. Run with -count=1 to skip cache.
+      ### Step 2 — Verify revision notes (ONLY on recirculation cycles)
+      If CONTEXT.md has a "⚠️ REVISION REQUIRED" section:
+      For each fix mentioned, grep the exact identifier before touching any code:
+        grep -n "<exact_identifier>" <file>
+      Know the exact file and line you need to change before you start editing.
 
-         c. git show --stat HEAD — commit must show substantive changes beyond README/whitespace.
-            If only .md files changed, you have not done the work. Do not pass.
+      ### Step 3 — Check if already done
+      If the described change is already fully and correctly implemented:
+        ct droplet pass <id> --notes "Already implemented — no changes required. Verified: <evidence>"
+      and stop. Do NOT commit a no-op. But be certain — read the actual code, do not assume.
 
-         d. git show HEAD | grep '^[+-]' | grep -v '^---\|^+++' | head -30
-            Scan the actual diff. Confirm each fix from revision notes is visibly present.
-            If a note said change X→Y and the diff doesn't show -X +Y, you have not done the work.
+      ### Step 4 — Make your changes
+      Write failing tests first (TDD). Implement. Refactor. Keep tests green.
+      Work in the correct directory (your sandbox). Do not edit files in /tmp or other paths.
 
-         e. For each deliverable mentioned in CONTEXT.md: verify it exists: ls <path> && wc -l <path>
+      ### Step 5 — Run tests
+        go test ./... -count=1
+      All packages must pass. If any fail: fix them before proceeding. Do not continue with failing tests.
 
-         f. git log --oneline -1 — commit message must include the droplet ID
-      8. Commit (REQUIRED — MANDATORY before signaling):
-         git add -A
-         git commit -m "<droplet-id>: <short description>"
-         Do NOT push to origin.
-      9. Signal outcome
+      ### Step 6 — Commit (REQUIRED — do this before any verification)
+      ```bash
+      BEFORE=$(git rev-parse HEAD)
+      git add -A
+      git status --short          # confirm your changed files are staged
+      git commit -m "<droplet-id>: <description>"
+      AFTER=$(git rev-parse HEAD)
+      ```
+      If BEFORE == AFTER: the commit failed. Nothing was staged.
+      → Run `git status` and `git diff` to diagnose.
+      → DO NOT signal pass. Signal recirculate with notes explaining what failed.
+      → DO NOT proceed to Step 7.
 
-      ## Signaling
-      ct droplet pass <id> --notes "Implemented X. Added N tests. All pass. Verified: <list deliverables>."
-      ct droplet recirculate <id> --notes "Blocked on: <specific reason>"
-      ct droplet block <id> --notes "Blocked: <specific reason>"
+      ### Step 7 — Verify the commit contains your changes
+      Run these in order. Each must pass before signaling:
+
+      a. git log --oneline -1
+         Confirm the commit message matches what you just committed and includes the droplet ID.
+
+      b. git show --stat HEAD
+         Confirm the changed files are listed. If only CONTEXT.md changed: you committed nothing real.
+
+      c. git show HEAD | grep '^[+-]' | grep -v '^---\|^+++' | head -40
+         Scan the diff lines. Confirm your actual changes are visible.
+         If a revision note said "add TestFoo" — grep for TestFoo in this output.
+         If it is not there: your change was not committed. DO NOT signal pass.
+
+      d. For each deliverable in CONTEXT.md: verify it exists in the repo:
+         ls <path> && grep -c "<key_function_or_test_name>" <path>
+
+      ### Step 8 — Signal outcome
+      ct droplet pass <id> --notes "Implemented X. Committed: <git sha>. Tests: all N packages pass. Verified: <what you grepped>."
+      ct droplet recirculate <id> --notes "Blocked: <specific reason with evidence>"
+      ct droplet block <id> --notes "Cannot proceed: <specific reason>"
 
   reviewer:
     name: Adversarial Reviewer
