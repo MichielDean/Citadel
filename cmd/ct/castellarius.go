@@ -95,8 +95,8 @@ keep dispatching droplets into aqueducts automatically.`,
 		for _, repo := range cfg.Repos {
 			w := workflows[repo.Name]
 			names := repoWorkerNames(repo)
-			fmt.Printf("  %s: aqueduct=%q (%d cataractae), operators=%d (%s)\n",
-				repo.Name, w.Name, len(w.Cataractae), repo.Cataractae, strings.Join(names, ", "))
+			fmt.Printf("  %s: aqueduct=%q (%d cataractae), aqueducts=%d (%s)\n",
+				repo.Name, w.Name, len(w.Cataractae), len(names), strings.Join(names, ", "))
 		}
 		fmt.Println("Ctrl-C to dismiss the Castellarius.")
 
@@ -163,7 +163,7 @@ var castellariusStatusCmd = &cobra.Command{
 		for _, repo := range cfg.Repos {
 			totalWorkers += len(repoWorkerNames(repo))
 		}
-		fmt.Printf("\n%d of %d operators busy\n", totalBusy, totalWorkers)
+		fmt.Printf("\n%d of %d aqueducts flowing\n", totalBusy, totalWorkers)
 		return nil
 	},
 }
@@ -195,7 +195,7 @@ var aqueductStatusCmd = &cobra.Command{
 		for _, repo := range cfg.Repos {
 			fmt.Printf("  %s\n", repo.Name)
 			fmt.Printf("    URL         : %s\n", repo.URL)
-			fmt.Printf("    Workflow    : %s\n", repo.WorkflowPath)
+			fmt.Printf("    Aqueduct    : %s\n", repo.WorkflowPath)
 
 			wfPath := repo.WorkflowPath
 			if !filepath.IsAbs(wfPath) {
@@ -206,13 +206,13 @@ var aqueductStatusCmd = &cobra.Command{
 				for i, s := range wf.Cataractae {
 					steps[i] = s.Name
 				}
-				fmt.Printf("    Steps       : %s\n", strings.Join(steps, " → "))
+				fmt.Printf("    Cataractae  : %s\n", strings.Join(steps, " → "))
 			} else {
-				fmt.Printf("    Steps       : (could not load: %v)\n", err)
+				fmt.Printf("    Cataractae  : (could not load: %v)\n", err)
 			}
 
 			names := repoWorkerNames(repo)
-			fmt.Printf("    Operators   : %d (%s)\n", len(names), strings.Join(names, ", "))
+			fmt.Printf("    Aqueducts   : %s\n", strings.Join(names, ", "))
 			fmt.Println()
 		}
 		return nil
@@ -317,23 +317,19 @@ var statusCmd = &cobra.Command{
 		}
 
 		// ── Cistern ──────────────────────────────────────────────────────────
-		fmt.Printf("Cistern     %d flowing  %d queued  %d done\n\n", flowing, queued, done)
+		fmt.Printf("Cistern     %d flowing  %d queued  %d delivered\n\n", flowing, queued, done)
 
-		// ── Castellarius / operators ──────────────────────────────────────────
-		allWorkers := 0
-		for _, repo := range cfg.Repos {
-			allWorkers += len(repoWorkerNames(repo))
-		}
-		fmt.Printf("Castellarius  %d of %d operators busy\n", len(assignee), allWorkers)
+		// ── Castellarius / aqueducts ──────────────────────────────────────────
+		fmt.Printf("Castellarius  watching\n")
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		for _, repo := range cfg.Repos {
 			for _, name := range repoWorkerNames(repo) {
 				if item, ok := assignee[name]; ok {
 					elapsed := int(time.Since(item.UpdatedAt).Minutes())
-					fmt.Fprintf(tw, "  %s\t%s\t[%s]\t%dm\n", name, item.ID, item.CurrentCataracta, elapsed)
+					fmt.Fprintf(tw, "  %s\t→ %s\t[%s]\t%dm\n", name, item.ID, item.CurrentCataracta, elapsed)
 				} else {
-					fmt.Fprintf(tw, "  %s\t—\tdry\t\n", name)
+					fmt.Fprintf(tw, "  %s\t→ idle\t\t\n", name)
 				}
 			}
 		}
@@ -352,7 +348,7 @@ var statusCmd = &cobra.Command{
 			if wf, err := aqueduct.ParseWorkflow(wfPath); err == nil {
 				stepCount = fmt.Sprintf("%d", len(wf.Cataractae))
 			}
-			fmt.Printf("  %-20s  %s  (%s steps)\n", repo.Name, repo.WorkflowPath, stepCount)
+			fmt.Printf("  %-20s  %s  (%s cataractae)\n", repo.Name, repo.WorkflowPath, stepCount)
 		}
 
 		return nil

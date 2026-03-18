@@ -49,7 +49,7 @@ type CataractaRequest struct {
 	Step       aqueduct.WorkflowCataracta
 	Workflow   *aqueduct.Workflow
 	RepoConfig aqueduct.RepoConfig
-	WorkerName string
+	AqueductName string
 	Notes      []cistern.CataractaNote // context from previous steps
 }
 
@@ -59,7 +59,7 @@ type Castellarius struct {
 	config            aqueduct.AqueductConfig
 	workflows         map[string]*aqueduct.Workflow
 	clients           map[string]CisternClient
-	pools             map[string]*WorkerPool
+	pools             map[string]*AqueductPool
 	runner            CataractaRunner
 	logger            *slog.Logger
 	pollInterval      time.Duration
@@ -99,7 +99,7 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaRunner, 
 		config:            config,
 		workflows:         make(map[string]*aqueduct.Workflow),
 		clients:           make(map[string]CisternClient),
-		pools:             make(map[string]*WorkerPool),
+		pools:             make(map[string]*AqueductPool),
 		runner:            runner,
 		logger:            slog.Default(),
 		pollInterval:      10 * time.Second,
@@ -151,9 +151,9 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaRunner, 
 
 		names := repo.Names
 		if len(names) == 0 {
-			names = defaultWorkerNames(repo.Cataractae)
+			names = defaultAqueductNames(repo.Cataractae)
 		}
-		s.pools[repo.Name] = NewWorkerPool(repo.Name, names)
+		s.pools[repo.Name] = NewAqueductPool(repo.Name, names)
 	}
 
 	return s, nil
@@ -171,7 +171,7 @@ func NewFromParts(
 		config:            config,
 		workflows:         workflows,
 		clients:           clients,
-		pools:             make(map[string]*WorkerPool),
+		pools:             make(map[string]*AqueductPool),
 		runner:            runner,
 		logger:            slog.Default(),
 		pollInterval:      10 * time.Second,
@@ -184,9 +184,9 @@ func NewFromParts(
 	for _, repo := range config.Repos {
 		names := repo.Names
 		if len(names) == 0 {
-			names = defaultWorkerNames(repo.Cataractae)
+			names = defaultAqueductNames(repo.Cataractae)
 		}
-		s.pools[repo.Name] = NewWorkerPool(repo.Name, names)
+		s.pools[repo.Name] = NewAqueductPool(repo.Name, names)
 	}
 
 	return s
@@ -209,7 +209,7 @@ var romanAqueducts = []string{
 	"barbegal",    // Arles — powered an ancient grain mill complex
 }
 
-func defaultWorkerNames(n int) []string {
+func defaultAqueductNames(n int) []string {
 	if n <= 0 {
 		n = 1
 	}
@@ -373,7 +373,7 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 
 		// Release the worker before routing so it can accept new work in dispatchRepo.
 		if item.Assignee != "" {
-			if w := pool.FindWorkerByName(item.Assignee); w != nil {
+			if w := pool.FindByName(item.Assignee); w != nil {
 				pool.Release(w)
 			}
 		}
@@ -450,7 +450,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 	wf := s.workflows[repo.Name]
 
 	for {
-		worker := pool.AvailableWorker()
+		worker := pool.AvailableAqueduct()
 		if worker == nil {
 			return
 		}
@@ -499,7 +499,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 			Step:       *step,
 			Workflow:   wf,
 			RepoConfig: repo,
-			WorkerName: worker.Name,
+			AqueductName: worker.Name,
 			Notes:      notes,
 		}
 
@@ -528,7 +528,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 func (s *Castellarius) totalBusy() int {
 	total := 0
 	for _, pool := range s.pools {
-		total += pool.BusyCount()
+		total += pool.FlowingCount()
 	}
 	return total
 }
@@ -729,7 +729,7 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			"repo", repo.Name, "droplet", item.ID, "cataracta", item.CurrentCataracta)
 
 		if item.Assignee != "" {
-			if w := pool.FindWorkerByName(item.Assignee); w != nil {
+			if w := pool.FindByName(item.Assignee); w != nil {
 				pool.Release(w)
 			}
 		}
