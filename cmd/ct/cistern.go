@@ -324,7 +324,7 @@ var passNotes string
 
 var dropletPassCmd = &cobra.Command{
 	Use:   "pass <id>",
-	Short: "Signal pass outcome — work complete, move to next step",
+	Short: "Signal pass outcome — work complete, advance to next cataracta",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := cistern.New(resolveDBPath(), "")
@@ -424,7 +424,7 @@ func init() {
 	dropletPurgeCmd.Flags().BoolVar(&purgeDryRun, "dry-run", false, "show what would be deleted without deleting")
 
 	dropletPassCmd.Flags().StringVar(&passNotes, "notes", "", "add a note before signaling pass")
-	dropletRecirculateCmd.Flags().StringVar(&recirculateTo, "to", "", "named step to recirculate to (e.g. --to implement)")
+	dropletRecirculateCmd.Flags().StringVar(&recirculateTo, "to", "", "named cataracta to recirculate to (e.g. --to implement)")
 	dropletRecirculateCmd.Flags().StringVar(&recirculateNotes, "notes", "", "add a note before signaling recirculate")
 	dropletBlockCmd.Flags().StringVar(&blockNotes, "notes", "", "add a note before signaling block")
 

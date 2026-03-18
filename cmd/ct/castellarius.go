@@ -38,8 +38,8 @@ var castellariusStartCmd = &cobra.Command{
 	Long: `Wake the Castellarius.
 
 The Castellarius is a pure state machine — no AI. It watches the cistern for
-droplets, assigns them to named operators, routes them through the configured
-aqueduct (implement → review → qa → merge), and resolves outcomes.
+droplets, routes them into named aqueducts, and advances each droplet through
+its cataractae (implement → review → qa → merge) until delivered.
 
 The Castellarius runs until Ctrl-C. As long as work is in the cistern it will
 keep dispatching droplets into aqueducts automatically.`,
@@ -109,11 +109,11 @@ keep dispatching droplets into aqueducts automatically.`,
 	},
 }
 
-// ct castellarius status — operator/worker-centric view
+// ct castellarius status — aqueduct-centric view
 
 var castellariusStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show operator assignments — who is working on what, and idle capacity",
+	Short: "Show aqueduct flow — which aqueducts are flowing, which are idle, and what droplet each carries",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -169,19 +169,19 @@ var castellariusStatusCmd = &cobra.Command{
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ct aqueduct — inspect and validate aqueduct definitions (workflows)
+// ct aqueduct — inspect and validate aqueduct definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
 var aqueductCmd = &cobra.Command{
 	Use:   "aqueduct",
-	Short: "Inspect and validate aqueducts — the full pipeline from intake to delivery",
+	Short: "Inspect and validate aqueducts — cataracta chains, repo bindings, and config",
 }
 
-// ct aqueduct status — workflow definition view
+// ct aqueduct status — aqueduct definition view
 
 var aqueductStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show configured aqueducts — repos, workflows, and their cataracta step chains",
+	Short: "Show configured aqueducts — repos and their cataracta chains",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -219,11 +219,11 @@ var aqueductStatusCmd = &cobra.Command{
 	},
 }
 
-// ct aqueduct validate — config and workflow validation
+// ct aqueduct validate — config and aqueduct definition validation
 
 var aqueductValidateCmd = &cobra.Command{
 	Use:   "validate [path]",
-	Short: "Validate cistern.yaml and all referenced workflow files",
+	Short: "Validate cistern.yaml and all referenced aqueduct definitions",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path := resolveConfigPath()
@@ -280,7 +280,7 @@ var aqueductValidateCmd = &cobra.Command{
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Overall system status — cistern level, operator assignments, and aqueduct info",
+	Short: "Overall system status — cistern level, aqueduct flow, and cataracta chains",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -380,15 +380,15 @@ func resolveConfigPath() string {
 	return filepath.Join(home, ".cistern", "cistern.yaml")
 }
 
-// repoWorkerNames returns the configured worker names for a repo,
-// falling back to worker-0, worker-1, etc.
+// repoWorkerNames returns the configured aqueduct names for a repo,
+// falling back to aqueduct-0, aqueduct-1, etc.
 func repoWorkerNames(repo aqueduct.RepoConfig) []string {
 	if len(repo.Names) > 0 {
 		return repo.Names
 	}
 	names := make([]string, repo.Cataractae)
 	for i := range names {
-		names[i] = fmt.Sprintf("worker-%d", i)
+		names[i] = fmt.Sprintf("aqueduct-%d", i)
 	}
 	return names
 }

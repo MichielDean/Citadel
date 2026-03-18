@@ -2,7 +2,7 @@
   <img src="cistern_logo.png" alt="Cistern Logo" />
 </p>
 
-Cistern is an agentic workflow orchestrator built around a water metaphor. Droplets of work enter the cistern, flow through named aqueducts gate by gate, and what emerges at the other end is clean enough to ship.
+Cistern is an agentic delivery system built around a water metaphor. Droplets of work enter the cistern, flow through named aqueducts cataracta by cataracta, and what emerges at the other end is clean enough to ship.
 
 ## The Vocabulary
 
@@ -61,20 +61,20 @@ Intake → Filtration (optional) → Implement → Inspect → QA → PR opens �
 
 5. **Recirculation** — Revision sends the droplet back upstream to a prior cataracta for another pass. No retry limits. The water flows until it's pure.
 
-## Cataracta Operators
+## Named Aqueducts
 
-Operators are named from a pool. The default pool is water-themed:
-
-```
-upstream, downstream, tributary, confluence, headwater,
-seep, spring, torrent, cascade, eddy
-```
-
-Each tmux session is named `<operator>-<droplet-id>`. Every `tmux ls` shows the aqueduct in motion:
+Aqueducts are named from a pool of Roman aqueducts. The default pool:
 
 ```
-upstream-ct-x7k: 1 windows (adversarial-review)
-tributary-ct-m3j: 1 windows (implement)
+virgo, marcia, claudia, traiana, julia, appia,
+anio, tepula, gier, eifel, alexandrina, barbegal
+```
+
+Each tmux session is named `<aqueduct>-<droplet-id>`. Every `tmux ls` shows the cistern in motion:
+
+```
+virgo-ct-x7k: 1 windows (adversarial-review)
+marcia-ct-m3j: 1 windows (implement)
 ```
 
 Change names in `~/.cistern/cistern.yaml` under `names:`.
@@ -142,14 +142,14 @@ Config lives at `~/.cistern/cistern.yaml`. See `cistern.yaml` for all options.
 ```
 # Castellarius — the overseer that watches the cistern and routes droplets
 ct castellarius start          Wake the Castellarius (start processing)
-ct castellarius status         Show operator assignments and idle capacity
+ct castellarius status         Show aqueduct flow — which are flowing, which are idle
 
 # Status — observe the system
-ct status                      Overall status: cistern level, operators, aqueducts
-ct cataractae status           Pipeline view: which steps are active and what is flowing through them
-ct aqueduct status             Aqueduct definitions: repos, workflows, and step chains
+ct status                      Overall status: cistern level, aqueduct flow, cataracta chains
+ct cataractae status           Cataracta view: which cataractae are active and what is flowing through them
+ct aqueduct status             Aqueduct definitions: repos and their cataracta chains
 
-# Aqueduct — inspect and validate workflows
+# Aqueduct — inspect and validate aqueduct definitions
 ct aqueduct validate           Validate cistern.yaml and all referenced workflow files
 ct aqueduct inspect            JSON snapshot of current Cistern state
 
@@ -162,7 +162,7 @@ ct droplet reopen <id>                          Return to cistern
 ct droplet purge --older-than 30d               Drain old droplets
 ct droplet escalate <id> --reason "..."         Mark a droplet stagnant
 
-# Cataractae — manage cataracta operator definitions
+# Cataractae — manage cataracta definitions
 ct cataractae list                   See all cataracta definitions and how to edit them
 ct cataractae edit <cataracta>       Edit cataracta definition in $EDITOR
 ct cataractae generate               Regenerate CLAUDE.md files from YAML

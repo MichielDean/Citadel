@@ -47,13 +47,13 @@ Then trim away what’s second in time.
 What’s left behind, when placed in a row,
 Reveals the port where you must go.`
 
-// CataractaInfo describes the state of a single cataracta (operator).
+// CataractaInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataracta chain that droplet is.
 type CataractaInfo struct {
 	Name       string
 	DropletID  string
 	Step       string
 	Elapsed    time.Duration
-	CataractaIndex  int // 1-based index of current step; 0 if unknown
+	CataractaIndex  int // 1-based index of current cataracta; 0 if unknown
 	TotalCataractae int
 }
 
@@ -82,7 +82,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 		return data
 	}
 
-	// Build cataracta list and load workflow steps for each repo.
+	// Build aqueduct list and load cataracta chain for each repo.
 	type cataractaEntry struct {
 		name string
 		repo string
@@ -106,7 +106,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 		}
 	}
 
-	// Open queue — if it fails, show cataractae as dry.
+	// Open queue — if it fails, show aqueducts as idle.
 	c, err := cistern.New(dbPath, "")
 	if err != nil {
 		cataractae := make([]CataractaInfo, len(configCataractae))
@@ -490,13 +490,13 @@ h1,h2{margin:0 0 10px}h1{font-size:20px}h2{font-size:15px;color:#9db1db}
 	sb.WriteString(fmt.Sprintf(`<div class="muted" style="margin-top:6px">last update: %s</div>`, time.Now().Format("15:04:05")))
 	sb.WriteString(`</div>`)
 
-	sb.WriteString(`<div class="card"><h2>Cataractae</h2><table><thead><tr><th>Name</th><th>Droplet</th><th>Stage</th><th>Elapsed</th></tr></thead><tbody>`)
+	sb.WriteString(`<div class="card"><h2>Aqueducts</h2><table><thead><tr><th>Aqueduct</th><th>Droplet</th><th>Cataracta</th><th>Elapsed</th></tr></thead><tbody>`)
 	if len(snapshot.Cataractae) == 0 {
-		sb.WriteString(`<tr><td colspan="4" class="muted">Aqueducts closed</td></tr>`)
+		sb.WriteString(`<tr><td colspan="4" class="muted">No aqueducts configured</td></tr>`)
 	} else {
 		for _, ch := range snapshot.Cataractae {
 			droplet := "-"
-			stage := "dry"
+			stage := "idle"
 			elapsed := "-"
 			if ch.DropletID != nil {
 				droplet = html.EscapeString(*ch.DropletID)
