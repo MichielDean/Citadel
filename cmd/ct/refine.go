@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	tea "github.com/charmbracelet/bubbletea"
@@ -72,7 +73,10 @@ func callRefineAPI(title, description string) ([]DropletProposal, error) {
 		userPrompt += "\nDescription: " + description
 	}
 
-	resp, err := client.Messages.New(context.Background(), anthropic.MessageNewParams{
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeSonnet4_5,
 		MaxTokens: 16000,
 		Thinking:  anthropic.ThinkingConfigParamOfEnabled(8000),
@@ -114,10 +118,29 @@ func extractProposals(text string) ([]DropletProposal, error) {
 		}
 	}
 
-	// Locate the JSON array boundaries
+	// Locate the JSON array boundaries using bracket depth so trailing text
+	// containing ']' (e.g. markdown links) doesn't expand past the real array.
 	start := strings.Index(text, "[")
-	end := strings.LastIndex(text, "]")
-	if start == -1 || end == -1 || start >= end {
+	if start == -1 {
+		return nil, fmt.Errorf("no JSON array found in LLM response")
+	}
+	depth := 0
+	end := -1
+	for i := start; i < len(text); i++ {
+		switch text[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				end = i
+			}
+		}
+		if end != -1 {
+			break
+		}
+	}
+	if end == -1 {
 		return nil, fmt.Errorf("no JSON array found in LLM response")
 	}
 
@@ -272,8 +295,18 @@ func (m refineModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch key.String() {
 	case "enter":
-		if strings.TrimSpace(m.editBuf) != "" {
-			m.proposals[m.cursor].Title = strings.TrimSpace(m.editBuf)
+		newTitle := strings.TrimSpace(m.editBuf)
+		if newTitle != "" {
+			oldTitle := m.proposals[m.cursor].Title
+			m.proposals[m.cursor].Title = newTitle
+			// Keep depends_on references consistent when a title is renamed.
+			for i := range m.proposals {
+				for j, dep := range m.proposals[i].DependsOn {
+					if dep == oldTitle {
+						m.proposals[i].DependsOn[j] = newTitle
+					}
+				}
+			}
 		}
 		m.phase = phaseReview
 		return m, nil
