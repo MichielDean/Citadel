@@ -521,6 +521,10 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 					"cataracta", req.Step.Name,
 					"error", err,
 				)
+				// Detach HEAD before releasing so the branch isn't left locked
+				// in this sandbox, which would block any other aqueduct from
+				// checking out the same branch on retry.
+				parkWorktree(filepath.Join(s.sandboxRoot, repo.Name, w.Name))
 				// Reset to open so the item can be re-dispatched.
 				if err2 := client.Assign(req.Item.ID, "", req.Step.Name); err2 != nil {
 					s.logger.Error("reset after spawn failure",
