@@ -64,7 +64,15 @@ func download(dest, url string) error {
 		return fmt.Errorf("skills: mkdir %s: %w", filepath.Dir(dest), err)
 	}
 
-	resp, err := httpClient.Get(url) //nolint:gosec -- URL comes from trusted workflow config
+	req, err := http.NewRequest("GET", url, nil) //nolint:gosec -- URL comes from trusted workflow config
+	if err != nil {
+		return fmt.Errorf("skills: build request %s: %w", url, err)
+	}
+	// Inject GH_TOKEN if set — required for skills hosted in private GitHub repos.
+	if token := os.Getenv("GH_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("skills: fetch %s: %w", url, err)
 	}
