@@ -3,6 +3,7 @@ package gates
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -244,7 +245,10 @@ func TestCIGate_PendingThenPass(t *testing.T) {
 func TestCIGate_CheckFails(t *testing.T) {
 	checksJSON := `[{"name":"build","bucket":"pass"},{"name":"test","bucket":"fail"}]`
 	rec := &recorder{responses: []response{
-		{out: []byte(checksJSON)},
+		{out: []byte(checksJSON)},                                                       // gh pr checks
+		{out: []byte("feature-branch\n")},                                               // git rev-parse
+		{out: []byte(`[{"databaseId":12345,"status":"completed"}]`)},                    // gh run list
+		{out: []byte("FAIL\tgithub.com/foo/bar\t0.01s\n--- FAIL: TestFoo\n    err\n")},  // gh run view --log-failed
 	}}
 
 	e := newExecutor(rec)
@@ -256,8 +260,11 @@ func TestCIGate_CheckFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if out.Result != ResultFail {
-		t.Fatalf("want fail, got %s", out.Result)
+	if out.Result != ResultRecirculate {
+		t.Fatalf("want recirculate, got %s: %s", out.Result, out.Notes)
+	}
+	if !strings.Contains(out.Notes, "CI failed") {
+		t.Errorf("want notes to contain 'CI failed', got: %s", out.Notes)
 	}
 }
 
