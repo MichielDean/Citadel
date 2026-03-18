@@ -347,8 +347,8 @@ func TestTick_AssignsWork(t *testing.T) {
 	if cataracta.calls[0].Step.Name != "implement" {
 		t.Errorf("expected step 'implement', got %q", cataracta.calls[0].Step.Name)
 	}
-	if cataracta.calls[0].WorkerName != "alpha" {
-		t.Errorf("expected worker 'alpha', got %q", cataracta.calls[0].WorkerName)
+	if cataracta.calls[0].AqueductName != "alpha" {
+		t.Errorf("expected worker 'alpha', got %q", cataracta.calls[0].AqueductName)
 	}
 }
 
@@ -610,14 +610,14 @@ func TestMultiRepo_ItemsGoToCorrectWorkers(t *testing.T) {
 	stWorkers := map[string]bool{}
 	for _, call := range cataracta.calls {
 		if call.RepoConfig.Name == "ScaledTest" {
-			stWorkers[call.WorkerName] = true
-			if call.WorkerName != "cascade" && call.WorkerName != "tributary" {
-				t.Errorf("ScaledTest item %s assigned to wrong worker: %s", call.Item.ID, call.WorkerName)
+			stWorkers[call.AqueductName] = true
+			if call.AqueductName != "cascade" && call.AqueductName != "tributary" {
+				t.Errorf("ScaledTest item %s assigned to wrong worker: %s", call.Item.ID, call.AqueductName)
 			}
 		}
 		if call.RepoConfig.Name == "cistern" {
-			if call.WorkerName != "confluence" {
-				t.Errorf("cistern item %s assigned to wrong worker: %s (expected confluence)", call.Item.ID, call.WorkerName)
+			if call.AqueductName != "confluence" {
+				t.Errorf("cistern item %s assigned to wrong worker: %s (expected confluence)", call.Item.ID, call.AqueductName)
 			}
 		}
 	}
@@ -689,12 +689,12 @@ func TestMultiRepo_WorkersNeverCrossRepoBoundaries(t *testing.T) {
 	for _, call := range cataracta.calls {
 		switch call.RepoConfig.Name {
 		case "ScaledTest":
-			if call.WorkerName != "cascade" && call.WorkerName != "tributary" {
-				t.Errorf("ScaledTest item used non-ScaledTest worker: %s", call.WorkerName)
+			if call.AqueductName != "cascade" && call.AqueductName != "tributary" {
+				t.Errorf("ScaledTest item used non-ScaledTest worker: %s", call.AqueductName)
 			}
 		case "cistern":
-			if call.WorkerName != "confluence" {
-				t.Errorf("cistern item used non-cistern worker: %s", call.WorkerName)
+			if call.AqueductName != "confluence" {
+				t.Errorf("cistern item used non-cistern worker: %s", call.AqueductName)
 			}
 		default:
 			t.Errorf("unexpected repo: %s", call.RepoConfig.Name)
@@ -758,8 +758,8 @@ func TestMultiRepo_OneRepoEmptyOtherHasWork(t *testing.T) {
 	if cataracta.calls[0].Item.ID != "bf-1" {
 		t.Errorf("expected bf-1, got %s", cataracta.calls[0].Item.ID)
 	}
-	if cataracta.calls[0].WorkerName != "confluence" {
-		t.Errorf("expected confluence, got %s", cataracta.calls[0].WorkerName)
+	if cataracta.calls[0].AqueductName != "confluence" {
+		t.Errorf("expected confluence, got %s", cataracta.calls[0].AqueductName)
 	}
 }
 
@@ -784,8 +784,8 @@ func TestMultiRepo_RepoWorkersExhausted(t *testing.T) {
 	}
 
 	pool := sched.pools["ScaledTest"]
-	if pool.BusyCount() > 2 {
-		t.Errorf("ScaledTest pool exceeded capacity: %d busy (max 2)", pool.BusyCount())
+	if pool.FlowingCount() > 2 {
+		t.Errorf("ScaledTest pool exceeded capacity: %d busy (max 2)", pool.FlowingCount())
 	}
 
 	close(blocker.ch)
@@ -823,11 +823,11 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 	}
 
 	for _, call := range cataracta.calls {
-		if call.Item.ID == "r1-b1" && call.WorkerName != "w1" {
-			t.Errorf("repo1 item assigned to wrong worker: %s", call.WorkerName)
+		if call.Item.ID == "r1-b1" && call.AqueductName != "w1" {
+			t.Errorf("repo1 item assigned to wrong worker: %s", call.AqueductName)
 		}
-		if call.Item.ID == "r2-b1" && call.WorkerName != "w2" {
-			t.Errorf("repo2 item assigned to wrong worker: %s", call.WorkerName)
+		if call.Item.ID == "r2-b1" && call.AqueductName != "w2" {
+			t.Errorf("repo2 item assigned to wrong worker: %s", call.AqueductName)
 		}
 	}
 }
@@ -847,45 +847,45 @@ func TestRun_CancelledContext(t *testing.T) {
 }
 
 func TestWorkerPool_Basic(t *testing.T) {
-	pool := NewWorkerPool("repo", []string{"a", "b"})
+	pool := NewAqueductPool("repo", []string{"a", "b"})
 
-	w := pool.AvailableWorker()
+	w := pool.AvailableAqueduct()
 	if w == nil || w.Name != "a" {
 		t.Fatalf("expected first idle worker 'a', got %v", w)
 	}
 
 	pool.Assign(w, "item-1", "implement")
-	if pool.BusyCount() != 1 {
-		t.Errorf("expected 1 busy, got %d", pool.BusyCount())
+	if pool.FlowingCount() != 1 {
+		t.Errorf("expected 1 busy, got %d", pool.FlowingCount())
 	}
 
-	w2 := pool.AvailableWorker()
+	w2 := pool.AvailableAqueduct()
 	if w2 == nil || w2.Name != "b" {
 		t.Fatalf("expected second idle worker 'b', got %v", w2)
 	}
 
 	pool.Assign(w2, "item-2", "review")
-	if pool.BusyCount() != 2 {
-		t.Errorf("expected 2 busy, got %d", pool.BusyCount())
+	if pool.FlowingCount() != 2 {
+		t.Errorf("expected 2 busy, got %d", pool.FlowingCount())
 	}
 
-	if pool.AvailableWorker() != nil {
+	if pool.AvailableAqueduct() != nil {
 		t.Error("expected nil when all workers busy")
 	}
 
 	pool.Release(w)
-	if pool.BusyCount() != 1 {
-		t.Errorf("expected 1 busy after release, got %d", pool.BusyCount())
+	if pool.FlowingCount() != 1 {
+		t.Errorf("expected 1 busy after release, got %d", pool.FlowingCount())
 	}
 
-	w3 := pool.AvailableWorker()
+	w3 := pool.AvailableAqueduct()
 	if w3 == nil || w3.Name != "a" {
 		t.Fatalf("expected 'a' available after release, got %v", w3)
 	}
 }
 
 func TestDefaultWorkerNames(t *testing.T) {
-	names := defaultWorkerNames(3)
+	names := defaultAqueductNames(3)
 	if len(names) != 3 {
 		t.Fatalf("expected 3 names, got %d", len(names))
 	}
@@ -901,13 +901,13 @@ func TestDefaultWorkerNames(t *testing.T) {
 	}
 
 	// n=0 should return at least 1
-	names = defaultWorkerNames(0)
+	names = defaultAqueductNames(0)
 	if len(names) != 1 {
 		t.Errorf("expected 1 name for n=0, got %d", len(names))
 	}
 
 	// Beyond pool size falls back to operator-N
-	names = defaultWorkerNames(len(romanAqueducts) + 1)
+	names = defaultAqueductNames(len(romanAqueducts) + 1)
 	last := names[len(names)-1]
 	if last != fmt.Sprintf("operator-%d", len(romanAqueducts)) {
 		t.Errorf("expected fallback name, got %q", last)

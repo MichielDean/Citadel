@@ -255,16 +255,16 @@ func renderDashboard(data *DashboardData) string {
 	sb.WriteString("╔" + strings.Repeat("═", leftPad) + title + strings.Repeat("═", rightPad) + "╗\n")
 
 	// Summary line.
-	summary := fmt.Sprintf("%d cataractae open  •  %d flowing  •  %d queued  •  %d done",
-		data.CataractaCount, data.FlowingCount, data.QueuedCount, data.DoneCount)
+	summary := fmt.Sprintf("%d flowing  •  %d queued  •  %d delivered",
+		data.FlowingCount, data.QueuedCount, data.DoneCount)
 	sb.WriteString(contentLine(summary) + "\n")
 
-	// SLUICES section.
+	// AQUEDUCTS section.
 	sb.WriteString(borderLine() + "\n")
-	sb.WriteString(contentLine("SLUICES") + "\n")
+	sb.WriteString(contentLine("AQUEDUCTS") + "\n")
 
 	if len(data.Cataractae) == 0 {
-		sb.WriteString(contentLine("  Aqueducts closed") + "\n")
+		sb.WriteString(contentLine("  No aqueducts configured") + "\n")
 	} else {
 		for _, ch := range data.Cataractae {
 			sb.WriteString(contentLine(renderCataractaLine(ch)) + "\n")
@@ -303,12 +303,12 @@ func renderDashboard(data *DashboardData) string {
 	return sb.String()
 }
 
-// renderCataractaLine builds the cataracta row string (without borders).
+// renderCataractaLine builds the aqueduct row string (without borders).
 func renderCataractaLine(ch CataractaInfo) string {
 	if ch.DropletID == "" {
-		// Dry cataracta.
+		// Idle aqueduct.
 		name := padRight(ch.Name, 10)
-		return colorDim + "  " + name + "—         dry" + colorReset
+		return colorDim + "  " + name + "idle" + colorReset
 	}
 
 	name := padRight(ch.Name, 10)
@@ -317,9 +317,9 @@ func renderCataractaLine(ch CataractaInfo) string {
 	elapsed := formatElapsed(ch.Elapsed)
 	bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 6)
 
-	// Line: "  name  id  [step]  elapsed  bar"
-	line := fmt.Sprintf("%s%s%s  %-18s  %-8s  %s%s",
-		colorGreen, "  "+name+id, colorReset, step, elapsed, bar, colorReset)
+	// Line: "  name → id  [cataracta]  elapsed  bar"
+	line := fmt.Sprintf("%s%s→ %s%s  %-18s  %-8s  %s%s",
+		colorGreen, "  "+name, id, colorReset, step, elapsed, bar, colorReset)
 	return line
 }
 
@@ -339,17 +339,19 @@ func renderCisternLine(item *cistern.Droplet) string {
 		statusColor = colorGreen
 	case "open":
 		statusColor = colorYellow
-	case "escalated":
+	case "stagnant":
 		statusColor = colorRed
 	default:
 		statusColor = colorDim
 	}
 
-	return fmt.Sprintf("  %s%s%s%s%-10s  %s%s%s%s",
+	return fmt.Sprintf("  %s%s%s%s%-12s  %s%s%s  %s",
 		colorDim, id, colorReset,
 		cx,
-		statusColor, status, colorReset,
-		"   "+step, "")
+		statusColor+status+colorReset,
+		"",
+		"", "",
+		step)
 }
 
 // renderRecentLine builds a recent-flow row string.
@@ -364,15 +366,15 @@ func renderRecentLine(item *cistern.Droplet) string {
 
 	var icon string
 	switch item.Status {
-	case "closed":
+	case "delivered":
 		icon = colorGreen + "✓" + colorReset
-	case "escalated":
+	case "stagnant":
 		icon = colorRed + "✗" + colorReset
 	default:
 		icon = "·"
 	}
 
-	return fmt.Sprintf("  %s  %s  %-16s  %s  %s",
+	return fmt.Sprintf("  %s  %s  %-20s  %s  %s",
 		t, id, step, icon, status)
 }
 
@@ -483,8 +485,8 @@ h1,h2{margin:0 0 10px}h1{font-size:20px}h2{font-size:15px;color:#9db1db}
 </style></head><body>`)
 	sb.WriteString(`<div class="wrap">`)
 	sb.WriteString(`<div class="card"><h1>CT Dashboard</h1>`)
-	sb.WriteString(fmt.Sprintf(`<div class="muted">%d cataractae open • <span class="ok">%d flowing</span> • <span class="warn">%d queued</span> • %d done</div>`,
-		len(snapshot.Cataractae), snapshot.Queue.Flowing, snapshot.Queue.Queued, snapshot.Queue.Closed))
+	sb.WriteString(fmt.Sprintf(`<div class="muted"><span class="ok">%d flowing</span> • <span class="warn">%d queued</span> • %d delivered</div>`,
+		snapshot.Queue.Flowing, snapshot.Queue.Queued, snapshot.Queue.Closed))
 	sb.WriteString(fmt.Sprintf(`<div class="muted" style="margin-top:6px">last update: %s</div>`, time.Now().Format("15:04:05")))
 	sb.WriteString(`</div>`)
 

@@ -320,6 +320,8 @@ func parseDuration(s string) (time.Duration, error) {
 
 // --- cistern pass ---
 
+var passNotes string
+
 var dropletPassCmd = &cobra.Command{
 	Use:   "pass <id>",
 	Short: "Signal pass outcome — work complete, move to next step",
@@ -331,6 +333,11 @@ var dropletPassCmd = &cobra.Command{
 		}
 		defer c.Close()
 
+		if passNotes != "" {
+			if err := c.AddNote(args[0], "manual", passNotes); err != nil {
+				return err
+			}
+		}
 		if err := c.SetOutcome(args[0], "pass"); err != nil {
 			return err
 		}
@@ -342,6 +349,7 @@ var dropletPassCmd = &cobra.Command{
 // --- cistern recirculate ---
 
 var recirculateTo string
+var recirculateNotes string
 
 var dropletRecirculateCmd = &cobra.Command{
 	Use:   "recirculate <id>",
@@ -354,6 +362,11 @@ var dropletRecirculateCmd = &cobra.Command{
 		}
 		defer c.Close()
 
+		if recirculateNotes != "" {
+			if err := c.AddNote(args[0], "manual", recirculateNotes); err != nil {
+				return err
+			}
+		}
 		outcome := "recirculate"
 		if recirculateTo != "" {
 			outcome = "recirculate:" + recirculateTo
@@ -368,6 +381,8 @@ var dropletRecirculateCmd = &cobra.Command{
 
 // --- cistern block ---
 
+var blockNotes string
+
 var dropletBlockCmd = &cobra.Command{
 	Use:   "block <id>",
 	Short: "Signal block outcome — genuinely blocked, cannot proceed",
@@ -379,6 +394,11 @@ var dropletBlockCmd = &cobra.Command{
 		}
 		defer c.Close()
 
+		if blockNotes != "" {
+			if err := c.AddNote(args[0], "manual", blockNotes); err != nil {
+				return err
+			}
+		}
 		if err := c.SetOutcome(args[0], "block"); err != nil {
 			return err
 		}
@@ -403,7 +423,10 @@ func init() {
 	dropletPurgeCmd.Flags().StringVar(&purgeOlderThan, "older-than", "", "delete droplets older than this duration (e.g. 30d, 24h) (required)")
 	dropletPurgeCmd.Flags().BoolVar(&purgeDryRun, "dry-run", false, "show what would be deleted without deleting")
 
+	dropletPassCmd.Flags().StringVar(&passNotes, "notes", "", "add a note before signaling pass")
 	dropletRecirculateCmd.Flags().StringVar(&recirculateTo, "to", "", "named step to recirculate to (e.g. --to implement)")
+	dropletRecirculateCmd.Flags().StringVar(&recirculateNotes, "notes", "", "add a note before signaling recirculate")
+	dropletBlockCmd.Flags().StringVar(&blockNotes, "notes", "", "add a note before signaling block")
 
 	dropletCmd.AddCommand(dropletAddCmd, dropletListCmd, dropletShowCmd, dropletNoteCmd,
 		dropletCloseCmd, dropletReopenCmd, dropletEscalateCmd, dropletPurgeCmd,

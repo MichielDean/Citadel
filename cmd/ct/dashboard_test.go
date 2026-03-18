@@ -41,15 +41,15 @@ cataractae:
 		t.Fatal(err)
 	}
 
-	// Config referencing two operators named "upstream" and "tributary".
+	// Config referencing two operators named "virgo" and "marcia".
 	cfgContent := `repos:
   - name: myrepo
     url: https://example.com/repo
     workflow_path: feature.yaml
     cataractae: 2
     names:
-      - upstream
-      - tributary
+      - virgo
+      - marcia
     prefix: mr
 max_cataractae: 4
 `
@@ -72,10 +72,10 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Add: 1 flowing assigned to "upstream", 1 queued, 1 closed.
+	// Add: 1 flowing assigned to "virgo", 1 queued, 1 closed.
 	flowing, _ := c.Add("myrepo", "Feature A", "", 1, 2)
 	c.GetReady("myrepo") // marks it in_progress
-	c.Assign(flowing.ID, "upstream", "implement")
+	c.Assign(flowing.ID, "virgo", "implement")
 
 	_, _ = c.Add("myrepo", "Feature B", "", 2, 2) // stays open/queued
 
@@ -104,41 +104,41 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 		t.Error("FetchedAt should be set")
 	}
 
-	// Cataracta "upstream" should be assigned to the flowing item.
-	var upstream *CataractaInfo
+	// Cataracta "virgo" should be assigned to the flowing item.
+	var virgo *CataractaInfo
 	for i := range data.Cataractae {
-		if data.Cataractae[i].Name == "upstream" {
-			upstream = &data.Cataractae[i]
+		if data.Cataractae[i].Name == "virgo" {
+			virgo = &data.Cataractae[i]
 		}
 	}
-	if upstream == nil {
-		t.Fatal("cataracta upstream not found in data.Cataractae")
+	if virgo == nil {
+		t.Fatal("cataracta virgo not found in data.Cataractae")
 	}
-	if upstream.DropletID != flowing.ID {
-		t.Errorf("upstream.DropletID = %q, want %q", upstream.DropletID, flowing.ID)
+	if virgo.DropletID != flowing.ID {
+		t.Errorf("virgo.DropletID = %q, want %q", virgo.DropletID, flowing.ID)
 	}
-	if upstream.Step != "implement" {
-		t.Errorf("upstream.Step = %q, want %q", upstream.Step, "implement")
+	if virgo.Step != "implement" {
+		t.Errorf("virgo.Step = %q, want %q", virgo.Step, "implement")
 	}
-	if upstream.CataractaIndex != 1 {
-		t.Errorf("upstream.CataractaIndex = %d, want 1", upstream.CataractaIndex)
+	if virgo.CataractaIndex != 1 {
+		t.Errorf("virgo.CataractaIndex = %d, want 1", virgo.CataractaIndex)
 	}
-	if upstream.TotalCataractae != 3 {
-		t.Errorf("upstream.TotalCataractae = %d, want 3", upstream.TotalCataractae)
+	if virgo.TotalCataractae != 3 {
+		t.Errorf("virgo.TotalCataractae = %d, want 3", virgo.TotalCataractae)
 	}
 
-	// Cataracta "tributary" should be dry.
-	var tributary *CataractaInfo
+	// Cataracta "marcia" should be dry.
+	var marcia *CataractaInfo
 	for i := range data.Cataractae {
-		if data.Cataractae[i].Name == "tributary" {
-			tributary = &data.Cataractae[i]
+		if data.Cataractae[i].Name == "marcia" {
+			marcia = &data.Cataractae[i]
 		}
 	}
-	if tributary == nil {
-		t.Fatal("cataracta tributary not found in data.Cataractae")
+	if marcia == nil {
+		t.Fatal("cataracta marcia not found in data.Cataractae")
 	}
-	if tributary.DropletID != "" {
-		t.Errorf("tributary.DropletID = %q, want empty (dry)", tributary.DropletID)
+	if marcia.DropletID != "" {
+		t.Errorf("marcia.DropletID = %q, want empty (dry)", marcia.DropletID)
 	}
 
 	// Cistern should contain flowing + queued (2 items).
@@ -271,8 +271,8 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 		QueuedCount:  1,
 		DoneCount:    3,
 		Cataractae: []CataractaInfo{
-			{Name: "upstream", DropletID: "ci-abc12", Step: "implement", CataractaIndex: 1, TotalCataractae: 6, Elapsed: 2*time.Minute + 14*time.Second},
-			{Name: "tributary"},
+			{Name: "virgo", DropletID: "ci-abc12", Step: "implement", CataractaIndex: 1, TotalCataractae: 6, Elapsed: 2*time.Minute + 14*time.Second},
+			{Name: "marcia"},
 		},
 		CisternItems: []*cistern.Droplet{
 			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataracta: "implement", Complexity: 2},
@@ -286,17 +286,17 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 
 	out := renderDashboard(data)
 
-	sections := []string{"CISTERN", "SLUICES", "CISTERN", "RECENT FLOW"}
+	sections := []string{"CISTERN", "AQUEDUCTS", "CISTERN", "RECENT FLOW"}
 	for _, s := range sections {
 		if !strings.Contains(out, s) {
 			t.Errorf("output missing section %q", s)
 		}
 	}
-	if !strings.Contains(out, "upstream") {
-		t.Error("output missing cataracta name upstream")
+	if !strings.Contains(out, "virgo") {
+		t.Error("output missing cataracta name virgo")
 	}
-	if !strings.Contains(out, "tributary") {
-		t.Error("output missing cataracta name tributary")
+	if !strings.Contains(out, "marcia") {
+		t.Error("output missing cataracta name marcia")
 	}
 	if !strings.Contains(out, "15:07:42") {
 		t.Error("output missing last update timestamp")
@@ -312,8 +312,8 @@ func TestRenderDashboard_AqueductsClosedWhenNoCataractae(t *testing.T) {
 		FetchedAt: time.Now(),
 	}
 	out := renderDashboard(data)
-	if !strings.Contains(out, "Aqueducts closed") {
-		t.Error("expected 'Aqueducts closed' when no channels configured")
+	if !strings.Contains(out, "No aqueducts configured") {
+		t.Error("expected 'No aqueducts configured' when no channels configured")
 	}
 }
 
@@ -323,7 +323,7 @@ func TestRenderDashboardHTML_ContainsEasterEggHoverText(t *testing.T) {
 	elapsed := 42
 	snapshot := inspectOutput{
 		Cataractae: []cataractaInfo{
-			{Name: "upstream", DropletID: &dropletID, Stage: &stage, ElapsedSeconds: &elapsed},
+			{Name: "virgo", DropletID: &dropletID, Stage: &stage, ElapsedSeconds: &elapsed},
 		},
 		Queue: cisternInfo{Flowing: 1, Queued: 0, Closed: 0},
 	}
