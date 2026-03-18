@@ -584,6 +584,10 @@ var dropletIssueRejectCmd = &cobra.Command{
 	Short: "Mark an issue unresolved — still present",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		name := strings.ToLower(os.Getenv("CT_CATARACTA_NAME"))
+		if name == "implementer" || name == "implement" {
+			return fmt.Errorf("only reviewer cataractae may reject issues")
+		}
 		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
 			return err

@@ -142,6 +142,51 @@ func TestDropletIssueReject_UpdatesStatus(t *testing.T) {
 	}
 }
 
+func TestDropletIssueReject_ImplementerForbidden(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "test.db")
+	t.Setenv("CT_DB", db)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("CT_CATARACTA_NAME", "implementer")
+
+	c, _ := cistern.New(db, "ct")
+	item, _ := c.Add("myrepo", "Task", "", 1, 3)
+	iss, _ := c.AddIssue(item.ID, "reviewer", "some issue")
+	c.Close()
+
+	err := execCmd(t, "droplet", "issue", "reject", iss.ID, "--evidence", "still broken")
+	if err == nil {
+		t.Error("expected error: implementer should be forbidden from rejecting issues")
+	}
+	if !strings.Contains(err.Error(), "only reviewer") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+
+	// Verify DB state unchanged.
+	c2, _ := cistern.New(db, "ct")
+	defer c2.Close()
+	issues, _ := c2.ListIssues(item.ID, false)
+	if issues[0].Status != "open" {
+		t.Errorf("status should remain open, got %q", issues[0].Status)
+	}
+}
+
+func TestDropletIssueReject_ImplementShortName(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "test.db")
+	t.Setenv("CT_DB", db)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("CT_CATARACTA_NAME", "implement")
+
+	c, _ := cistern.New(db, "ct")
+	item, _ := c.Add("myrepo", "Task", "", 1, 3)
+	iss, _ := c.AddIssue(item.ID, "reviewer", "some issue")
+	c.Close()
+
+	err := execCmd(t, "droplet", "issue", "reject", iss.ID, "--evidence", "proof")
+	if err == nil {
+		t.Error("expected error for CT_CATARACTA_NAME=implement")
+	}
+}
+
 func TestDropletPass_BlockedByOpenIssues(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "test.db")
 	t.Setenv("CT_DB", db)
