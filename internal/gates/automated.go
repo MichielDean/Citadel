@@ -54,8 +54,9 @@ type StepOutcome struct {
 
 // Result values.
 const (
-	ResultPass = "pass"
-	ResultFail = "fail"
+	ResultPass        = "pass"
+	ResultFail        = "fail"
+	ResultRecirculate = "recirculate"
 )
 
 // Annotation keys produced by automated steps.

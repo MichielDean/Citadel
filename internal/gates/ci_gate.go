@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,8 @@ func (e *Executor) CIGate(ctx context.Context, bc DropletContext, pollInterval t
 		pollInterval = DefaultPollInterval
 	}
 
+	startTime := time.Now()
+
 	for {
 		checks, err := e.fetchChecks(ctx, bc.WorkDir, prURL)
 		if err != nil {
@@ -44,9 +47,10 @@ func (e *Executor) CIGate(ctx context.Context, bc DropletContext, pollInterval t
 		allDone, anyFailed, summary := evaluateChecks(checks)
 
 		if anyFailed {
+			notes := e.extractCIFailure(ctx, bc)
 			return &StepOutcome{
-				Result: ResultFail,
-				Notes:  fmt.Sprintf("CI failed: %s", summary),
+				Result: ResultRecirculate,
+				Notes:  fmt.Sprintf("%s (checks: %s)", notes, summary),
 			}, nil
 		}
 
@@ -59,13 +63,50 @@ func (e *Executor) CIGate(ctx context.Context, bc DropletContext, pollInterval t
 
 		select {
 		case <-ctx.Done():
+			elapsed := int(time.Since(startTime).Minutes())
 			return &StepOutcome{
 				Result: ResultFail,
-				Notes:  fmt.Sprintf("CI gate timed out (pending: %s)", summary),
+				Notes:  fmt.Sprintf("CI pending after %d minutes — manual check required", elapsed),
 			}, nil
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+// extractCIFailure fetches failure details from GitHub Actions logs.
+func (e *Executor) extractCIFailure(ctx context.Context, bc DropletContext) string {
+	branchOut, err := e.ExecFn(ctx, bc.WorkDir, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "CI failed"
+	}
+	branch := strings.TrimSpace(string(branchOut))
+	if branch == "" {
+		return "CI failed"
+	}
+
+	runListOut, err := e.ExecFn(ctx, bc.WorkDir, "gh", "run", "list", "--branch", branch, "--json", "databaseId,status", "--limit", "3")
+	if err != nil {
+		return "CI failed"
+	}
+
+	var runs []struct {
+		DatabaseID int64  `json:"databaseId"`
+		Status     string `json:"status"`
+	}
+	if err := json.Unmarshal(runListOut, &runs); err != nil || len(runs) == 0 {
+		return "CI failed"
+	}
+
+	runID := fmt.Sprintf("%d", runs[0].DatabaseID)
+	logOut, _ := e.ExecFn(ctx, bc.WorkDir, "gh", "run", "view", runID, "--log-failed")
+	logStr := strings.TrimSpace(string(logOut))
+	if len(logStr) > 500 {
+		logStr = logStr[:500]
+	}
+	if logStr == "" {
+		return fmt.Sprintf("CI failed — run %s", runID)
+	}
+	return fmt.Sprintf("CI failed — %s", logStr)
 }
 
 func (e *Executor) fetchChecks(ctx context.Context, dir, prURL string) ([]checkRun, error) {
