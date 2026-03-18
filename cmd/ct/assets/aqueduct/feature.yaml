@@ -58,21 +58,29 @@ cataracta_definitions:
       9. Mirror consistency — if the diff touches two files that should match (e.g., aqueduct/feature.yaml AND cmd/ct/assets/aqueduct/feature.yaml), compare them. Flag any field in one missing from the other.
       10. New cataracta steps — if a new step is added to cataractae:, verify it has: on_pass, on_fail, skip_for (if applicable).
 
-      ## Severity — be strict, err on the side of recirculate
+      ## Decision rule — binary, no suggestions
 
-      **blocking** — exploitable, data loss, crash, broken build
-      **required** — any of the following: wrong behaviour, incorrect Go module declarations
-        (indirect vs direct), silent data loss (drops input without warning), broken error
-        handling, partial-success without rollback when outputs were already emitted,
-        missing go mod tidy after adding a dependency, unchecked errors on writes
-      **suggestion** — style, cosmetic, nice-to-have hardening
+      Either an issue is worth fixing or it isn't. If it's worth mentioning, it's worth fixing.
+      There is no suggestion tier — suggestions are noise in an automated pipeline.
 
-      When in doubt between required and suggestion: required.
-      blocking/required → recirculate | suggestion → pass
+      **Recirculate if any of:**
+      - Security: exploitable, auth bypass, hardcoded secrets, injection
+      - Correctness: wrong behaviour, logic errors, nil dereference, race conditions
+      - Go module: indirect/direct misclassification, missing go mod tidy after adding deps
+      - Data integrity: silent data loss, drops input without warning
+      - Error handling: unchecked errors on writes, swallowed errors with no fallback
+      - Partial success: outputs emitted before a failure with no rollback
+      - Missing tests: new behaviour with zero coverage
+      - API contract: breaking changes, type mismatches
+      - Resource leaks: unclosed handles, goroutine leaks, missing timeouts
+      - CLI/flag inconsistency: flag used in docs/tests but not defined in command
+
+      **Pass if none of the above apply.** Do not include suggestions, style notes,
+      or "nice to have" comments in the pass notes — clean pass means clean notes.
 
       Signal:
-      ct droplet pass <id> --notes "No blocking or required issues."
-      ct droplet recirculate <id> --notes "Required: <file:line> — <specific problem and fix>"
+      ct droplet pass <id> --notes "No issues."
+      ct droplet recirculate <id> --notes "<file:line> — <specific problem and exact fix required>"
 
   qa:
     name: QA Reviewer
@@ -129,12 +137,21 @@ cataracta_definitions:
       6. Resource Safety — unbounded allocations, missing timeouts, no size caps on downloads/reads
       7. Path Traversal — user-controlled strings passed to filepath.Join without sanitization; skill names used directly in paths
 
-      ## Severity
-      blocking: exploitable with material impact | required: fix before merge | suggestion: defense-in-depth
+      ## Decision rule — binary, no suggestions
+
+      Either a security issue is worth fixing or it isn't. No suggestion tier.
+
+      **Recirculate if any of:**
+      - Exploitable with material impact (auth bypass, injection, RCE, data exfil)
+      - Secrets or credentials in code, logs, or error messages
+      - Missing input validation on security boundaries
+      - Prompt injection: external content embedded in agent prompts without escaping
+
+      **Pass if none of the above apply.** Clean pass means clean notes — no suggestions.
 
       Signal:
-      ct droplet pass <id> --notes "No blocking or required security issues."
-      ct droplet recirculate <id> --notes "<file:line> <severity> — <vulnerability and remediation>"
+      ct droplet pass <id> --notes "No security issues."
+      ct droplet recirculate <id> --notes "<file:line> — <vulnerability and exact remediation>"
 
   delivery:
     name: Delivery
