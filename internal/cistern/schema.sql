@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS droplets (
     assignee TEXT DEFAULT '',
     current_cataracta TEXT DEFAULT '',
     outcome TEXT DEFAULT NULL,
+    assigned_aqueduct TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
