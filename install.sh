@@ -155,7 +155,7 @@ install_ct() {
   fi
 
   local ct_version
-  ct_version="$(${ct_bin} version 2>/dev/null | sed 's/^ct //' || echo 'dev')"
+  ct_version="$(CT_NO_ASCII_LOGO=1 ${ct_bin} version 2>/dev/null | sed 's/^ct //' || echo 'dev')"
   info "ct ${ct_version} installed at ${ct_bin}"
 }
 
@@ -208,6 +208,81 @@ create_config() {
   info "Config and aqueduct files created"
 }
 
+# --- setup_systemd_service: install and enable the Castellarius as a user service ---
+setup_systemd_service() {
+  # Requires systemd with user session support.
+  if ! command -v systemctl &>/dev/null; then
+    warn "systemctl not found — skipping service install. Run the Castellarius manually: ct castellarius start"
+    return
+  fi
+  if ! systemctl --user status &>/dev/null 2>&1; then
+    warn "systemd user session not available — skipping service install."
+    return
+  fi
+
+  local gobin
+  gobin="$(resolve_gobin)"
+  local ct_bin="${gobin}/ct"
+  local service_dir="${HOME}/.config/systemd/user"
+  local service_file="${service_dir}/cistern-castellarius.service"
+
+  mkdir -p "${service_dir}"
+
+  # Write service file with resolved paths for this user.
+  cat > "${service_file}" <<UNIT
+[Unit]
+Description=Cistern Castellarius — aqueduct scheduler
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${ct_bin} castellarius start
+
+# Always restart — covers both intentional exits (self-restart on config change)
+# and unexpected crashes. systemd is the process supervisor.
+Restart=always
+RestartSec=5
+
+# Crash-loop protection: stop after 10 failures in 2 minutes.
+# Reset manually: systemctl --user reset-failed cistern-castellarius
+StartLimitIntervalSec=120
+StartLimitBurst=10
+StartLimitAction=none
+
+# Graceful shutdown — let in-flight agents settle.
+TimeoutStopSec=15
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Persistent log alongside the journal.
+StandardOutput=append:${HOME}/.cistern/castellarius.log
+StandardError=append:${HOME}/.cistern/castellarius.log
+
+Environment=HOME=${HOME}
+Environment=PATH=${gobin}:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
+UNIT
+
+  info "Castellarius service file written to ${service_file}"
+
+  systemctl --user daemon-reload
+
+  # Enable linger so the service survives SSH session end and starts on boot.
+  if command -v loginctl &>/dev/null; then
+    if loginctl show-user "${USER}" 2>/dev/null | grep -q "Linger=no"; then
+      loginctl enable-linger "${USER}" && info "Linger enabled for ${USER} ✓"
+    else
+      info "Linger already enabled ✓"
+    fi
+  fi
+
+  systemctl --user enable cistern-castellarius
+  info "cistern-castellarius.service enabled ✓"
+  info "Start it after configuring your repos: systemctl --user start cistern-castellarius"
+}
+
 # --- add_shell_completion: write completion for bash/zsh ---
 add_shell_completion() {
   local gobin ct_bin shell_name
@@ -254,7 +329,16 @@ print_success() {
   printf "     ${BLUE}ct droplet add --title \"My first task\" --repo <repo-name>${NC}\n"
   printf "\n"
   printf "  3. Wake the Castellarius:\n"
-  printf "     ${BLUE}ct castellarius start${NC}\n"
+  if command -v systemctl &>/dev/null && systemctl --user is-enabled cistern-castellarius &>/dev/null 2>&1; then
+    printf "     ${BLUE}systemctl --user start cistern-castellarius${NC}\n"
+    printf "\n"
+    printf "  Manage the Castellarius:\n"
+    printf "     ${BLUE}systemctl --user status cistern-castellarius${NC}  — health check\n"
+    printf "     ${BLUE}systemctl --user restart cistern-castellarius${NC} — restart\n"
+    printf "     ${BLUE}tail -f ~/.cistern/castellarius.log${NC}           — live log\n"
+  else
+    printf "     ${BLUE}ct castellarius start${NC}\n"
+  fi
   printf "\n"
   printf "${BOLD}Paths:${NC}\n"
   printf "  Config:     %s/cistern.yaml\n" "${CT_DIR}"
@@ -287,6 +371,8 @@ main() {
   create_config
   step "Shell completion"
   add_shell_completion
+  step "Setting up systemd service"
+  setup_systemd_service
   print_success
 }
 
