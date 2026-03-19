@@ -80,8 +80,8 @@ func TestMissingRefError(t *testing.T) {
 	if !strings.Contains(err.Error(), "nonexistent-step") {
 		t.Errorf("error = %q, want it to mention 'nonexistent-step'", err)
 	}
-	if !strings.Contains(err.Error(), "unknown cataracta") {
-		t.Errorf("error = %q, want it to contain 'unknown cataracta'", err)
+	if !strings.Contains(err.Error(), "unknown cataractae") {
+		t.Errorf("error = %q, want it to contain 'unknown cataractae'", err)
 	}
 }
 
@@ -146,8 +146,8 @@ func TestValidateDuplicateStepName(t *testing.T) {
 		},
 	}
 	err := Validate(w)
-	if err == nil || !strings.Contains(err.Error(), "duplicate cataracta name") {
-		t.Errorf("expected duplicate cataracta error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "duplicate cataractae name") {
+		t.Errorf("expected duplicate cataractae error, got %v", err)
 	}
 }
 

@@ -713,7 +713,7 @@ cataractae:
 		t.Fatalf("ParseWorkflowBytes: %v", err)
 	}
 	if len(w.Cataractae) != 1 {
-		t.Fatalf("expected 1 cataracta, got %d", len(w.Cataractae))
+		t.Fatalf("expected 1 cataractae, got %d", len(w.Cataractae))
 	}
 	impl := w.Cataractae[0]
 	if len(impl.Skills) != 1 {

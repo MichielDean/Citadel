@@ -2,7 +2,7 @@
 //
 // It polls the work cistern for each configured repo, assigns droplets to
 // named operators, runs workflow cataractae via an injected CataractaeRunner, reads
-// outcomes, and routes to the next cataracta via deterministic workflow rules.
+// outcomes, and routes to the next cataractae via deterministic workflow rules.
 // No AI in the Castellarius — pure state machine.
 package castellarius
 
@@ -407,11 +407,11 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 
 		switch result {
 		case ResultPass:
-			s.logger.Info("Droplet cleared cataracta", "droplet", item.ID, "cataractae", step.Name)
+			s.logger.Info("Droplet cleared cataractae", "droplet", item.ID, "cataractae", step.Name)
 		case ResultRecirculate:
 			s.logger.Info("Droplet recirculated", "droplet", item.ID, "cataractae", step.Name)
 		default:
-			s.logger.Info("Droplet stagnant at cataracta", "droplet", item.ID, "cataractae", step.Name, "outcome", item.Outcome)
+			s.logger.Info("Droplet stagnant at cataractae", "droplet", item.ID, "cataractae", step.Name, "outcome", item.Outcome)
 		}
 
 		// Phantom commit prevention: when implement passes, verify that HEAD has
@@ -533,7 +533,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 			continue
 		}
 
-		s.logger.Info("Droplet entering cataracta",
+		s.logger.Info("Droplet entering cataractae",
 			"droplet", item.ID,
 			"operator", worker.Name,
 			"cataractae", step.Name,
@@ -676,14 +676,14 @@ func (s *Castellarius) handleTerminal(client CisternClient, itemID, terminal, fr
 			s.logger.Error("close failed", "droplet", itemID, "error", err)
 		}
 	case "blocked", "human", "escalate":
-		s.logger.Info("Droplet stagnant at terminal", "droplet", itemID, "terminal", terminal, "from_cataracta", fromStep)
-		reason := fmt.Sprintf("reached terminal %q from cataracta %q", terminal, fromStep)
+		s.logger.Info("Droplet stagnant at terminal", "droplet", itemID, "terminal", terminal, "from_cataractae", fromStep)
+		reason := fmt.Sprintf("reached terminal %q from cataractae %q", terminal, fromStep)
 		if err := client.Escalate(itemID, reason); err != nil {
 			s.logger.Error("escalate at terminal failed", "droplet", itemID, "error", err)
 		}
 		if strings.ToLower(terminal) == "human" {
 			if err := client.SetCataractae(itemID, "human"); err != nil {
-				s.logger.Error("set cataracta human failed", "droplet", itemID, "error", err)
+				s.logger.Error("set cataractae human failed", "droplet", itemID, "error", err)
 			}
 		}
 	}
@@ -827,7 +827,7 @@ func WriteContext(dir string, notes []cistern.CataractaeNote) error {
 }
 
 // parkWorktree detaches HEAD in a worker's sandbox so the feature branch is
-// ensureCataractaeIntegrity checks each agent cataracta's CLAUDE.md for the
+// ensureCataractaeIntegrity checks each agent cataractae's CLAUDE.md for the
 // sentinel string that proves it was generated from the YAML (not corrupted).
 // If any file is missing or lacks the sentinel, it is regenerated automatically.
 // This runs at Castellarius startup so corrupted prompts never silently persist.

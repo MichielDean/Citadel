@@ -396,7 +396,7 @@ func TestRunDoctorExtendedChecks_FixRegeneratesClaudeMd(t *testing.T) {
 		}
 	}
 
-	// Workflow with cataracta_definitions so GenerateCataractaeFiles can write CLAUDE.md.
+	// Workflow with cataractae_definitions so GenerateCataractaeFiles can write CLAUDE.md.
 	workflowWithDefs := `name: test
 cataractae_definitions:
   tester:

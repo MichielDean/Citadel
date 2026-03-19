@@ -174,7 +174,7 @@ func TestCisternListTableOutput(t *testing.T) {
 		}
 	})
 
-	t.Run("em-dash for empty cataracta", func(t *testing.T) {
+	t.Run("em-dash for empty cataractae", func(t *testing.T) {
 		listOutput = "table"
 		listRepo = ""
 		listStatus = ""
@@ -184,7 +184,7 @@ func TestCisternListTableOutput(t *testing.T) {
 			}
 		})
 		if !strings.Contains(out, "\u2014") {
-			t.Errorf("expected em-dash for empty cataracta column, got:\n%s", out)
+			t.Errorf("expected em-dash for empty cataractaee column, got:\n%s", out)
 		}
 	})
 

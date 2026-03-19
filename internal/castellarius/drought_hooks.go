@@ -29,6 +29,10 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 			err = hookWorktreePrune(cfg, sandboxRoot, logger)
 		case "db_vacuum":
 			err = hookDBVacuum(dbPath, logger)
+		case "events_prune":
+			err = hookEventsPrune(dbPath, hook, logger)
+		case "tmp_cleanup":
+			err = hookTmpCleanup(logger)
 		case "shell":
 			err = hookShell(hook, logger)
 		default:
@@ -159,6 +163,62 @@ func hookDBVacuum(dbPath string, logger *slog.Logger) error {
 		"after_bytes", afterSize,
 		"freed_bytes", beforeSize-afterSize,
 	)
+	return nil
+}
+
+// hookEventsPrune removes events older than keep_days (default 30) from the events table.
+// This prevents unbounded growth of the events log over time.
+func hookEventsPrune(dbPath string, hook aqueduct.DroughtHook, logger *slog.Logger) error {
+	if dbPath == "" {
+		return fmt.Errorf("events_prune: no database path configured")
+	}
+	keepDays := hook.KeepDays
+	if keepDays <= 0 {
+		keepDays = 30
+	}
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	if err != nil {
+		return fmt.Errorf("events_prune: open: %w", err)
+	}
+	defer db.Close()
+
+	cutoff := time.Now().UTC().AddDate(0, 0, -keepDays).Format("2006-01-02T15:04:05Z")
+	res, err := db.Exec(`DELETE FROM events WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return fmt.Errorf("events_prune: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	logger.Info("events_prune: completed", "deleted_rows", n, "keep_days", keepDays)
+	return nil
+}
+
+// hookTmpCleanup removes stale ct-diff-* and ct-review-* temp directories left
+// by agent sessions that exited without cleanup.
+func hookTmpCleanup(logger *slog.Logger) error {
+	patterns := []string{"/tmp/ct-diff-*", "/tmp/ct-review-*", "/tmp/ct-qa-*"}
+	total := 0
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			info, err := os.Stat(m)
+			if err != nil {
+				continue
+			}
+			// Only remove directories older than 2 hours.
+			if time.Since(info.ModTime()) < 2*time.Hour {
+				continue
+			}
+			if err := os.RemoveAll(m); err != nil {
+				logger.Warn("tmp_cleanup: remove failed", "path", m, "error", err)
+			} else {
+				total++
+			}
+		}
+	}
+	logger.Info("tmp_cleanup: completed", "removed", total)
 	return nil
 }
 

@@ -112,7 +112,7 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 		}
 	}
 	if virgo == nil {
-		t.Fatal("cataracta virgo not found in data.Cataractae")
+		t.Fatal("cataractae virgo not found in data.Cataractae")
 	}
 	if virgo.DropletID != flowing.ID {
 		t.Errorf("virgo.DropletID = %q, want %q", virgo.DropletID, flowing.ID)
@@ -135,7 +135,7 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 		}
 	}
 	if marcia == nil {
-		t.Fatal("cataracta marcia not found in data.Cataractae")
+		t.Fatal("cataractae marcia not found in data.Cataractae")
 	}
 	if marcia.DropletID != "" {
 		t.Errorf("marcia.DropletID = %q, want empty (dry)", marcia.DropletID)
@@ -194,7 +194,7 @@ func TestFetchDashboardData_FarmNotRunning_ShowsDroughtState(t *testing.T) {
 		}
 		for _, ch := range data.Cataractae {
 			if ch.DropletID != "" {
-				t.Errorf("cataracta %q should be dry (empty DropletID), got %q", ch.Name, ch.DropletID)
+				t.Errorf("cataractae %q should be dry (empty DropletID), got %q", ch.Name, ch.DropletID)
 			}
 		}
 	})
@@ -295,10 +295,10 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 	}
 	// Aqueduct names appear in the flow graph rows.
 	if !strings.Contains(out, "virgo") {
-		t.Error("output missing cataracta name virgo")
+		t.Error("output missing cataractae name virgo")
 	}
 	if !strings.Contains(out, "marcia") {
-		t.Error("output missing cataracta name marcia")
+		t.Error("output missing cataractae name marcia")
 	}
 	// Cistern counts.
 	if !strings.Contains(out, "flowing") {

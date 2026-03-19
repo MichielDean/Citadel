@@ -353,7 +353,7 @@ func revisionCycleNotes(notes []cistern.CataractaeNote) []cistern.CataractaeNote
 	return filtered
 }
 
-// isReviewerCataractae returns true if the step is a review or QA cataracta —
+// isReviewerCataractae returns true if the step is a review or QA cataractae —
 // i.e. one that should use the two-phase verification protocol.
 func isReviewerCataractae(step *aqueduct.WorkflowCataractae) bool {
 	if step == nil {

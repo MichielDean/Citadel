@@ -21,7 +21,7 @@ type Session struct {
 	// Empty means default.
 	Model string
 
-	// Identity is the agent cataracta identity (e.g., "implementer", "reviewer").
+	// Identity is the agent cataractae identity (e.g., "implementer", "reviewer").
 	// Used to locate cataractae/<identity>/CLAUDE.md in the working directory.
 	Identity string
 
@@ -79,12 +79,12 @@ func (s *Session) spawn() error {
 
 // baseCataractaePrompt is the constitutional layer — hardcoded in the binary,
 // cannot be corrupted by YAML edits or file changes. It establishes the
-// non-negotiable contract for every cataracta session.
+// non-negotiable contract for every cataractae session.
 const baseCataractaePrompt = `You are a Cataracta operating within the Cistern agentic pipeline.
 
 Cistern is an automated software delivery system. The Castellarius (a pure state
 machine) watches the cistern and routes droplets (units of work) into named
-aqueducts. You are one cataracta — one gate — in that aqueduct. You receive a
+aqueducts. You are one cataractae — one gate — in that aqueduct. You receive a
 droplet, complete your assigned role, and signal your outcome so the droplet
 continues flowing.
 
@@ -101,7 +101,7 @@ EACH AQUEDUCT FLOWS THE DROPLET THROUGH ITS CATARACTAE.
      ct droplet pass <id> --notes "..."
      ct droplet recirculate <id> --notes "..."
      ct droplet block <id> --notes "..."
-   A cataracta that exits without signaling leaves the droplet stranded.
+   A cataractae that exits without signaling leaves the droplet stranded.
 
 Your role persona and skill instructions follow.
 `
@@ -127,7 +127,7 @@ func (s *Session) buildPrompt() string {
 	return prompt
 }
 
-// resolveIdentityPath returns the path to the cataracta identity's CLAUDE.md file.
+// resolveIdentityPath returns the path to the cataractae identity's CLAUDE.md file.
 // Checks ~/.cistern/cataractae/<identity>/CLAUDE.md first, then cataractae/<identity>/CLAUDE.md in the sandbox.
 func (s *Session) resolveIdentityPath() string {
 	home, err := os.UserHomeDir()

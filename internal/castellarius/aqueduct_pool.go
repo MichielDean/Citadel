@@ -18,7 +18,7 @@ type Aqueduct struct {
 	RepoName  string
 	Status    AqueductStatus
 	DropletID string // non-empty when flowing
-	Step      string // current cataracta when flowing
+	Step      string // current cataractae when flowing
 }
 
 // AqueductPool manages named aqueducts for a single repository.

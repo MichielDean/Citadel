@@ -72,8 +72,8 @@ type ComplexityConfig struct {
 	Critical ComplexityLevel `yaml:"critical"`
 }
 
-// SkipCataractaeForLevel returns cataracta names that should be skipped for the given
-// complexity level, derived from each cataracta's skip_for field.
+// SkipCataractaeForLevel returns cataractae names that should be skipped for the given
+// complexity level, derived from each cataractae's skip_for field.
 func (wf *Workflow) SkipCataractaeForLevel(level int) []string {
 	var skipped []string
 	for _, step := range wf.Cataractae {
@@ -131,13 +131,14 @@ type RepoConfig struct {
 
 // DroughtHook defines an action to run when the scheduler enters drought (idle) state.
 type DroughtHook struct {
-	Name    string `yaml:"name"`
-	Action  string `yaml:"action"`                    // built-in: "cataractae_generate", "worktree_prune", "db_vacuum" | "shell"
-	Command string `yaml:"command,omitempty"`         // only for action: shell
-	Timeout int    `yaml:"timeout_seconds,omitempty"` // default 30s
+	Name     string `yaml:"name"`
+	Action   string `yaml:"action"`                    // built-in: "cataractae_generate", "worktree_prune", "db_vacuum", "events_prune", "tmp_cleanup" | "shell"
+	Command  string `yaml:"command,omitempty"`         // only for action: shell
+	Timeout  int    `yaml:"timeout_seconds,omitempty"` // default 30s
+	KeepDays int    `yaml:"keep_days,omitempty"`       // for events_prune: days to retain (default 30)
 }
 
-// RateLimitConfig configures rate limiting for the delivery cataracta API endpoint.
+// RateLimitConfig configures rate limiting for the delivery cataractae API endpoint.
 // All limits apply within a sliding window. Zero values use the defaults noted below.
 type RateLimitConfig struct {
 	// PerIPRequests is the maximum number of requests allowed per source IP
@@ -163,10 +164,10 @@ type AqueductConfig struct {
 	// (e.g. "30s", "1m"). Defaults to "30s" when empty.
 	HeartbeatInterval     string           `yaml:"heartbeat_interval,omitempty"`
 	DroughtHooks          []DroughtHook    `yaml:"drought_hooks,omitempty"`
-	// RateLimit configures rate limiting for the delivery cataracta API endpoint.
+	// RateLimit configures rate limiting for the delivery cataractae API endpoint.
 	// Omit to use the built-in defaults (60 req/min per IP, 120 req/min per token).
 	RateLimit             *RateLimitConfig `yaml:"rate_limit,omitempty"`
-	// DeliveryAddr is the TCP listen address for the delivery cataracta HTTP
+	// DeliveryAddr is the TCP listen address for the delivery cataractae HTTP
 	// server (e.g. ":8080"). An empty string disables the HTTP server.
 	DeliveryAddr          string           `yaml:"delivery_addr,omitempty"`
 }

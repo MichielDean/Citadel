@@ -20,7 +20,7 @@ import (
 
 var cataractaeCmd = &cobra.Command{
 	Use:   "cataractae",
-	Short: "Manage cataracta definitions",
+	Short: "Manage cataractae definitions",
 }
 
 // --- roles generate ---
@@ -29,7 +29,7 @@ var cataractaeGenerateWorkflow string
 
 var cataractaeGenerateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generate CLAUDE.md files from cataracta definitions",
+	Short: "Generate CLAUDE.md files from cataractae definitions",
 	RunE:  runCataractaeGenerate,
 }
 
@@ -79,7 +79,7 @@ func runCataractaeGenerate(cmd *cobra.Command, args []string) error {
 
 var cataractaeListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all cataracta definitions in the aqueduct",
+	Short: "List all cataractae definitions in the aqueduct",
 	RunE:  runCataractaeList,
 }
 
@@ -132,7 +132,7 @@ func runCataractaeList(cmd *cobra.Command, args []string) error {
 
 var cataractaeEditCmd = &cobra.Command{
 	Use:   "edit",
-	Short: "Edit a cataracta definition's instructions in $EDITOR",
+	Short: "Edit a cataractae definition's instructions in $EDITOR",
 	RunE:  runCataractaeEdit,
 }
 
@@ -264,7 +264,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 
 var cataractaeResetCmd = &cobra.Command{
 	Use:   "reset [role]",
-	Short: "Restore a cataracta definition to its built-in default (with confirmation)",
+	Short: "Restore a cataractae definition to its built-in default (with confirmation)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runCataractaeReset,
 }
@@ -445,7 +445,7 @@ var cataractaeStatusCmd = &cobra.Command{
 			return fmt.Errorf("list in-progress droplets: %w", err)
 		}
 
-		// Index in-progress items by current cataracta step (per repo).
+		// Index in-progress items by current cataractae step (per repo).
 		type stepKey struct{ repo, step string }
 		active := map[stepKey]*cistern.Droplet{}
 		for _, item := range allItems {
