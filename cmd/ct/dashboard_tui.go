@@ -259,21 +259,34 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 	// chanW = n*colW → channel walls align exactly with label row edges.
 	// The arch piers sit inside the channel; rowPadL (grows each row) forms
 	// solid masonry abutments that widen toward the base — architecturally correct.
+	// Waterfall / channel-water styles — three brightness levels.
+	// Used for both the falling waterfall and the water flowing inside the channel.
+	wfBright := lipgloss.NewStyle().Foreground(lipgloss.Color("#a8eeff"))
+	wfMid    := lipgloss.NewStyle().Foreground(lipgloss.Color("#3ec8e8"))
+	wfDim    := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7a96"))
+
 	cStyle := dim
 	l1     := prefix + chanPad + cStyle.Render(strings.Repeat("▀", chanW))
 	var water string
 	if ch.DropletID != "" {
 		bar     := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
-		content := fmt.Sprintf(" ≈ ≈  %s  %s  %s  ≈ ≈ ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-		water    = g.Render(padOrTruncCenter(content, chanW-2))
+		// Build water content with blue ripples flanking the active droplet info.
+		infoStr  := fmt.Sprintf(" %s  %s  %s ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
+		ripple   := wfBright.Render("≈≈")
+		info     := wfMid.Render(infoStr)
+		inner    := " " + ripple + info + ripple + " "
+		// Visual width of inner (ANSI-free count): 1 + 2 + len(infoStr) + 2 + 1
+		innerViz := 6 + len([]rune(infoStr))
+		padL     := (chanW - 2 - innerViz) / 2
+		if padL < 0 { padL = 0 }
+		padR     := chanW - 2 - innerViz - padL
+		if padR < 0 { padR = 0 }
+		water = strings.Repeat(" ", padL) + inner + strings.Repeat(" ", padR)
 	} else {
-		water = dim.Render(padOrTruncCenter(" — idle — ", chanW-2))
+		// Idle: show gently flowing water — no dead "— idle —" text.
+		idleRipple := "≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈    ≈"
+		water = wfDim.Render(padOrTruncCenter(idleRipple, chanW-2))
 	}
-	// Waterfall styles: three brightness levels so the stream has depth.
-	// Bright = dense core, mid = flowing body, dim = spray / mist at edges.
-	wfBright := lipgloss.NewStyle().Foreground(lipgloss.Color("#a8eeff"))
-	wfMid    := lipgloss.NewStyle().Foreground(lipgloss.Color("#3ec8e8"))
-	wfDim    := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7a96"))
 
 	// Eight pre-built waterfall row strings — one per arch sub-row (0=mort lr=0 … 7=brick lr=3).
 	// Shape: water exits horizontally with momentum, arcs under gravity, thins to a
