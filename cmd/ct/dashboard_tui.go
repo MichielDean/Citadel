@@ -201,20 +201,58 @@ func (m dashboardTUIModel) viewStatusBar() string {
 	return fmt.Sprintf("  %s  %s  %s  %s", flowing, queued, done, ts)
 }
 
-// viewAqueductArches renders each aqueduct as a Roman arch diagram.
-// Each cataractae is a pier supporting the water channel above.
+// viewAqueductArches renders active aqueducts as full Roman arch diagrams,
+// and collapses idle aqueducts into a single compact text line each below.
 func (m dashboardTUIModel) viewAqueductArches() []string {
 	if len(m.data.Cataractae) == 0 {
 		return []string{tuiStyleDim.Render("  No aqueducts configured")}
 	}
+
+	var active, idle []CataractaeInfo
+	for _, ch := range m.data.Cataractae {
+		if ch.DropletID != "" {
+			active = append(active, ch)
+		} else {
+			idle = append(idle, ch)
+		}
+	}
+
 	var lines []string
-	for i, ch := range m.data.Cataractae {
+
+	// Full arch diagrams for active aqueducts only.
+	for i, ch := range active {
 		if i > 0 {
-			lines = append(lines, "") // gap between aqueducts
+			lines = append(lines, "")
 		}
 		lines = append(lines, m.tuiAqueductRow(ch, m.frame)...)
 	}
+
+	// Compact idle section — one line per idle aqueduct.
+	if len(idle) > 0 {
+		if len(active) > 0 {
+			lines = append(lines, "")
+		}
+		for _, ch := range idle {
+			lines = append(lines, m.viewIdleAqueductRow(ch))
+		}
+	}
+
 	return lines
+}
+
+// viewIdleAqueductRow renders a single idle aqueduct as a compact text line:
+//
+//	  virgo      cistern       ·  idle
+func (m dashboardTUIModel) viewIdleAqueductRow(ch CataractaeInfo) string {
+	const nameW = 12
+	const repoW = 18
+	name := padRight(ch.Name, nameW)
+	repo := padRight(ch.RepoName, repoW)
+	return fmt.Sprintf("  %s  %s  %s",
+		tuiStyleDim.Render(name),
+		tuiStyleDim.Render(repo),
+		tuiStyleDim.Render("·  idle"),
+	)
 }
 
 // tuiAqueductRow renders a single aqueduct as an 8-line arch diagram:

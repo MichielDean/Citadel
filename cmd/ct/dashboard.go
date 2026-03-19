@@ -36,6 +36,7 @@ const (
 // CataractaeInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataractae chain that droplet is.
 type CataractaeInfo struct {
 	Name            string
+	RepoName        string   // repository this aqueduct belongs to
 	DropletID       string
 	Step            string
 	Steps           []string // workflow step names in order
@@ -111,7 +112,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	if err != nil {
 		cataractae := make([]CataractaeInfo, len(configCataractae))
 		for i, ch := range configCataractae {
-			ci := CataractaeInfo{Name: ch.name}
+			ci := CataractaeInfo{Name: ch.name, RepoName: ch.repo}
 			if wf, ok := allSteps[ch.repo]; ok {
 				ci.Steps = stepNames(wf)
 			}
@@ -126,7 +127,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	if err != nil {
 		cataractae := make([]CataractaeInfo, len(configCataractae))
 		for i, ch := range configCataractae {
-			ci := CataractaeInfo{Name: ch.name}
+			ci := CataractaeInfo{Name: ch.name, RepoName: ch.repo}
 			if wf, ok := allSteps[ch.repo]; ok {
 				ci.Steps = stepNames(wf)
 			}
@@ -155,7 +156,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	// Build cataractae infos.
 	cataractae := make([]CataractaeInfo, len(configCataractae))
 	for i, ch := range configCataractae {
-		ci := CataractaeInfo{Name: ch.name}
+		ci := CataractaeInfo{Name: ch.name, RepoName: ch.repo}
 		if wf, ok := allSteps[ch.repo]; ok {
 			ci.Steps = stepNames(wf)
 		}
