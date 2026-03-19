@@ -166,4 +166,7 @@ type AqueductConfig struct {
 	// RateLimit configures rate limiting for the delivery cataracta API endpoint.
 	// Omit to use the built-in defaults (60 req/min per IP, 120 req/min per token).
 	RateLimit             *RateLimitConfig `yaml:"rate_limit,omitempty"`
+	// DeliveryAddr is the TCP listen address for the delivery cataracta HTTP
+	// server (e.g. ":8080"). An empty string disables the HTTP server.
+	DeliveryAddr          string           `yaml:"delivery_addr,omitempty"`
 }

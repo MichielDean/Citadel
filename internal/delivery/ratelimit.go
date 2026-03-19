@@ -66,12 +66,25 @@ func (rl *RateLimiter) Allow(ip, token string) bool {
 	tokCount := tokC.pruneAndCount(now, w)
 
 	if ipCount >= rl.cfg.PerIPRequests || tokCount >= rl.cfg.PerTokenRequests {
+		// Evict entries whose window has expired so that rotating-IP/token
+		// adversaries cannot cause unbounded map growth.
+		if len(ipC.times) == 0 {
+			delete(rl.ipCounters, ip)
+		}
+		if len(tokC.times) == 0 {
+			delete(rl.tokCounters, token)
+		}
 		return false
 	}
 
 	ipC.record(now)
 	tokC.record(now)
 	return true
+}
+
+// Window returns the configured sliding window duration.
+func (rl *RateLimiter) Window() time.Duration {
+	return rl.cfg.Window
 }
 
 // counter returns an existing windowCounter for key, creating one if absent.

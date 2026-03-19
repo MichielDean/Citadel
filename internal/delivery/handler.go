@@ -2,7 +2,9 @@ package delivery
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -14,14 +16,33 @@ type DropletAdder interface {
 // Handler is an http.Handler for the droplet ingestion endpoint (POST /droplets).
 // It enforces authentication via Bearer token and applies rate limiting.
 type Handler struct {
-	adder   DropletAdder
-	limiter *RateLimiter
+	adder       DropletAdder
+	limiter     *RateLimiter
+	trustedNets []*net.IPNet
 }
 
 // NewHandler returns a Handler that delegates droplet creation to adder and
-// enforces limits via limiter.
+// enforces limits via limiter. By default, loopback addresses (127.0.0.0/8
+// and ::1/128) are trusted to forward proxy headers. Deploy behind a reverse
+// proxy that strips X-Real-IP/X-Forwarded-For from untrusted sources.
 func NewHandler(adder DropletAdder, limiter *RateLimiter) *Handler {
-	return &Handler{adder: adder, limiter: limiter}
+	return &Handler{
+		adder:       adder,
+		limiter:     limiter,
+		trustedNets: loopbackNets(),
+	}
+}
+
+// loopbackNets returns parsed CIDRs for IPv4 and IPv6 loopback ranges.
+func loopbackNets() []*net.IPNet {
+	var nets []*net.IPNet
+	for _, cidr := range []string{"127.0.0.0/8", "::1/128"} {
+		_, n, _ := net.ParseCIDR(cidr)
+		if n != nil {
+			nets = append(nets, n)
+		}
+	}
+	return nets
 }
 
 type addRequest struct {
@@ -54,9 +75,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := realIP(r)
+	ip := realIP(r, h.trustedNets)
 	if !h.limiter.Allow(ip, token) {
-		w.Header().Set("Retry-After", "60")
+		w.Header().Set("Retry-After", strconv.Itoa(int(h.limiter.Window().Seconds())))
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -97,20 +118,36 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimPrefix(auth, prefix)
 }
 
-// realIP returns the client's IP address, preferring proxy headers over RemoteAddr.
-// X-Real-IP takes precedence, then the first entry in X-Forwarded-For, then RemoteAddr.
-func realIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
+// realIP returns the client's IP address. Proxy headers (X-Real-IP,
+// X-Forwarded-For) are only honoured when RemoteAddr belongs to a trusted
+// proxy network; otherwise RemoteAddr is used directly. This prevents
+// per-IP rate-limit bypass via spoofed proxy headers.
+func realIP(r *http.Request, trusted []*net.IPNet) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
 	}
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		// X-Forwarded-For may be a comma-separated list; the leftmost is the client.
-		return strings.TrimSpace(strings.SplitN(fwd, ",", 2)[0])
+	if isTrustedProxy(net.ParseIP(host), trusted) {
+		if ip := r.Header.Get("X-Real-IP"); ip != "" {
+			return ip
+		}
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			// X-Forwarded-For may be a comma-separated list; the leftmost is the client.
+			return strings.TrimSpace(strings.SplitN(fwd, ",", 2)[0])
+		}
 	}
-	// Strip port from RemoteAddr ("host:port" or "[::1]:port").
-	addr := r.RemoteAddr
-	if i := strings.LastIndex(addr, ":"); i >= 0 {
-		addr = addr[:i]
+	return host
+}
+
+// isTrustedProxy reports whether ip is contained in any of the trusted networks.
+func isTrustedProxy(ip net.IP, trusted []*net.IPNet) bool {
+	if ip == nil {
+		return false
 	}
-	return addr
+	for _, n := range trusted {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
