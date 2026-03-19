@@ -123,4 +123,8 @@ func TestDropletPeekNoSession(t *testing.T) {
 	if !strings.Contains(out, "line three") {
 		t.Errorf("expected fallback note content, got: %q", out)
 	}
+	// Elapsed time header should appear before pane output.
+	if !strings.Contains(out, "flowing") {
+		t.Errorf("expected elapsed time header with 'flowing', got: %q", out)
+	}
 }
