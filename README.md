@@ -9,10 +9,11 @@ Cistern is an agentic delivery system built around a water metaphor. Droplets of
 | Term | Meaning |
 |---|---|
 | **Droplet** | A unit of work — one issue, one feature, one fix. The atomic thing that flows. |
+| **Complexity** | A droplet's weight: trivial, standard, full, or critical. Controls which cataractae it passes through. |
 | **Filtration** | Optional LLM refinement step. Refine a raw idea before it enters the Cistern. |
 | **Cistern** | The reservoir. Droplets queue here waiting to flow into the aqueduct. |
 | **Drought** | Idle state. The cistern is dry. Drought protocols run maintenance automatically. A drought may also be a forced maintenance window where processing is stopped. |
-| **Aqueduct** | The full pipeline — from intake through cataracta gates to delivery. Named aqueducts (e.g. virgo, marcia) are independent instances the Castellarius routes droplets into. |
+| **Aqueduct** | The full pipeline — from intake through cataracta gates to delivery. Named aqueducts are independent instances the Castellarius routes droplets into. |
 | **Castellarius** | The overseer. Watches all aqueducts, routes droplets into aqueducts, runs drought protocols. External to the cistern — pure state machine, no AI. |
 | **Cataracta** | A gate along the aqueduct. Each cataracta implements, reviews, or diverts (LLMs working). |
 | **Recirculate** | Send a droplet back to a previous cataracta for further processing — revision from reviewer or QA. |
@@ -33,6 +34,9 @@ ct init
 # Add a droplet to the cistern
 ct droplet add --title "Add retry logic to fetch" --repo myproject
 
+# Add a critical droplet (runs all cataractae including security review + human gate)
+ct droplet add --title "Rewrite auth layer" --repo myproject --complexity critical
+
 # Wake the Castellarius — he watches the cistern and routes droplets automatically
 ct castellarius start
 
@@ -52,21 +56,50 @@ ct dashboard
 
 ## How It Works
 
-Every droplet flows through a sequence of cataractae:
+Every droplet flows through a sequence of cataractae. Which cataractae run depends on the droplet's **complexity level**:
 
 ```
-Filtration (optional) → implement → adversarial-review → qa → delivery → done
+trivial:   implement                                               → delivery → done
+standard:  implement → adversarial-review                         → delivery → done
+full:      implement → adversarial-review → qa                    → delivery → done
+critical:  implement → adversarial-review → qa → security-review → [human gate] → delivery → done
 ```
+
+Filtration is an optional pre-intake step (`--filter`) that refines vague ideas before they enter the pipeline.
 
 1. **Implement** (`implement`) — The Implementer cataracta reads the droplet, writes tests first (TDD/BDD), implements, commits. No outcome until tests pass.
 
-2. **Adversarial Review** (`adversarial-review`) — The Adversarial Reviewer cataracta receives *only the diff*. No codebase access, no author context. Finds problems: bugs, security holes, missing tests, logic errors. Context isolation is enforced at the infrastructure level. Files structured issues via `ct droplet issue add`.
+2. **Adversarial Review** (`adversarial-review`) — The Adversarial Reviewer cataracta receives *only the diff*. No codebase access, no author context. Finds problems: bugs, security holes, missing tests, logic errors. Context isolation is enforced at the infrastructure level. Files structured issues via `ct droplet issue add`. *Skipped for trivial droplets.*
 
-3. **QA** (`qa`) — The QA cataracta checks test quality, not just whether tests pass. Finds test gaps, weak assertions, missing error paths, coverage theater. Recirculates to implement on revision.
+3. **QA** (`qa`) — The QA cataracta checks test quality, not just whether tests pass. Finds test gaps, weak assertions, missing error paths, coverage theater. Recirculates to implement on revision. *Skipped for trivial and standard droplets.*
 
-4. **Delivery** (`delivery`) — The Delivery cataracta owns all git operations: stash, rebase, PR creation, CI monitoring, PR review response, and merge. One agent cataracta handles the full branch-to-merged lifecycle.
+4. **Security Review** (`security-review`) — An adversarial security audit of the diff. Checks for auth bypass, injection, prompt injection, exposed secrets, resource safety, and path traversal. *Runs only for critical droplets.*
 
-5. **Recirculation** — Revision sends the droplet back upstream to a prior cataracta for another pass. No retry limits. The water flows until it's pure.
+5. **Human Gate** — Critical droplets pause before delivery and require explicit human approval: `ct droplet approve <id>`. This ensures a human signs off before any critical change ships.
+
+6. **Delivery** (`delivery`) — The Delivery cataracta owns all git operations: stash, rebase, PR creation, CI monitoring, PR review response, and merge. One agent cataracta handles the full branch-to-merged lifecycle.
+
+7. **Recirculation** — Revision sends the droplet back upstream to a prior cataracta for another pass. No retry limits. The water flows until it's pure.
+
+## Complexity Levels
+
+Set complexity when adding a droplet with `--complexity` (or `-x`):
+
+| Level | Name | Pipeline |
+|---|---|---|
+| 1 | trivial | implement → delivery |
+| 2 | standard | implement → adversarial-review → delivery |
+| 3 | full *(default)* | implement → adversarial-review → qa → delivery |
+| 4 | critical | implement → adversarial-review → qa → security-review → [human] → delivery |
+
+```bash
+ct droplet add --title "Fix typo in README" --repo myproject --complexity trivial
+ct droplet add --title "Add pagination to list endpoint" --repo myproject --complexity standard
+ct droplet add --title "Implement JWT refresh" --repo myproject --complexity full
+ct droplet add --title "Replace auth middleware" --repo myproject --complexity critical
+```
+
+Accepts numeric (`1`–`4`) or named values.
 
 ## Two-Phase Review
 
@@ -80,37 +113,44 @@ This protocol prevents common failure modes: rubber-stamping recirculations, anc
 
 ## Issue Tracking
 
-Cistern maintains a `droplet_issues` table for structured findings from adversarial-review. Each issue has a severity, location, description, and resolution state.
+Cistern maintains a `droplet_issues` table for structured findings from adversarial-review. Each issue has a description, a filer, and a resolution state.
 
 ```bash
-ct droplet issue add <id> --severity critical --title "..." --body "..."   File a finding
-ct droplet issue list <id>                                                  List open issues
-ct droplet issue resolve <id> <issue-id> --evidence "..."                  Resolve (reviewer only)
-ct droplet issue reject <id> <issue-id> --reason "..."                     Reject as invalid (reviewer only)
+ct droplet issue add <id> "<description>"         File a finding against a droplet
+ct droplet issue list <id>                        List all issues for a droplet
+ct droplet issue list <id> --open                 List only open issues
+ct droplet issue resolve <issue-id> --evidence "" Resolve with proof (reviewer only — not implementer)
+ct droplet issue reject <issue-id> --evidence ""  Reject as invalid with proof (reviewer only)
 ```
 
 Key invariants:
-- Only the reviewer who filed an issue can resolve or reject it.
-- A droplet with open critical or required issues cannot be passed by the reviewer — it must recirculate.
-- Resolution requires evidence (test name, line reference, or explanation).
+- Implementers cannot resolve or reject issues — only reviewer cataractae may.
+- A droplet with open issues cannot be passed — it must recirculate.
+- Resolution requires evidence (test name, line reference, or command output).
 
 ## Named Aqueducts
 
-Aqueducts are named from a pool of Roman aqueducts. The default pool:
+Each repo in `cistern.yaml` gets a set of named aqueducts — independent processing lanes that run concurrently. Configure the names under `names:` for each repo:
+
+```yaml
+repos:
+  - name: myproject
+    url: https://github.com/org/myproject
+    workflow_path: aqueduct/feature.yaml
+    cataractae: 2
+    names:
+      - virgo
+      - marcia
+```
+
+Each aqueduct runs its own isolated git sandbox clone. Each tmux session is named `<repo>-<aqueduct>`. Every `tmux ls` shows the cistern in motion:
 
 ```
-virgo, marcia, claudia, traiana, julia, appia,
-anio, tepula, gier, eifel, alexandrina, barbegal
+myproject-virgo: 1 windows (adversarial-review)
+myproject-marcia: 1 windows (implement)
 ```
 
-Each tmux session is named `<aqueduct>-<droplet-id>`. Every `tmux ls` shows the cistern in motion:
-
-```
-virgo-ct-x7k: 1 windows (adversarial-review)
-marcia-ct-m3j: 1 windows (implement)
-```
-
-Change names in `~/.cistern/cistern.yaml` under `names:`.
+By convention, aqueduct names are drawn from historic Roman aqueducts (`virgo`, `marcia`, `claudia`, `traiana`, `julia`, `appia`, `anio`, `tepula`, `alexandrina`, …), but any names work.
 
 ## Customizing Cataracta Definitions
 
@@ -121,6 +161,7 @@ ct cataractae list                  # See all cataracta definitions and how to e
 ct cataractae edit implementer      # Open in $EDITOR, save, CLAUDE.md regenerates
 ct cataractae reset qa              # Restore to built-in default (with confirmation)
 ct cataractae generate              # Regenerate all CLAUDE.md files from YAML
+ct cataractae status                # Show which cataractae are actively processing droplets
 ```
 
 Cataracta content lives in `~/.cistern/aqueduct/feature.yaml` under the `cataracta_definitions:` key. CLAUDE.md files are generated artifacts — the YAML is the source of truth.
@@ -166,9 +207,44 @@ Requirements:
 ct init                        # Create ~/.cistern/ with default config and aqueduct files
 ct aqueduct validate           # Check config and all aqueduct files
 ct doctor                      # Full health check
+ct doctor --fix                # Auto-repair common configuration issues
 ```
 
-Config lives at `~/.cistern/cistern.yaml`. See `cistern.yaml` for all options.
+Config lives at `~/.cistern/cistern.yaml`. Key options:
+
+```yaml
+# Heartbeat: how often the Castellarius scans for stalled sessions
+heartbeat_interval: 30s
+
+# Rate limit: protect the delivery cataracta API endpoint
+# Omit to use defaults (60 req/min per IP, 120 req/min per token)
+# rate_limit:
+#   per_ip_requests: 60
+#   per_token_requests: 120
+#   window: 1m
+
+# Drought protocols run when the cistern goes idle
+drought_hooks:
+  - name: sync-cataractae
+    action: cataractae_generate
+  - name: prune-worktrees
+    action: worktree_prune
+```
+
+See `cistern.yaml` in this repo for all options.
+
+## Docker
+
+Cistern ships a multi-stage Dockerfile. The image includes `tmux`, `git`, `gh`, and both `ct` and `aqueduct` binaries.
+
+```bash
+docker build -t cistern .
+
+# Run the Castellarius — mount ~/.cistern for config, auth, and the database
+docker run -v ~/.cistern:/root/.cistern cistern
+```
+
+The `/root/.cistern` volume persists config, skills, the SQLite database, and gh auth state across container restarts. `GH_CONFIG_DIR` is set automatically to `/root/.cistern/auth/gh`.
 
 ## CLI Reference
 
@@ -177,9 +253,9 @@ Config lives at `~/.cistern/cistern.yaml`. See `cistern.yaml` for all options.
 ct castellarius start          Wake the Castellarius (start processing)
 ct castellarius status         Show aqueduct flow — which are flowing, which are idle
 
-# Dashboard — live TUI flow-graph
-ct dashboard                   Live flow-graph showing droplets moving through the aqueduct
-ct feed                        Streaming event feed (alternative TUI view)
+# Dashboard — live TUI (Bubble Tea, alternate screen)
+ct dashboard                   Live aqueduct arch diagram with cistern and recent flow
+ct feed                        Alias for dashboard
 
 # Status — observe the system
 ct status                      Overall status: cistern level, aqueduct flow, cataracta chains
@@ -188,40 +264,80 @@ ct aqueduct status             Aqueduct definitions: repos and their cataracta c
 # Aqueduct — inspect and validate aqueduct definitions
 ct aqueduct validate           Validate cistern.yaml and all referenced workflow files
 ct aqueduct inspect            JSON snapshot of current Cistern state
+ct aqueduct inspect --table    Human-readable table instead of JSON
 
 # Droplets — manage work items
-ct droplet add --title "..." --repo myproject           Add a droplet to the cistern
-ct droplet add --title "..." --repo myproject --filter  LLM-assisted filtration before adding
-ct droplet add --title "..." --depends-on <id>          Add with dependency on another droplet
-ct droplet list                                         List droplets
-ct droplet show <id>                                    Show droplet details
-ct droplet stats                                        Show droplet counts by status
-ct droplet deps <id>                                    Show dependency chain for a droplet
-ct droplet close <id>                                   Mark delivered
-ct droplet reopen <id>                                  Return to cistern
-ct droplet purge --older-than 30d                       Drain old droplets
-ct droplet escalate <id> --reason "..."                 Mark a droplet stagnant
+ct droplet add --title "..." --repo myproject                     Add a droplet
+ct droplet add --title "..." --repo myproject --filter            LLM-assisted filtration before adding
+ct droplet add --title "..." --repo myproject --filter --yes      Non-interactive filtration (agent use)
+ct droplet add --title "..." --depends-on <id>                    Add with dependency on another droplet
+ct droplet add --title "..." --complexity trivial                  Set complexity (trivial/standard/full/critical or 1–4)
+ct droplet add --title "..." --priority 1                         Set priority (1=highest)
+ct droplet list                                                   List active droplets
+ct droplet list --all                                             Include delivered droplets (dimmed)
+ct droplet list --watch                                           Live-refresh every 2 seconds (Ctrl-C to stop)
+ct droplet list --status in_progress                              Filter by status
+ct droplet list --output json                                     JSON output
+ct droplet search --query "retry"                                 Search by title substring
+ct droplet search --status in_progress --priority 1               Filter by status and priority
+ct droplet search --output json                                   JSON search output
+ct droplet export --format json                                   Export all droplets as JSON
+ct droplet export --format csv --status delivered                 Export delivered droplets as CSV
+ct droplet show <id>                                              Show droplet details and notes
+ct droplet rename <id> "New title"                                Rename a droplet
+ct droplet note <id> "What you found"                             Add a note to a droplet
+ct droplet stats                                                  Show droplet counts by status
+ct droplet deps <id>                                              List dependency chain for a droplet
+ct droplet deps <id> --add <dep-id>                               Add a dependency
+ct droplet deps <id> --remove <dep-id>                            Remove a dependency
+ct droplet close <id>                                             Mark delivered
+ct droplet reopen <id>                                            Return to cistern
+ct droplet purge --older-than 30d                                 Delete old delivered/stagnant droplets
+ct droplet purge --older-than 24h --dry-run                       Preview what would be purged
+ct droplet escalate <id> --reason "..."                           Mark a droplet stagnant
+
+# Droplet outcomes — used by agent cataractae to signal completion
+ct droplet pass <id>                                              Advance to next cataracta
+ct droplet pass <id> --notes "..."                                Advance with notes
+ct droplet recirculate <id>                                       Send back to previous cataracta
+ct droplet recirculate <id> --to implement                        Send back to a named cataracta
+ct droplet recirculate <id> --notes "..."                         Recirculate with notes
+ct droplet block <id>                                             Mark genuinely blocked
+ct droplet block <id> --notes "..."                               Block with notes
+
+# Human gate — critical droplets pause here before delivery
+ct droplet approve <id>                                           Approve a critical droplet for delivery
+
+# Peek — observe live agent output
+ct droplet peek <id>                                              Tail the active tmux session
+ct droplet peek <id> --lines 100                                  Show more lines (default: 50)
+ct droplet peek <id> --follow                                     Re-capture every 3 seconds (Ctrl-C to stop)
+ct droplet peek <id> --raw                                        Include ANSI color codes
 
 # Droplet issues — structured findings from adversarial-review
-ct droplet issue add <id> --severity critical --title "..." --body "..."   File a finding
-ct droplet issue list <id>                                                  List issues
-ct droplet issue resolve <id> <issue-id> --evidence "..."                  Resolve (reviewer only)
-ct droplet issue reject <id> <issue-id> --reason "..."                     Reject as invalid (reviewer only)
+ct droplet issue add <id> "<description>"                         File a finding
+ct droplet issue list <id>                                        List all issues
+ct droplet issue list <id> --open                                 List only open issues
+ct droplet issue resolve <issue-id> --evidence "..."              Resolve with proof (reviewer only)
+ct droplet issue reject <issue-id> --evidence "..."               Reject as still present (reviewer only)
 
 # Cataractae — manage cataracta definitions
-ct cataractae list                   See all cataracta definitions and how to edit them
+ct cataractae list                   See all cataracta definitions
+ct cataractae status                 Show which cataractae are active and what they're processing
 ct cataractae edit <cataracta>       Edit cataracta definition in $EDITOR
 ct cataractae generate               Regenerate CLAUDE.md files from YAML
 ct cataractae reset <cataracta>      Restore cataracta definition to built-in default
 
 # Skills — manage cataracta skills
-ct skills install <skill>      Install a skill
-ct skills list                 List installed skills
-ct skills update <skill>       Update a skill to latest version
-ct skills remove <skill>       Remove a skill
+ct skills install <name> <url>       Install a skill from a URL
+ct skills list                       List installed skills and which cataractae reference them
+ct skills update <name>              Re-fetch a skill from its source URL
+ct skills update                     Re-fetch all skills
+ct skills remove <name>              Remove a skill
 
 # Utilities
-ct doctor                      Health check
+ct doctor                      Full health check (prerequisites, config, CLAUDE.md integrity, skills)
+ct doctor --fix                Auto-repair common issues
 ct version                     Version info
 ```
 
