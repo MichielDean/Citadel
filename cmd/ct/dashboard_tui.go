@@ -212,14 +212,14 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 //	           implement        adv-review              qa              delivery
 func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 	const (
-		colW      = 16  // chars per cataracta column
-		archTopW  = 12  // pier width at top row (widest)
-		taperRows = 3   // logical taper rows; pier narrows by 2 per row
-		pierRows  = 1   // constant-width pier rows beneath taper
-		brickW    = 4   // brick width before ▌ vertical joint
+		colW      = 20  // wider columns → bigger arch span → more room for the curve
+		archTopW  = 10  // narrower pier top → span = colW-archTopW = 10 chars at keystone
+		taperRows = 3   // pier narrows by 2 per row
+		pierRows  = 1   // constant-width pier body rows
+		brickW    = 4   // brick face width before ▌ joint
 		nameW     = 10
 	)
-	// pierW = archTopW - taperRows*2 = 6
+	// pierW = archTopW - taperRows*2 = 4
 	pierW := archTopW - taperRows*2
 
 	g   := tuiStyleGreen
@@ -327,26 +327,33 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 
 			// Inter-pier span (between this pier and the next).
 			if i < n-1 {
-				// Arch crown active if either adjacent pier is active.
+				// Arch crown follows the LEFT pier (pier i) — matches V1 design:
+				// one green arch span to the right of the active pier.
 				aStyle := dim
-				if isActive(step) || isActive(steps[i+1]) {
+				if isActive(step) {
 					aStyle = g
 				}
 
-				// Left arch crown (solid — voussoir stone, no brick joints).
+				// Left arch crown: mortar row = solid ▀; brick row uses ▌ haunch at edge.
 				if lf > 0 {
 					mortSB.WriteString(aStyle.Render(strings.Repeat("▀", lf)))
-					brickSB.WriteString(aStyle.Render(strings.Repeat("█", lf)))
+					if lf > 1 {
+						brickSB.WriteString(aStyle.Render(strings.Repeat("█", lf-1)))
+					}
+					brickSB.WriteString(aStyle.Render("▌")) // intrados haunch edge
 				}
 				// Open arch gap.
 				if og > 0 {
 					mortSB.WriteString(strings.Repeat(" ", og))
 					brickSB.WriteString(strings.Repeat(" ", og))
 				}
-				// Right arch crown.
+				// Right arch crown: ▐ haunch at left edge.
 				if rf > 0 {
+					brickSB.WriteString(aStyle.Render("▐")) // intrados haunch edge
+					if rf > 1 {
+						brickSB.WriteString(aStyle.Render(strings.Repeat("█", rf-1)))
+					}
 					mortSB.WriteString(aStyle.Render(strings.Repeat("▀", rf)))
-					brickSB.WriteString(aStyle.Render(strings.Repeat("█", rf)))
 				}
 			}
 		}
