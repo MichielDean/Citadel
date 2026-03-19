@@ -20,14 +20,14 @@ func (f *fakeAdder) Add(title, repo, description string, priority, complexity in
 	return f.id, f.err
 }
 
-func newTestHandler(adder DropletAdder, ipLimit, tokenLimit int) *Handler {
+func newTestHandler(t testing.TB, adder DropletAdder, ipLimit, tokenLimit int) *Handler {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(ipLimit, tokenLimit, time.Minute, clk)
+	rl := newTestLimiter(t, ipLimit, tokenLimit, time.Minute, clk)
 	return NewHandler(adder, rl)
 }
 
 func TestHandler_Success(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	body := `{"title":"my feature","repo":"github.com/org/repo"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
@@ -48,7 +48,7 @@ func TestHandler_Success(t *testing.T) {
 }
 
 func TestHandler_MethodNotAllowed(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
 		req := httptest.NewRequest(method, "/droplets", nil)
@@ -62,7 +62,7 @@ func TestHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHandler_NoAuth(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	body := `{"title":"my feature","repo":"github.com/org/repo"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
@@ -76,7 +76,7 @@ func TestHandler_NoAuth(t *testing.T) {
 }
 
 func TestHandler_MalformedBearerToken(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	body := `{"title":"my feature","repo":"github.com/org/repo"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
@@ -90,7 +90,7 @@ func TestHandler_MalformedBearerToken(t *testing.T) {
 }
 
 func TestHandler_RateLimitedByIP(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 2, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 2, 100)
 
 	makeReq := func() *http.Request {
 		body := `{"title":"t","repo":"github.com/org/repo"}`
@@ -118,7 +118,7 @@ func TestHandler_RateLimitedByIP(t *testing.T) {
 }
 
 func TestHandler_RateLimitedByToken(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 2)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 2)
 
 	makeReq := func(ip string) *http.Request {
 		body := `{"title":"t","repo":"github.com/org/repo"}`
@@ -147,7 +147,7 @@ func TestHandler_RateLimitedByToken(t *testing.T) {
 }
 
 func TestHandler_RetryAfterHeader(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 1, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 1, 100)
 
 	makeReq := func() *http.Request {
 		body := `{"title":"t","repo":"github.com/org/repo"}`
@@ -170,7 +170,7 @@ func TestHandler_RetryAfterHeader(t *testing.T) {
 }
 
 func TestHandler_InvalidBody(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader("not-json"))
 	req.Header.Set("Authorization", "Bearer tok-a")
@@ -183,7 +183,7 @@ func TestHandler_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_MissingTitle(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	body := `{"repo":"github.com/org/repo"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
@@ -197,7 +197,7 @@ func TestHandler_MissingTitle(t *testing.T) {
 }
 
 func TestHandler_MissingRepo(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	body := `{"title":"my feature"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
@@ -211,7 +211,7 @@ func TestHandler_MissingRepo(t *testing.T) {
 }
 
 func TestHandler_AdderError(t *testing.T) {
-	h := newTestHandler(&fakeAdder{err: errors.New("db error")}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{err: errors.New("db error")}, 100, 100)
 
 	body := `{"title":"my feature","repo":"github.com/org/repo"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
@@ -226,7 +226,7 @@ func TestHandler_AdderError(t *testing.T) {
 
 func TestHandler_RealIPFromXRealIP(t *testing.T) {
 	// IP extracted from X-Real-IP should be used for rate limiting.
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 1, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 1, 100)
 
 	makeReq := func() *http.Request {
 		body := `{"title":"t","repo":"github.com/org/repo"}`
@@ -248,7 +248,7 @@ func TestHandler_RealIPFromXRealIP(t *testing.T) {
 
 func TestHandler_RealIPFromXForwardedFor(t *testing.T) {
 	// When X-Forwarded-For is set, the first entry is used.
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 1, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 1, 100)
 
 	makeReq := func() *http.Request {
 		body := `{"title":"t","repo":"github.com/org/repo"}`
@@ -269,7 +269,7 @@ func TestHandler_RealIPFromXForwardedFor(t *testing.T) {
 }
 
 func TestHandler_ContentTypeJSON(t *testing.T) {
-	h := newTestHandler(&fakeAdder{id: "ct-abc12"}, 100, 100)
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
 	body := `{"title":"my feature","repo":"github.com/org/repo"}`
 	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))

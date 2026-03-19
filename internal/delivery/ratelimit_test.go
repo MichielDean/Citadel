@@ -15,19 +15,20 @@ func (c *mockClock) now() time.Time { return c.t }
 
 func (c *mockClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
-func newTestLimiter(ipLimit, tokenLimit int, window time.Duration, clk *mockClock) *RateLimiter {
+func newTestLimiter(t testing.TB, ipLimit, tokenLimit int, window time.Duration, clk *mockClock) *RateLimiter {
 	rl := NewRateLimiter(Config{
 		PerIPRequests:    ipLimit,
 		PerTokenRequests: tokenLimit,
 		Window:           window,
 	})
 	rl.now = clk.now
+	t.Cleanup(rl.Close)
 	return rl
 }
 
 func TestRateLimiter_AllowsWithinIPLimit(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(3, 100, time.Minute, clk)
+	rl := newTestLimiter(t, 3, 100, time.Minute, clk)
 
 	for i := 0; i < 3; i++ {
 		if !rl.Allow("1.2.3.4", "tok-a") {
@@ -38,7 +39,7 @@ func TestRateLimiter_AllowsWithinIPLimit(t *testing.T) {
 
 func TestRateLimiter_DeniesAtIPLimit(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(3, 100, time.Minute, clk)
+	rl := newTestLimiter(t, 3, 100, time.Minute, clk)
 
 	for i := 0; i < 3; i++ {
 		rl.Allow("1.2.3.4", "tok-a") //nolint:errcheck
@@ -50,7 +51,7 @@ func TestRateLimiter_DeniesAtIPLimit(t *testing.T) {
 
 func TestRateLimiter_AllowsWithinTokenLimit(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(100, 3, time.Minute, clk)
+	rl := newTestLimiter(t, 100, 3, time.Minute, clk)
 
 	for i := 0; i < 3; i++ {
 		if !rl.Allow("1.2.3.4", "tok-a") {
@@ -61,7 +62,7 @@ func TestRateLimiter_AllowsWithinTokenLimit(t *testing.T) {
 
 func TestRateLimiter_DeniesAtTokenLimit(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(100, 3, time.Minute, clk)
+	rl := newTestLimiter(t, 100, 3, time.Minute, clk)
 
 	for i := 0; i < 3; i++ {
 		rl.Allow("1.2.3.4", "tok-a") //nolint:errcheck
@@ -73,7 +74,7 @@ func TestRateLimiter_DeniesAtTokenLimit(t *testing.T) {
 
 func TestRateLimiter_DifferentIPsAreIndependent(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(2, 100, time.Minute, clk)
+	rl := newTestLimiter(t, 2, 100, time.Minute, clk)
 
 	// Exhaust IP1.
 	rl.Allow("10.0.0.1", "tok-a") //nolint:errcheck
@@ -90,7 +91,7 @@ func TestRateLimiter_DifferentIPsAreIndependent(t *testing.T) {
 
 func TestRateLimiter_DifferentTokensAreIndependent(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(100, 2, time.Minute, clk)
+	rl := newTestLimiter(t, 100, 2, time.Minute, clk)
 
 	// Exhaust tok-a.
 	rl.Allow("1.2.3.4", "tok-a") //nolint:errcheck
@@ -107,7 +108,7 @@ func TestRateLimiter_DifferentTokensAreIndependent(t *testing.T) {
 
 func TestRateLimiter_ResetsAfterWindow(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(2, 100, time.Minute, clk)
+	rl := newTestLimiter(t, 2, 100, time.Minute, clk)
 
 	// Exhaust the IP limit.
 	rl.Allow("1.2.3.4", "tok-a") //nolint:errcheck
@@ -127,7 +128,7 @@ func TestRateLimiter_ResetsAfterWindow(t *testing.T) {
 
 func TestRateLimiter_TokenLimitBlocksEvenIfIPIsUnder(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(100, 2, time.Minute, clk)
+	rl := newTestLimiter(t, 100, 2, time.Minute, clk)
 
 	// Different IPs, same token — exhaust token limit.
 	rl.Allow("1.1.1.1", "tok-x") //nolint:errcheck
@@ -141,7 +142,7 @@ func TestRateLimiter_TokenLimitBlocksEvenIfIPIsUnder(t *testing.T) {
 
 func TestRateLimiter_IPLimitBlocksEvenIfTokenIsUnder(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(2, 100, time.Minute, clk)
+	rl := newTestLimiter(t, 2, 100, time.Minute, clk)
 
 	// Same IP, different tokens — exhaust IP limit.
 	rl.Allow("1.1.1.1", "tok-a") //nolint:errcheck
@@ -167,8 +168,7 @@ func TestRateLimiter_DefaultConfig(t *testing.T) {
 // removed from the map rather than left as a permanent zero-entry.
 func TestRateLimiter_RejectPathEvictsEmptyCounter(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(1, 100, time.Minute, clk)
-	defer rl.Close()
+	rl := newTestLimiter(t, 1, 100, time.Minute, clk)
 
 	// Fill the IP limit with tok-a.
 	if !rl.Allow("1.2.3.4", "tok-a") {
@@ -195,8 +195,7 @@ func TestRateLimiter_RejectPathEvictsEmptyCounter(t *testing.T) {
 // allow-path callers.
 func TestRateLimiter_EvictExpiredCleansUpAllowPathEntries(t *testing.T) {
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(100, 100, time.Minute, clk)
-	defer rl.Close()
+	rl := newTestLimiter(t, 100, 100, time.Minute, clk)
 
 	const n = 5
 	for i := 0; i < n; i++ {
@@ -229,7 +228,7 @@ func TestRateLimiter_EvictExpiredCleansUpAllowPathEntries(t *testing.T) {
 func TestRateLimiter_PartialIncrementIsAtomic(t *testing.T) {
 	// When both checks would fail, neither counter should be incremented.
 	clk := &mockClock{t: time.Now()}
-	rl := newTestLimiter(1, 1, time.Minute, clk)
+	rl := newTestLimiter(t, 1, 1, time.Minute, clk)
 
 	// Exhaust both.
 	rl.Allow("1.2.3.4", "tok-a") //nolint:errcheck

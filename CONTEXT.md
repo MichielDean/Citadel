@@ -20,27 +20,19 @@ Prevent abuse of the droplet ingestion endpoint. Apply per-IP and per-token limi
 
 ### From: manual
 
-Phase 2 — four issues found:
-
-1. internal/delivery/handler.go:293-307 — Security: per-IP rate limit bypass via spoofed proxy headers. realIP() unconditionally trusts X-Real-IP and X-Forwarded-For. Any client can set X-Real-IP: <arbitrary IP> on every request to rotate identities and evade per-IP limiting entirely. Fix requires either (a) only honouring proxy headers when RemoteAddr is a known trusted proxy, or (b) dropping proxy-header support and documenting that a trusted proxy must strip those headers before forwarding.
-
-2. Missing integration — handler never mounted, RateLimitConfig never wired. The diff adds internal/delivery and AqueductConfig.RateLimit but includes no code (a) registering NewHandler on any HTTP mux/server or (b) translating RateLimitConfig (Window is string) into delivery.Config (Window is time.Duration). The new package is dead code; the endpoint is unprotected.
-
-3. internal/delivery/ratelimit.go:636-688 — Resource leak: ipCounters and tokCounters grow without bound. Entries are created per unique IP/token and never evicted, even after their window expires. An adversary rotating source IPs or bearer tokens causes unbounded heap growth leading to OOM. Stale entries must be pruned (e.g. delete map key when windowCounter.times becomes empty after pruneAndCount).
-
-4. internal/delivery/handler.go:250 — Logic error: Retry-After hardcoded to "60". The value is a string literal unrelated to rl.cfg.Window. For a configured window of 30s the header tells clients to wait 60s; for 5m it still says 60s. The value must be derived from the actual window duration.
+Phase 2: internal/delivery/ratelimit_test.go and handler_test.go — goroutine leak in tests. NewRateLimiter() always starts go rl.cleanupLoop(); the goroutine runs until Close() is called. 10 test functions in ratelimit_test.go (AllowsWithinIPLimit, DeniesAtIPLimit, AllowsWithinTokenLimit, DeniesAtTokenLimit, DifferentIPsAreIndependent, DifferentTokensAreIndependent, ResetsAfterWindow, TokenLimitBlocksEvenIfIPIsUnder, IPLimitBlocksEvenIfTokenIsUnder, PartialIncrementIsAtomic) and all 14 test functions in handler_test.go call newTestLimiter/newTestHandler which calls NewRateLimiter but never call Close(). Each leaks a goroutine for the duration of the test binary. Three tests correctly use defer rl.Close() (DefaultConfig, RejectPathEvictsEmptyCounter, EvictExpiredCleansUpAllowPathEntries) — apply the same pattern to all remaining test functions, or refactor newTestLimiter/newTestHandler to register cleanup via t.Cleanup(rl.Close).
 
 ### From: manual
 
-Fixed all 4 Phase 2 issues: (1) Security — realIP() now only trusts X-Real-IP/X-Forwarded-For when RemoteAddr is in a trusted proxy network (loopback 127.0.0.0/8 and ::1/128 by default); added trustedNets to Handler. (2) Integration — added DeliveryAddr to AqueductConfig; wired cisternAdder adapter, RateLimitConfig→delivery.Config translation (time.ParseDuration), NewRateLimiter+NewHandler, http.Server mounted at /droplets in start.go. (3) Resource leak — Allow() deletes map entries whose times slice is empty after pruneAndCount on the reject path. (4) Retry-After — added Window() accessor to RateLimiter; header now derived from actual window duration. All 8 packages pass.
+Fixed goroutine leaks in ratelimit_test.go and handler_test.go: added testing.TB parameter to newTestLimiter and newTestHandler, registered t.Cleanup(rl.Close) inside each helper. Removed the two now-redundant explicit defer rl.Close() calls from tests that used newTestLimiter. All 8 packages build and tests pass (go test ./internal/delivery/... ok).
 
 ### From: manual
 
-All 4 Phase 2 issues resolved. (1) Security: realIP() gated on trusted proxy networks (loopback default), preventing spoofed-header IP bypass. (2) Integration: delivery HTTP server mounted in aqueduct start command via cisternAdder adapter; RateLimitConfig.Window parsed to time.Duration; DeliveryAddr added to AqueductConfig. (3) Resource leak: stale ipCounters/tokCounters entries evicted on rejection when times slice is empty. (4) Retry-After: derived from Window() accessor on RateLimiter, not hardcoded. All 8 packages build and pass.
+Fixed goroutine leaks in test helpers: added testing.TB parameter to newTestLimiter (ratelimit_test.go) and newTestHandler (handler_test.go), each now calls t.Cleanup(rl.Close) so every limiter is closed when the test finishes. Removed the two pre-existing explicit defer rl.Close() calls from TestRateLimiter_RejectPathEvictsEmptyCounter and TestRateLimiter_EvictExpiredCleansUpAllowPathEntries (which used newTestLimiter) to avoid double-close panics. All call sites updated to pass t. go test ./internal/delivery/... passes.
 
 ### From: scheduler
 
-Implement pass rejected: HEAD has not advanced since last review (commit: 478b485ee8caec82caf06b69db539accd192e2d4). No new commits were found. You must commit your changes before signaling pass.
+Implement pass rejected: HEAD has not advanced since last review (commit: 567b00b2735dc808d848557f554d031d5d444238). No new commits were found. You must commit your changes before signaling pass.
 
 <available_skills>
   <skill>
