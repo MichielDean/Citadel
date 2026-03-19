@@ -295,7 +295,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo, frame int) []string 
 	renderWave := func(n int) string {
 		var wb strings.Builder
 		for i := 0; i < n; i++ {
-			cell := waveCells[(i+frame)%waveViz]
+			cell := waveCells[(i-frame%waveViz+waveViz*1000)%waveViz]
 			wb.WriteString(cell.sty.Render(cell.ch))
 		}
 		return wb.String()
