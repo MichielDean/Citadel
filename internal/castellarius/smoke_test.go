@@ -15,10 +15,10 @@ import (
 func featureWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
-		Cataractae: []aqueduct.WorkflowCataracta{
+		Cataractae: []aqueduct.WorkflowCataractae{
 			{
 				Name:           "implement",
-				Type:           aqueduct.CataractaTypeAgent,
+				Type:           aqueduct.CataractaeTypeAgent,
 				Identity: "implementer",
 				Context:        aqueduct.ContextFullCodebase,
 				TimeoutMinutes: 30,
@@ -27,7 +27,7 @@ func featureWorkflow() *aqueduct.Workflow {
 			},
 			{
 				Name:       "review",
-				Type:       aqueduct.CataractaTypeAgent,
+				Type:       aqueduct.CataractaeTypeAgent,
 				Identity: "reviewer",
 				Context:    aqueduct.ContextDiffOnly,
 				OnPass:     "qa",
@@ -36,7 +36,7 @@ func featureWorkflow() *aqueduct.Workflow {
 			},
 			{
 				Name:     "qa",
-				Type:     aqueduct.CataractaTypeAgent,
+				Type:     aqueduct.CataractaeTypeAgent,
 				Identity: "qa",
 				Context:  aqueduct.ContextFullCodebase,
 				OnPass:   "delivery",
@@ -44,7 +44,7 @@ func featureWorkflow() *aqueduct.Workflow {
 			},
 			{
 				Name:          "delivery",
-				Type:          aqueduct.CataractaTypeAgent,
+				Type:          aqueduct.CataractaeTypeAgent,
 				Identity:      "delivery",
 				OnPass:        "done",
 				OnRecirculate: "implement",
@@ -65,7 +65,7 @@ type pipelineClient struct {
 	item      cistern.Droplet
 	stepLog   []string       // every Assign call in order
 	attached  []attachedNote // notes attached by steps
-	notes     []cistern.CataractaNote
+	notes     []cistern.CataractaeNote
 	escalated string
 	attempts  map[string]int
 	terminal  bool
@@ -113,7 +113,7 @@ func (c *pipelineClient) Assign(id, worker, step string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stepLog = append(c.stepLog, step)
-	c.item.CurrentCataracta = step
+	c.item.CurrentCataractae = step
 	c.item.Outcome = "" // always clear outcome on (re)assign
 	if worker != "" {
 		c.item.Status = "in_progress"
@@ -145,18 +145,18 @@ func (c *pipelineClient) AddNote(id, fromStep, notes string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.attached = append(c.attached, attachedNote{id, fromStep, notes})
-	c.notes = append(c.notes, cistern.CataractaNote{
+	c.notes = append(c.notes, cistern.CataractaeNote{
 		DropletID:     id,
-		CataractaName: fromStep,
+		CataractaeName: fromStep,
 		Content:       notes,
 	})
 	return nil
 }
 
-func (c *pipelineClient) GetNotes(id string) ([]cistern.CataractaNote, error) {
+func (c *pipelineClient) GetNotes(id string) ([]cistern.CataractaeNote, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	result := make([]cistern.CataractaNote, len(c.notes))
+	result := make([]cistern.CataractaeNote, len(c.notes))
 	copy(result, c.notes)
 	return result, nil
 }
@@ -193,10 +193,10 @@ func (c *pipelineClient) Purge(olderThan time.Duration, dryRun bool) (int, error
 	return 0, nil
 }
 
-func (c *pipelineClient) SetCataracta(id, cataracta string) error {
+func (c *pipelineClient) SetCataractae(id, cataractae string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.item.CurrentCataracta = cataracta
+	c.item.CurrentCataractae = cataractae
 	return nil
 }
 
@@ -225,7 +225,7 @@ func resultToOutcome(r Result) string {
 type stepSequenceRunner struct {
 	mu       sync.Mutex
 	outcomes map[string][]*Outcome
-	calls    []CataractaRequest
+	calls    []CataractaeRequest
 	done     chan struct{}
 	client   *pipelineClient
 }
@@ -238,7 +238,7 @@ func newStepSequenceRunner(client *pipelineClient, outcomes map[string][]*Outcom
 	}
 }
 
-func (r *stepSequenceRunner) Spawn(_ context.Context, req CataractaRequest) error {
+func (r *stepSequenceRunner) Spawn(_ context.Context, req CataractaeRequest) error {
 	r.mu.Lock()
 	seq := r.outcomes[req.Step.Name]
 	var o *Outcome
@@ -285,7 +285,7 @@ func smokeConfig() aqueduct.AqueductConfig {
 	}
 }
 
-func smokeScheduler(client CisternClient, runner CataractaRunner) *Castellarius {
+func smokeScheduler(client CisternClient, runner CataractaeRunner) *Castellarius {
 	config := smokeConfig()
 	workflows := map[string]*aqueduct.Workflow{"cistern": featureWorkflow()}
 	clients := map[string]CisternClient{"cistern": client}
@@ -514,9 +514,9 @@ func TestSmoke_NotesForwarding(t *testing.T) {
 	// review (step 1): 1 note from implement.
 	if len(runner.calls[1].Notes) != 1 {
 		t.Errorf("review should have 1 prior note, got %d", len(runner.calls[1].Notes))
-	} else if runner.calls[1].Notes[0].CataractaName != "implement" {
-		t.Errorf("review note[0].CataractaName = %q, want %q",
-			runner.calls[1].Notes[0].CataractaName, "implement")
+	} else if runner.calls[1].Notes[0].CataractaeName != "implement" {
+		t.Errorf("review note[0].CataractaeName = %q, want %q",
+			runner.calls[1].Notes[0].CataractaeName, "implement")
 	}
 
 	// qa (step 2): 2 notes (implement + review).

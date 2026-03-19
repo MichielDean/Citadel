@@ -166,7 +166,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 
 		// Check 1: CLAUDE.md integrity (deduplicated by identity across all repos).
 		for _, step := range wf.Cataractae {
-			if step.Type != aqueduct.CataractaTypeAgent || step.Identity == "" {
+			if step.Type != aqueduct.CataractaeTypeAgent || step.Identity == "" {
 				continue
 			}
 			if seenIdentities[step.Identity] {
@@ -183,7 +183,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 				wfCopy := wf
 				dirCopy := cataractaeDir
 				claudeFix = func() error {
-					_, err := aqueduct.GenerateCataractaFiles(wfCopy, dirCopy)
+					_, err := aqueduct.GenerateCataractaeFiles(wfCopy, dirCopy)
 					return err
 				}
 			}

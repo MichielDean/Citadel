@@ -57,13 +57,13 @@ func runCataractaeGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse aqueduct: %w", err)
 	}
 
-	if len(w.CataractaDefinitions) == 0 {
-		fmt.Println("no cataracta_definitions defined in aqueduct")
+	if len(w.CataractaeDefinitions) == 0 {
+		fmt.Println("no cataractae_definitions defined in aqueduct")
 		return nil
 	}
 
 	cataractaeDir := cisternCataractaeDir()
-	written, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir)
+	written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir)
 	if err != nil {
 		return err
 	}
@@ -105,20 +105,20 @@ func runCataractaeList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse aqueduct: %w", err)
 	}
 
-	if len(w.CataractaDefinitions) == 0 {
-		fmt.Println("no cataracta_definitions defined in aqueduct")
+	if len(w.CataractaeDefinitions) == 0 {
+		fmt.Println("no cataractae_definitions defined in aqueduct")
 		return nil
 	}
 
 	// Sort keys for stable output.
-	keys := make([]string, 0, len(w.CataractaDefinitions))
-	for k := range w.CataractaDefinitions {
+	keys := make([]string, 0, len(w.CataractaeDefinitions))
+	for k := range w.CataractaeDefinitions {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		role := w.CataractaDefinitions[k]
+		role := w.CataractaeDefinitions[k]
 		desc := role.Description
 		if len(desc) > 40 {
 			desc = desc[:37] + "..."
@@ -164,14 +164,14 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse aqueduct: %w", err)
 	}
 
-	if len(w.CataractaDefinitions) == 0 {
-		fmt.Println("no cataracta_definitions defined in aqueduct")
+	if len(w.CataractaeDefinitions) == 0 {
+		fmt.Println("no cataractae_definitions defined in aqueduct")
 		return nil
 	}
 
 	// Sort keys for stable ordering.
-	keys := make([]string, 0, len(w.CataractaDefinitions))
-	for k := range w.CataractaDefinitions {
+	keys := make([]string, 0, len(w.CataractaeDefinitions))
+	for k := range w.CataractaeDefinitions {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -179,7 +179,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 	// Print numbered list.
 	fmt.Println("Select a role to edit:")
 	for i, k := range keys {
-		fmt.Printf("  %d. %s — %s\n", i+1, k, w.CataractaDefinitions[k].Name)
+		fmt.Printf("  %d. %s — %s\n", i+1, k, w.CataractaeDefinitions[k].Name)
 	}
 	fmt.Print("\nEnter number: ")
 
@@ -191,7 +191,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	selectedKey := keys[idx-1]
-	role := w.CataractaDefinitions[selectedKey]
+	role := w.CataractaeDefinitions[selectedKey]
 
 	// Write instructions to temp file.
 	tmpFile, err := os.CreateTemp("", "cistern-role-*.md")
@@ -228,7 +228,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 
 	// Update role in the aqueduct.
 	role.Instructions = string(edited)
-	w.CataractaDefinitions[selectedKey] = role
+	w.CataractaeDefinitions[selectedKey] = role
 
 	// Re-parse the raw data into a generic structure to preserve
 	// non-role fields, then update roles and re-serialize.
@@ -236,7 +236,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parse raw yaml: %w", err)
 	}
-	raw["cataractae"] = w.CataractaDefinitions
+	raw["cataractae"] = w.CataractaeDefinitions
 
 	out, err := yaml.Marshal(raw)
 	if err != nil {
@@ -248,7 +248,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 
 	// Regenerate CLAUDE.md.
 	cataractaeDir := cisternCataractaeDir()
-	written, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir)
+	written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir)
 	if err != nil {
 		return err
 	}
@@ -302,7 +302,7 @@ func runCataractaeReset(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		// Reset a single role.
 		roleName := args[0]
-		builtin, ok := aqueduct.BuiltinCataractaDefinitions[roleName]
+		builtin, ok := aqueduct.BuiltinCataractaeDefinitions[roleName]
 		if !ok {
 			return fmt.Errorf("no built-in default for role %q", roleName)
 		}
@@ -317,17 +317,17 @@ func runCataractaeReset(cmd *cobra.Command, args []string) error {
 		}
 
 		// Update in aqueduct.
-		role := w.CataractaDefinitions[roleName]
+		role := w.CataractaeDefinitions[roleName]
 		role.Name = builtin.Name
 		role.Description = builtin.Description
 		role.Instructions = builtin.Instructions
-		w.CataractaDefinitions[roleName] = role
+		w.CataractaeDefinitions[roleName] = role
 
-		if err := writeWorkflowCataractaDefinitions(wfPath, data, w); err != nil {
+		if err := writeWorkflowCataractaeDefinitions(wfPath, data, w); err != nil {
 			return err
 		}
 
-		written, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir)
+		written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir)
 		if err != nil {
 			return err
 		}
@@ -341,7 +341,7 @@ func runCataractaeReset(cmd *cobra.Command, args []string) error {
 
 	// No arg — list all resettable roles and prompt for all.
 	resettable := make([]string, 0)
-	for k := range aqueduct.BuiltinCataractaDefinitions {
+	for k := range aqueduct.BuiltinCataractaeDefinitions {
 		resettable = append(resettable, k)
 	}
 	sort.Strings(resettable)
@@ -353,7 +353,7 @@ func runCataractaeReset(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Resettable roles:")
 	for _, k := range resettable {
-		b := aqueduct.BuiltinCataractaDefinitions[k]
+		b := aqueduct.BuiltinCataractaeDefinitions[k]
 		fmt.Printf("  %-20s %s\n", k, b.Description)
 	}
 	fmt.Print("\nReset all to defaults? [y/N] ")
@@ -365,23 +365,23 @@ func runCataractaeReset(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if w.CataractaDefinitions == nil {
-		w.CataractaDefinitions = make(map[string]aqueduct.CataractaDefinition)
+	if w.CataractaeDefinitions == nil {
+		w.CataractaeDefinitions = make(map[string]aqueduct.CataractaeDefinition)
 	}
 	for _, k := range resettable {
-		b := aqueduct.BuiltinCataractaDefinitions[k]
-		w.CataractaDefinitions[k] = aqueduct.CataractaDefinition{
+		b := aqueduct.BuiltinCataractaeDefinitions[k]
+		w.CataractaeDefinitions[k] = aqueduct.CataractaeDefinition{
 			Name:         b.Name,
 			Description:  b.Description,
 			Instructions: b.Instructions,
 		}
 	}
 
-	if err := writeWorkflowCataractaDefinitions(wfPath, data, w); err != nil {
+	if err := writeWorkflowCataractaeDefinitions(wfPath, data, w); err != nil {
 		return err
 	}
 
-	written, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir)
+	written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir)
 	if err != nil {
 		return err
 	}
@@ -391,13 +391,13 @@ func runCataractaeReset(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// writeWorkflowCataractaDefinitions updates the cataracta_definitions section of an aqueduct YAML file.
-func writeWorkflowCataractaDefinitions(wfPath string, originalData []byte, w *aqueduct.Workflow) error {
+// writeWorkflowCataractaeDefinitions updates the cataractae_definitions section of an aqueduct YAML file.
+func writeWorkflowCataractaeDefinitions(wfPath string, originalData []byte, w *aqueduct.Workflow) error {
 	var raw map[string]interface{}
 	if err := yaml.Unmarshal(originalData, &raw); err != nil {
 		return fmt.Errorf("parse raw yaml: %w", err)
 	}
-	raw["cataractae"] = w.CataractaDefinitions
+	raw["cataractae"] = w.CataractaeDefinitions
 
 	out, err := yaml.Marshal(raw)
 	if err != nil {
@@ -449,7 +449,7 @@ var cataractaeStatusCmd = &cobra.Command{
 		type stepKey struct{ repo, step string }
 		active := map[stepKey]*cistern.Droplet{}
 		for _, item := range allItems {
-			active[stepKey{item.Repo, item.CurrentCataracta}] = item
+			active[stepKey{item.Repo, item.CurrentCataractae}] = item
 		}
 
 		cfgDir := filepath.Dir(cfgPath)

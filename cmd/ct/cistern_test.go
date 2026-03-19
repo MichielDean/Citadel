@@ -146,7 +146,7 @@ func TestCisternListTableOutput(t *testing.T) {
 		}
 	})
 
-	// Add an item with empty CurrentCataracta for remaining subtests.
+	// Add an item with empty CurrentCataractae for remaining subtests.
 	c, err := cistern.New(db, "ts")
 	if err != nil {
 		t.Fatal(err)
@@ -354,7 +354,7 @@ func TestDropletApprove(t *testing.T) {
 	}
 	// Simulate scheduler routing to human gate.
 	c.UpdateStatus(item.ID, "stagnant")
-	c.SetCataracta(item.ID, "human")
+	c.SetCataractae(item.ID, "human")
 	c.Close()
 
 	t.Run("approve releases to delivery", func(t *testing.T) {
@@ -378,7 +378,7 @@ func TestDropletApprove(t *testing.T) {
 			t.Errorf("expected 'approved for delivery' in output, got: %q", out)
 		}
 
-		// Verify DB state: status=open, current_cataracta=delivery.
+		// Verify DB state: status=open, current_cataractae=delivery.
 		c2, _ := cistern.New(db, "")
 		defer c2.Close()
 		got, err := c2.Get(item.ID)
@@ -388,8 +388,8 @@ func TestDropletApprove(t *testing.T) {
 		if got.Status != "open" {
 			t.Errorf("expected status 'open', got %q", got.Status)
 		}
-		if got.CurrentCataracta != "delivery" {
-			t.Errorf("expected current_cataracta 'delivery', got %q", got.CurrentCataracta)
+		if got.CurrentCataractae != "delivery" {
+			t.Errorf("expected current_cataractae 'delivery', got %q", got.CurrentCataractae)
 		}
 	})
 }
@@ -420,14 +420,14 @@ func TestDropletApprove_NotHumanGated(t *testing.T) {
 
 func TestDisplayStatusForDroplet_AwaitingApproval(t *testing.T) {
 	// Human-gated droplet should display as "awaiting".
-	d := &cistern.Droplet{Status: "stagnant", CurrentCataracta: "human"}
+	d := &cistern.Droplet{Status: "stagnant", CurrentCataractae: "human"}
 	got := displayStatusForDroplet(d)
 	if got != "awaiting" {
 		t.Errorf("expected 'awaiting', got %q", got)
 	}
 
 	// Non-human stagnant droplet should display as "stagnant".
-	d2 := &cistern.Droplet{Status: "stagnant", CurrentCataracta: "implement"}
+	d2 := &cistern.Droplet{Status: "stagnant", CurrentCataractae: "implement"}
 	got2 := displayStatusForDroplet(d2)
 	if got2 != "stagnant" {
 		t.Errorf("expected 'stagnant', got %q", got2)

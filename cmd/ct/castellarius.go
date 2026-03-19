@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/MichielDean/cistern/internal/cistern"
-	"github.com/MichielDean/cistern/internal/cataracta"
+	"github.com/MichielDean/cistern/internal/cataractae"
 	"github.com/MichielDean/cistern/internal/castellarius"
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/spf13/cobra"
@@ -81,7 +81,7 @@ keep dispatching droplets into aqueducts automatically.`,
 			queueClients[repo.Name] = c
 		}
 
-		adapter, err := cataracta.NewAdapter(cfg.Repos, workflows, queueClients)
+		adapter, err := cataractae.NewAdapter(cfg.Repos, workflows, queueClients)
 		if err != nil {
 			return fmt.Errorf("runner adapter: %w", err)
 		}
@@ -150,7 +150,7 @@ var castellariusStatusCmd = &cobra.Command{
 				if item, ok := assignee[name]; ok {
 					elapsed := int(time.Since(item.UpdatedAt).Minutes())
 					fmt.Fprintf(tw, "%s\t%s\t%s\t[%s]\t%dm\n",
-						name, repo.Name, item.ID, item.CurrentCataracta, elapsed)
+						name, repo.Name, item.ID, item.CurrentCataractae, elapsed)
 					totalBusy++
 				} else {
 					fmt.Fprintf(tw, "%s\t%s\t—\t—\t—\n", name, repo.Name)
@@ -315,7 +315,7 @@ var statusCmd = &cobra.Command{
 			case "delivered":
 				done++
 			}
-			if item.CurrentCataracta == "human" && (item.Status == "stagnant" || item.Status == "escalated") {
+			if item.CurrentCataractae == "human" && (item.Status == "stagnant" || item.Status == "escalated") {
 				humanGated = append(humanGated, item)
 			}
 		}
@@ -343,7 +343,7 @@ var statusCmd = &cobra.Command{
 
 		// Pre-load workflow step counts for progress indicators.
 		cfgDir := filepath.Dir(cfgPath)
-		wfSteps := map[string][]aqueduct.WorkflowCataracta{}
+		wfSteps := map[string][]aqueduct.WorkflowCataractae{}
 		for _, repo := range cfg.Repos {
 			wfPath := repo.WorkflowPath
 			if !filepath.IsAbs(wfPath) {
@@ -360,8 +360,8 @@ var statusCmd = &cobra.Command{
 			for _, name := range repoWorkerNames(repo) {
 				if item, ok := assignee[name]; ok {
 					elapsed := formatElapsed(time.Since(item.UpdatedAt))
-					stage := item.CurrentCataracta
-					idx := cataractaIndexInWorkflow(stage, steps)
+					stage := item.CurrentCataractae
+					idx := cataractaeIndexInWorkflow(stage, steps)
 					total := len(steps)
 					var progress string
 					if idx > 0 && total > 0 {

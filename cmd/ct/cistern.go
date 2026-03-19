@@ -166,15 +166,15 @@ var dropletListCmd = &cobra.Command{
 			fmt.Fprintln(tw, "ID\tCOMPLEXITY\tTITLE\tSTATUS\tELAPSED\tCATARACTA")
 			for _, item := range active {
 				ds := displayStatusForDroplet(item)
-				cataracta := item.CurrentCataracta
-				if cataracta == "" {
-					cataracta = "\u2014"
+				cataractae := item.CurrentCataractae
+				if cataractae == "" {
+					cataractae = "\u2014"
 				}
 				if item.Status == "open" {
 					blockedBy, _ := c.GetBlockedBy(item.ID)
 					if len(blockedBy) > 0 {
 						ds = "\u2298 blocked"
-						cataracta = "waiting: " + blockedBy[0]
+						cataractae = "waiting: " + blockedBy[0]
 					}
 				}
 				if ds == "awaiting" {
@@ -186,19 +186,19 @@ var dropletListCmd = &cobra.Command{
 				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 					item.ID, complexityName(item.Complexity), truncate(item.Title, titleMax),
-					ds, elapsed, cataracta)
+					ds, elapsed, cataractae)
 			}
 			if listAll && len(dimmed) > 0 {
 				fmt.Fprintln(tw, "— delivered —")
 				for _, item := range dimmed {
 					age := formatElapsed(time.Since(item.UpdatedAt))
-					cataracta := item.CurrentCataracta
-					if cataracta == "" {
-						cataracta = "\u2014"
+					cataractae := item.CurrentCataractae
+					if cataractae == "" {
+						cataractae = "\u2014"
 					}
 					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 						item.ID, complexityName(item.Complexity), truncate(item.Title, titleMax),
-						"delivered", age, cataracta)
+						"delivered", age, cataractae)
 				}
 			}
 			return tw.Flush()
@@ -247,9 +247,9 @@ func printDropletListTerminal(active, dimmed []*cistern.Droplet, showAll bool, t
 
 	for _, item := range active {
 		ds := displayStatusForDroplet(item)
-		cataracta := item.CurrentCataracta
-		if cataracta == "" {
-			cataracta = "—"
+		cataractae := item.CurrentCataractae
+		if cataractae == "" {
+			cataractae = "—"
 		}
 		elapsed := "—"
 		if item.Status == "in_progress" {
@@ -259,7 +259,7 @@ func printDropletListTerminal(active, dimmed []*cistern.Droplet, showAll bool, t
 		sc := statusCell(ds, colSt)
 		fmt.Printf("  %-*s  %-*s  %s  %s  %-*s  %s\n",
 			colID, item.ID, colCX, complexityName(item.Complexity),
-			title, sc, colEl, elapsed, cataracta)
+			title, sc, colEl, elapsed, cataractae)
 	}
 
 	if showAll && len(dimmed) > 0 {
@@ -294,7 +294,7 @@ func displayStatus(status string) string {
 // displayStatusForDroplet returns the display status for a droplet, overriding
 // for human-gated droplets to show "awaiting approval".
 func displayStatusForDroplet(item *cistern.Droplet) string {
-	if item.CurrentCataracta == "human" && (item.Status == "stagnant" || item.Status == "escalated") {
+	if item.CurrentCataractae == "human" && (item.Status == "stagnant" || item.Status == "escalated") {
 		return "awaiting"
 	}
 	return displayStatus(item.Status)
@@ -360,15 +360,15 @@ var dropletSearchCmd = &cobra.Command{
 		fmt.Fprintln(tw, "ID\tCOMPLEXITY\tTITLE\tSTATUS\tELAPSED\tCATARACTA")
 		for _, item := range items {
 			ds := displayStatusForDroplet(item)
-			cataracta := item.CurrentCataracta
-			if cataracta == "" {
-				cataracta = "\u2014"
+			cataractae := item.CurrentCataractae
+			if cataractae == "" {
+				cataractae = "\u2014"
 			}
 			if item.Status == "open" {
 				blockedBy, _ := c.GetBlockedBy(item.ID)
 				if len(blockedBy) > 0 {
 					ds = "\u2298 blocked"
-					cataracta = "waiting: " + blockedBy[0]
+					cataractae = "waiting: " + blockedBy[0]
 				}
 			}
 			if ds == "awaiting" {
@@ -380,7 +380,7 @@ var dropletSearchCmd = &cobra.Command{
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				item.ID, complexityName(item.Complexity), truncate(item.Title, titleMax),
-				ds, elapsed, cataracta)
+				ds, elapsed, cataractae)
 		}
 		return tw.Flush()
 	},
@@ -427,7 +427,7 @@ var dropletExportCmd = &cobra.Command{
 
 		// CSV output.
 		w := csv.NewWriter(os.Stdout)
-		_ = w.Write([]string{"id", "repo", "title", "description", "priority", "complexity", "status", "assignee", "current_cataracta", "outcome", "assigned_aqueduct", "last_reviewed_commit", "created_at", "updated_at"})
+		_ = w.Write([]string{"id", "repo", "title", "description", "priority", "complexity", "status", "assignee", "current_cataractae", "outcome", "assigned_aqueduct", "last_reviewed_commit", "created_at", "updated_at"})
 		for _, item := range items {
 			_ = w.Write([]string{
 				item.ID,
@@ -438,7 +438,7 @@ var dropletExportCmd = &cobra.Command{
 				strconv.Itoa(item.Complexity),
 				item.Status,
 				item.Assignee,
-				item.CurrentCataracta,
+				item.CurrentCataractae,
 				item.Outcome,
 				item.AssignedAqueduct,
 				item.LastReviewedCommit,
@@ -497,7 +497,7 @@ var dropletShowCmd = &cobra.Command{
 		fmt.Printf("Priority:    %d\n", item.Priority)
 		fmt.Printf("Complexity:  %s (%d)\n", complexityName(item.Complexity), item.Complexity)
 		fmt.Printf("Cataracta:      %s\n", item.Assignee)
-		fmt.Printf("Stage:       %s\n", item.CurrentCataracta)
+		fmt.Printf("Stage:       %s\n", item.CurrentCataractae)
 
 		fmt.Printf("Created:     %s\n", item.CreatedAt.Format("2006-01-02 15:04:05"))
 		fmt.Printf("Updated:     %s\n", item.UpdatedAt.Format("2006-01-02 15:04:05"))
@@ -513,7 +513,7 @@ var dropletShowCmd = &cobra.Command{
 		if len(notes) > 0 {
 			fmt.Printf("\nNotes:\n")
 			for _, n := range notes {
-				fmt.Printf("  [%s] %s\n", n.CataractaName, n.Content)
+				fmt.Printf("  [%s] %s\n", n.CataractaeName, n.Content)
 			}
 		}
 
@@ -991,8 +991,8 @@ var dropletApproveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if item.CurrentCataracta != "human" {
-			return fmt.Errorf("%s is not awaiting human approval (cataracta: %s)", id, item.CurrentCataracta)
+		if item.CurrentCataractae != "human" {
+			return fmt.Errorf("%s is not awaiting human approval (cataracta: %s)", id, item.CurrentCataractae)
 		}
 		if err := c.Assign(id, "", "delivery"); err != nil {
 			return err

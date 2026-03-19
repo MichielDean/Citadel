@@ -1,4 +1,4 @@
-package cataracta
+package cataractae
 
 import "fmt"
 

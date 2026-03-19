@@ -1,6 +1,6 @@
 // Package runner manages named workers, persistent sandboxes, and Claude Code
 // sessions for executing workflow steps against work items.
-package cataracta
+package cataractae
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ type Runner struct {
 	mu sync.Mutex
 }
 
-// Config holds the parameters for creating a cataracta.
+// Config holds the parameters for creating a cataractae.
 type Config struct {
 	Repo             aqueduct.RepoConfig
 	Workflow         *aqueduct.Workflow
@@ -183,13 +183,13 @@ func (r *Runner) findWorkerByName(name string) *Worker {
 // session in tmux and returns immediately. The agent signals completion by calling
 // `ct droplet pass/recirculate/block <id>`, which the Castellarius observe loop
 // detects on its next tick.
-func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.WorkflowCataracta) error {
+func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.WorkflowCataractae) error {
 	log.Printf("cataracta: %s/%s: spawning step %q for item %s", r.repo.Name, w.Name, step.Name, item.ID)
 
 		// 1. Position the dedicated clone on the item's feature branch.
 	// PrepareBranch fetches latest origin/main and creates or resumes the branch.
 	if step.Context == aqueduct.ContextFullCodebase || step.Context == "" {
-		if step.Type == aqueduct.CataractaTypeAgent {
+		if step.Type == aqueduct.CataractaeTypeAgent {
 			if err := PrepareBranch(w.SandboxDir, item.ID); err != nil {
 				return fmt.Errorf("sandbox branch: %w", err)
 			}
@@ -285,8 +285,8 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 	return nil
 }
 
-// CataractaByName looks up a workflow step by name.
-func (r *Runner) CataractaByName(name string) *aqueduct.WorkflowCataracta {
+// CataractaeByName looks up a workflow step by name.
+func (r *Runner) CataractaeByName(name string) *aqueduct.WorkflowCataractae {
 	for i := range r.workflow.Cataractae {
 		if r.workflow.Cataractae[i].Name == name {
 			return &r.workflow.Cataractae[i]

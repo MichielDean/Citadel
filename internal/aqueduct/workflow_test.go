@@ -26,8 +26,8 @@ func TestParseValidWorkflow(t *testing.T) {
 	if impl.Name != "implement" {
 		t.Errorf("step[0].Name = %q, want %q", impl.Name, "implement")
 	}
-	if impl.Type != CataractaTypeAgent {
-		t.Errorf("step[0].Type = %q, want %q", impl.Type, CataractaTypeAgent)
+	if impl.Type != CataractaeTypeAgent {
+		t.Errorf("step[0].Type = %q, want %q", impl.Type, CataractaeTypeAgent)
 	}
 	if impl.Identity != "implementer" {
 		t.Errorf("step[0].Role = %q, want %q", impl.Identity, "implementer")
@@ -57,8 +57,8 @@ func TestParseValidWorkflow(t *testing.T) {
 	}
 
 	merge := w.Cataractae[3]
-	if merge.Type != CataractaTypeAutomated {
-		t.Errorf("step[3].Type = %q, want %q", merge.Type, CataractaTypeAutomated)
+	if merge.Type != CataractaeTypeAutomated {
+		t.Errorf("step[3].Type = %q, want %q", merge.Type, CataractaeTypeAutomated)
 	}
 }
 
@@ -116,13 +116,13 @@ cataractae:
 	if len(w.Cataractae) != 1 {
 		t.Fatalf("got %d steps, want 1", len(w.Cataractae))
 	}
-	if w.Cataractae[0].Type != CataractaTypeGate {
-		t.Errorf("type = %q, want %q", w.Cataractae[0].Type, CataractaTypeGate)
+	if w.Cataractae[0].Type != CataractaeTypeGate {
+		t.Errorf("type = %q, want %q", w.Cataractae[0].Type, CataractaeTypeGate)
 	}
 }
 
 func TestValidateEmptyName(t *testing.T) {
-	w := &Workflow{Cataractae: []WorkflowCataracta{{Name: "x", Type: CataractaTypeAgent}}}
+	w := &Workflow{Cataractae: []WorkflowCataractae{{Name: "x", Type: CataractaeTypeAgent}}}
 	err := Validate(w)
 	if err == nil || !strings.Contains(err.Error(), "name is required") {
 		t.Errorf("expected name required error, got %v", err)
@@ -140,9 +140,9 @@ func TestValidateNoSteps(t *testing.T) {
 func TestValidateDuplicateStepName(t *testing.T) {
 	w := &Workflow{
 		Name: "dup",
-		Cataractae: []WorkflowCataracta{
-			{Name: "a", Type: CataractaTypeAgent, OnPass: "done"},
-			{Name: "a", Type: CataractaTypeAgent, OnPass: "done"},
+		Cataractae: []WorkflowCataractae{
+			{Name: "a", Type: CataractaeTypeAgent, OnPass: "done"},
+			{Name: "a", Type: CataractaeTypeAgent, OnPass: "done"},
 		},
 	}
 	err := Validate(w)

@@ -243,7 +243,7 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 //	              ▀▀▀▀▀▀▀▀▀             ▀▀▀▀▀▀▀▀▀             ▀▀▀▀▀▀▀▀▀
 //	              █████████             █████████             █████████
 //	           implement        adv-review              qa              delivery
-func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo, frame int) []string {
+func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string {
 	const (
 		colW      = 20  // wider columns → bigger arch span → more room for the curve
 		archTopW  = 10  // narrower pier top → span = colW-archTopW = 10 chars at keystone
@@ -355,7 +355,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo, frame int) []string 
 
 	var water string
 	if ch.DropletID != "" {
-		bar     := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
+		bar     := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
 		water    = buildChanWater(infoStr, wfMid)
 	} else {
@@ -564,7 +564,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo, frame int) []string 
 // The aqueduct name is shown as a left-column prefix so every row is labelled.
 // Returns graphLine (the pipeline) and infoLine (↑ pointer with droplet info, or empty).
 // Visual column tracking is kept separate from the ANSI-escaped string builder.
-func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaInfo) (graphLine, infoLine string) {
+func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaeInfo) (graphLine, infoLine string) {
 	const namePad = 12 // fixed visual width for the name column
 	namePfx := padRight(ch.Name, namePad)
 	const pfxWidth = namePad + 4 // "  <name>  " = 2 + namePad + 2
@@ -606,7 +606,7 @@ func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaInfo) (graphLine, infoLin
 
 	graphLine = g.String()
 	if activeVisualCol >= 0 {
-		bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
+		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		infoLine = strings.Repeat(" ", activeVisualCol) +
 			tuiStyleDim.Render("↑ ") +
 			tuiStyleGreen.Render(ch.Name) +
@@ -696,7 +696,7 @@ func (m dashboardTUIModel) viewRecentFlow() []string {
 
 func (m dashboardTUIModel) viewRecentRow(item *cistern.Droplet) string {
 	t := item.UpdatedAt.Format("15:04")
-	step := item.CurrentCataracta
+	step := item.CurrentCataractae
 	if step == "" {
 		step = "—"
 	}

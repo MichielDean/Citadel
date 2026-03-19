@@ -14,8 +14,8 @@ var DefaultQARole string
 //go:embed defaults/security.md
 var DefaultSecurityRole string
 
-// BuiltinCataractaDefinitions contains the default role definitions shipped with the binary.
-var BuiltinCataractaDefinitions = map[string]CataractaDefinition{
+// BuiltinCataractaeDefinitions contains the default role definitions shipped with the binary.
+var BuiltinCataractaeDefinitions = map[string]CataractaeDefinition{
 	"implementer": {Name: "Implementer", Description: "Expert software engineer, TDD/BDD", Instructions: DefaultImplementerRole},
 	"reviewer":    {Name: "Adversarial Reviewer", Description: "Adversarial code reviewer", Instructions: DefaultReviewerRole},
 	"qa":          {Name: "QA Reviewer", Description: "Quality and test coverage reviewer", Instructions: DefaultQARole},

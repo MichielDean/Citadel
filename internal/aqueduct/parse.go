@@ -45,15 +45,15 @@ func ParseAqueductConfig(path string) (*AqueductConfig, error) {
 	return &cfg, nil
 }
 
-// GenerateCataractaFiles writes CLAUDE.md files for each role defined in the aqueduct.
+// GenerateCataractaeFiles writes CLAUDE.md files for each role defined in the aqueduct.
 // Files are written to <cataractaeDir>/<roleKey>/CLAUDE.md.
-func GenerateCataractaFiles(w *Workflow, cataractaeDir string) ([]string, error) {
-	if len(w.CataractaDefinitions) == 0 {
+func GenerateCataractaeFiles(w *Workflow, cataractaeDir string) ([]string, error) {
+	if len(w.CataractaeDefinitions) == 0 {
 		return nil, nil
 	}
 
 	var written []string
-	for key, role := range w.CataractaDefinitions {
+	for key, role := range w.CataractaeDefinitions {
 		dir := filepath.Join(cataractaeDir, key)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return written, fmt.Errorf("create role dir %s: %w", dir, err)

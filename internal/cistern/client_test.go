@@ -171,8 +171,8 @@ func TestAssign(t *testing.T) {
 	if got.Assignee != "alice" {
 		t.Errorf("assignee = %q, want %q", got.Assignee, "alice")
 	}
-	if got.CurrentCataracta != "implement" {
-		t.Errorf("current_step = %q, want %q", got.CurrentCataracta, "implement")
+	if got.CurrentCataractae != "implement" {
+		t.Errorf("current_step = %q, want %q", got.CurrentCataractae, "implement")
 	}
 	if got.Status != "in_progress" {
 		t.Errorf("status = %q, want %q", got.Status, "in_progress")
@@ -197,8 +197,8 @@ func TestAssign_EmptyWorker_SetsOpen(t *testing.T) {
 	if got.Assignee != "" {
 		t.Errorf("assignee = %q, want empty", got.Assignee)
 	}
-	if got.CurrentCataracta != "review" {
-		t.Errorf("current_step = %q, want %q", got.CurrentCataracta, "review")
+	if got.CurrentCataractae != "review" {
+		t.Errorf("current_step = %q, want %q", got.CurrentCataractae, "review")
 	}
 }
 
@@ -234,10 +234,10 @@ func TestAddNote_And_GetNotes(t *testing.T) {
 	if len(notes) != 2 {
 		t.Fatalf("got %d notes, want 2", len(notes))
 	}
-	if notes[0].CataractaName != "implement" || notes[0].Content != "wrote the code" {
+	if notes[0].CataractaeName != "implement" || notes[0].Content != "wrote the code" {
 		t.Errorf("note[0] = %+v", notes[0])
 	}
-	if notes[1].CataractaName != "review" || notes[1].Content != "looks good" {
+	if notes[1].CataractaeName != "review" || notes[1].Content != "looks good" {
 		t.Errorf("note[1] = %+v", notes[1])
 	}
 }

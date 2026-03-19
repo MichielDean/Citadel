@@ -1,4 +1,4 @@
-package cataracta
+package cataractae
 
 import (
 	"fmt"
@@ -77,10 +77,10 @@ func (s *Session) spawn() error {
 	return nil
 }
 
-// baseCataractaPrompt is the constitutional layer — hardcoded in the binary,
+// baseCataractaePrompt is the constitutional layer — hardcoded in the binary,
 // cannot be corrupted by YAML edits or file changes. It establishes the
 // non-negotiable contract for every cataracta session.
-const baseCataractaPrompt = `You are a Cataracta operating within the Cistern agentic pipeline.
+const baseCataractaePrompt = `You are a Cataracta operating within the Cistern agentic pipeline.
 
 Cistern is an automated software delivery system. The Castellarius (a pure state
 machine) watches the cistern and routes droplets (units of work) into named
@@ -109,9 +109,9 @@ Your role persona and skill instructions follow.
 // buildPrompt constructs the full agent prompt: constitutional base + persona + skills.
 func (s *Session) buildPrompt() string {
 	// Layer 1: Constitutional base (immutable — hardcoded in binary)
-	prompt := baseCataractaPrompt
+	prompt := baseCataractaePrompt
 
-	// Layer 2: Persona (from CLAUDE.md / cataracta_definitions YAML)
+	// Layer 2: Persona (from CLAUDE.md / cataractae_definitions YAML)
 	if s.Identity != "" {
 		identityPath := s.resolveIdentityPath()
 		if content, err := os.ReadFile(identityPath); err == nil {

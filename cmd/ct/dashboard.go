@@ -33,24 +33,24 @@ const (
 
 
 
-// CataractaInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataracta chain that droplet is.
-type CataractaInfo struct {
+// CataractaeInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataracta chain that droplet is.
+type CataractaeInfo struct {
 	Name            string
 	DropletID       string
 	Step            string
 	Steps           []string // workflow step names in order
 	Elapsed         time.Duration
-	CataractaIndex  int // 1-based index of current cataracta; 0 if unknown
+	CataractaeIndex  int // 1-based index of current cataracta; 0 if unknown
 	TotalCataractae int
 }
 
 // DashboardData holds all data required to render the dashboard.
 type DashboardData struct {
-	CataractaCount int
+	CataractaeCount int
 	FlowingCount   int
 	QueuedCount    int
 	DoneCount      int
-	Cataractae     []CataractaInfo
+	Cataractae     []CataractaeInfo
 	CisternItems   []*cistern.Droplet // flowing + queued
 	RecentItems    []*cistern.Droplet // recently closed/escalated
 	BlockedByMap   map[string]string  // droplet ID -> first blocking dep ID
@@ -71,19 +71,19 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	}
 
 	// Build aqueduct list and load cataracta chain for each repo.
-	type cataractaEntry struct {
+	type cataractaeEntry struct {
 		name string
 		repo string
 	}
-	var configCataractae []cataractaEntry
-	allSteps := map[string][]aqueduct.WorkflowCataracta{}
+	var configCataractae []cataractaeEntry
+	allSteps := map[string][]aqueduct.WorkflowCataractae{}
 	cfgDir := filepath.Dir(cfgPath)
 	for _, repo := range cfg.Repos {
 		names := repoWorkerNames(repo)
 		for _, name := range names {
-			configCataractae = append(configCataractae, cataractaEntry{name, repo.Name})
+			configCataractae = append(configCataractae, cataractaeEntry{name, repo.Name})
 		}
-		data.CataractaCount += len(names)
+		data.CataractaeCount += len(names)
 
 		wfPath := repo.WorkflowPath
 		if !filepath.IsAbs(wfPath) {
@@ -97,9 +97,9 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	// Open queue — if it fails, show aqueducts as idle.
 	c, err := cistern.New(dbPath, "")
 	if err != nil {
-		cataractae := make([]CataractaInfo, len(configCataractae))
+		cataractae := make([]CataractaeInfo, len(configCataractae))
 		for i, ch := range configCataractae {
-			ci := CataractaInfo{Name: ch.name}
+			ci := CataractaeInfo{Name: ch.name}
 			if wf, ok := allSteps[ch.repo]; ok {
 				ci.Steps = stepNames(wf)
 			}
@@ -112,9 +112,9 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 
 	allItems, err := c.List("", "")
 	if err != nil {
-		cataractae := make([]CataractaInfo, len(configCataractae))
+		cataractae := make([]CataractaeInfo, len(configCataractae))
 		for i, ch := range configCataractae {
-			ci := CataractaInfo{Name: ch.name}
+			ci := CataractaeInfo{Name: ch.name}
 			if wf, ok := allSteps[ch.repo]; ok {
 				ci.Steps = stepNames(wf)
 			}
@@ -141,19 +141,19 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	}
 
 	// Build cataracta infos.
-	cataractae := make([]CataractaInfo, len(configCataractae))
+	cataractae := make([]CataractaeInfo, len(configCataractae))
 	for i, ch := range configCataractae {
-		ci := CataractaInfo{Name: ch.name}
+		ci := CataractaeInfo{Name: ch.name}
 		if wf, ok := allSteps[ch.repo]; ok {
 			ci.Steps = stepNames(wf)
 		}
 		if item, ok := assigneeMap[ch.name]; ok {
 			ci.DropletID = item.ID
-			ci.Step = item.CurrentCataracta
+			ci.Step = item.CurrentCataractae
 			ci.Elapsed = time.Since(item.UpdatedAt)
 			wfCataractae := allSteps[ch.repo]
 			ci.TotalCataractae = len(wfCataractae)
-			ci.CataractaIndex = cataractaIndexInWorkflow(item.CurrentCataracta, wfCataractae)
+			ci.CataractaeIndex = cataractaeIndexInWorkflow(item.CurrentCataractae, wfCataractae)
 		}
 		cataractae[i] = ci
 	}
@@ -191,8 +191,8 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	return data
 }
 
-// cataractaIndexInWorkflow returns the 1-based index of stepName in the cataracta list, or 0 if not found.
-func cataractaIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCataracta) int {
+// cataractaeIndexInWorkflow returns the 1-based index of stepName in the cataracta list, or 0 if not found.
+func cataractaeIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCataractae) int {
 	for i, s := range cataractae {
 		if s.Name == stepName {
 			return i + 1
@@ -202,7 +202,7 @@ func cataractaIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCat
 }
 
 // stepNames extracts step names from a workflow cataracta slice.
-func stepNames(wf []aqueduct.WorkflowCataracta) []string {
+func stepNames(wf []aqueduct.WorkflowCataractae) []string {
 	names := make([]string, len(wf))
 	for i, s := range wf {
 		names[i] = s.Name
@@ -260,7 +260,7 @@ func padRight(s string, width int) string {
 //	             ║  ●  ║         ║  ○  ║         ║  ○  ║        ║  ○  ║
 //	             ╚═════╝         ╚═════╝         ╚═════╝        ╚═════╝
 //	           implement      adv-review            qa          delivery
-func renderAqueductRow(ch CataractaInfo) string {
+func renderAqueductRow(ch CataractaeInfo) string {
 	const (
 		colW    = 15 // visual width per cataracta column (label + spacing)
 		pierInW = 5  // inner width of pier box: "  ●  " or " impl"
@@ -285,7 +285,7 @@ func renderAqueductRow(ch CataractaInfo) string {
 	// ── Line 2: water / droplet info ───────────────────────────────────────
 	var waterInner string
 	if ch.DropletID != "" {
-		bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
+		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		content := fmt.Sprintf(" ≈ ≈  %s  %s  %s  ≈ ≈ ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
 		waterInner = padOrTruncCenter(content, chanW)
 		waterInner = colorGreen + waterInner + colorReset
@@ -420,7 +420,7 @@ func padOrTruncCenter(s string, w int) string {
 }
 
 // renderFlowGraphRow is kept for tests; the TUI now uses renderAqueductRow.
-func renderFlowGraphRow(ch CataractaInfo) (graphLine, infoLine string) {
+func renderFlowGraphRow(ch CataractaeInfo) (graphLine, infoLine string) {
 	const namePad = 12
 	namePfx := padRight(ch.Name, namePad)
 	const pfxWidth = namePad + 4
@@ -459,7 +459,7 @@ func renderFlowGraphRow(ch CataractaInfo) (graphLine, infoLine string) {
 
 	graphLine = g.String()
 	if activeCol >= 0 {
-		bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
+		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		infoLine = strings.Repeat(" ", activeCol) + "↑ " + ch.Name + " · " + ch.DropletID + "  " + formatElapsed(ch.Elapsed) + "  " + bar
 	}
 	return
@@ -534,7 +534,7 @@ func renderDashboard(data *DashboardData) string {
 func renderRecentLine(item *cistern.Droplet) string {
 	t := item.UpdatedAt.Format("15:04")
 	id := padRight(item.ID, 10)
-	step := item.CurrentCataracta
+	step := item.CurrentCataractae
 	if step == "" {
 		step = "—"
 	}

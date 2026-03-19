@@ -1,4 +1,4 @@
-package cataracta
+package cataractae
 
 import (
 	"encoding/json"
@@ -35,7 +35,7 @@ func testRepoConfig() aqueduct.RepoConfig {
 func testWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
-		Cataractae: []aqueduct.WorkflowCataracta{
+		Cataractae: []aqueduct.WorkflowCataractae{
 			{Name: "implement", Type: "agent", Identity: "implementer", Context: "full_codebase"},
 			{Name: "review", Type: "agent", Identity: "reviewer", Context: "diff_only"},
 		},
@@ -198,7 +198,7 @@ func TestStepByName(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	step := r.CataractaByName("implement")
+	step := r.CataractaeByName("implement")
 	if step == nil {
 		t.Fatal("expected step 'implement'")
 	}
@@ -206,7 +206,7 @@ func TestStepByName(t *testing.T) {
 		t.Errorf("step role = %q, want %q", step.Identity, "implementer")
 	}
 
-	if r.CataractaByName("nonexistent") != nil {
+	if r.CataractaeByName("nonexistent") != nil {
 		t.Error("expected nil for nonexistent step")
 	}
 }
@@ -265,15 +265,15 @@ func TestWriteContextFile(t *testing.T) {
 		Description: "Fix the thing",
 	}
 
-	step := &aqueduct.WorkflowCataracta{
+	step := &aqueduct.WorkflowCataractae{
 		Name:    "implement",
 		Type:    "agent",
 		Identity: "implementer",
 		Context: "full_codebase",
 	}
 
-	notes := []cistern.CataractaNote{
-		{CataractaName: "review", Content: "Looks good but needs tests"},
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "review", Content: "Looks good but needs tests"},
 	}
 
 	err := writeContextFile(path, ContextParams{
@@ -312,7 +312,7 @@ func TestWriteContextFile(t *testing.T) {
 func TestPrepareContext_FullCodebase(t *testing.T) {
 	dir := t.TempDir()
 	item := &cistern.Droplet{ID: "bf-1", Title: "Test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataracta{Name: "implement", Type: "agent", Context: "full_codebase"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent", Context: "full_codebase"}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextFullCodebase,
@@ -342,7 +342,7 @@ func TestPrepareContext_SpecOnly(t *testing.T) {
 		Priority:    2,
 		Description: "Build the widget",
 	}
-	step := &aqueduct.WorkflowCataracta{Name: "plan", Type: "agent", Context: "spec_only"}
+	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: "agent", Context: "spec_only"}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextSpecOnly,
@@ -493,7 +493,7 @@ func TestPrepareContext_DiffOnly_Isolation(t *testing.T) {
 	mustRun(t, gitCmd(sandbox, "commit", "-m", "add smoke test comment"))
 
 	item := &cistern.Droplet{ID: "bf-smoke", Title: "Smoke", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataracta{Name: "review", Type: "agent", Context: "diff_only"}
+	step := &aqueduct.WorkflowCataractae{Name: "review", Type: "agent", Context: "diff_only"}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextDiffOnly,
@@ -573,7 +573,7 @@ func TestWriteContextFile_AvailableSkillsBlock(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	item := &cistern.Droplet{ID: "sk-1", Title: "Skill test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataracta{
+	step := &aqueduct.WorkflowCataractae{
 		Name:     "implement",
 		Type:     "agent",
 		Identity: "implementer",
@@ -630,7 +630,7 @@ func TestWriteContextFile_XMLEscapedDescription(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	item := &cistern.Droplet{ID: "xss-1", Title: "XSS test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataracta{
+	step := &aqueduct.WorkflowCataractae{
 		Name:    "implement",
 		Type:    "agent",
 		Context: "full_codebase",
@@ -670,7 +670,7 @@ func TestWriteContextFile_NoSkillsBlock_WhenEmpty(t *testing.T) {
 	path := filepath.Join(dir, "CONTEXT.md")
 
 	item := &cistern.Droplet{ID: "no-skill", Title: "No skills", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataracta{
+	step := &aqueduct.WorkflowCataractae{
 		Name:    "implement",
 		Type:    "agent",
 		Context: "full_codebase",

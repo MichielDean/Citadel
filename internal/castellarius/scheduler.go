@@ -1,7 +1,7 @@
 // Package castellarius implements the Castellarius — the overseer of all aqueducts.
 //
 // It polls the work cistern for each configured repo, assigns droplets to
-// named operators, runs workflow cataractae via an injected CataractaRunner, reads
+// named operators, runs workflow cataractae via an injected CataractaeRunner, reads
 // outcomes, and routes to the next cataracta via deterministic workflow rules.
 // No AI in the Castellarius — pure state machine.
 package castellarius
@@ -30,33 +30,33 @@ type CisternClient interface {
 	Assign(id, worker, step string) error
 
 	AddNote(id, step, content string) error
-	GetNotes(id string) ([]cistern.CataractaNote, error)
+	GetNotes(id string) ([]cistern.CataractaeNote, error)
 	Escalate(id, reason string) error
 	CloseItem(id string) error
 	List(repo, status string) ([]*cistern.Droplet, error)
 	Purge(olderThan time.Duration, dryRun bool) (int, error)
-	SetCataracta(id, cataracta string) error
+	SetCataractae(id, cataractae string) error
 	// GetLastReviewedCommit returns the HEAD commit hash recorded when the last
 	// review diff was generated. Used to detect phantom commits.
 	GetLastReviewedCommit(dropletID string) (string, error)
 }
 
-// CataractaRunner executes a single workflow step.
+// CataractaeRunner executes a single workflow step.
 // Spawn is non-blocking for agent steps (spawns tmux, returns immediately)
 // and synchronous for automated steps (runs the gate, writes outcome to DB).
 // The observe phase of the scheduler reads outcomes written to the DB on each tick.
-type CataractaRunner interface {
-	Spawn(ctx context.Context, req CataractaRequest) error
+type CataractaeRunner interface {
+	Spawn(ctx context.Context, req CataractaeRequest) error
 }
 
-// CataractaRequest contains everything needed to execute a workflow step.
-type CataractaRequest struct {
+// CataractaeRequest contains everything needed to execute a workflow step.
+type CataractaeRequest struct {
 	Item       *cistern.Droplet
-	Step       aqueduct.WorkflowCataracta
+	Step       aqueduct.WorkflowCataractae
 	Workflow   *aqueduct.Workflow
 	RepoConfig aqueduct.RepoConfig
 	AqueductName string
-	Notes      []cistern.CataractaNote // context from previous steps
+	Notes      []cistern.CataractaeNote // context from previous steps
 }
 
 // Castellarius is the core loop that polls for work, assigns it to operators,
@@ -66,7 +66,7 @@ type Castellarius struct {
 	workflows         map[string]*aqueduct.Workflow
 	clients           map[string]CisternClient
 	pools             map[string]*AqueductPool
-	runner            CataractaRunner
+	runner            CataractaeRunner
 	logger            *slog.Logger
 	pollInterval      time.Duration
 	// heartbeatInterval controls how often orphaned in-progress droplets are
@@ -100,7 +100,7 @@ func WithSandboxRoot(root string) Option {
 // New creates a Castellarius from an AqueductConfig.
 // Workflows are loaded from each RepoConfig.WorkflowPath.
 // Each repo gets its own cistern.Client scoped by prefix.
-func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaRunner, opts ...Option) (*Castellarius, error) {
+func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner, opts ...Option) (*Castellarius, error) {
 	s := &Castellarius{
 		config:            config,
 		workflows:         make(map[string]*aqueduct.Workflow),
@@ -170,7 +170,7 @@ func NewFromParts(
 	config aqueduct.AqueductConfig,
 	workflows map[string]*aqueduct.Workflow,
 	clients map[string]CisternClient,
-	runner CataractaRunner,
+	runner CataractaeRunner,
 	opts ...Option,
 ) *Castellarius {
 	s := &Castellarius{
@@ -392,12 +392,12 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 
 		if step == nil {
 			s.logger.Warn("observe: no step found, resetting",
-				"repo", repo.Name, "droplet", item.ID, "cataracta", item.CurrentCataracta)
-			cataracta := item.CurrentCataracta
-			if cataracta == "" && len(wf.Cataractae) > 0 {
-				cataracta = wf.Cataractae[0].Name
+				"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
+			cataractaeName := item.CurrentCataractae
+			if cataractaeName == "" && len(wf.Cataractae) > 0 {
+				cataractaeName = wf.Cataractae[0].Name
 			}
-			if err := client.Assign(item.ID, "", cataracta); err != nil {
+			if err := client.Assign(item.ID, "", cataractaeName); err != nil {
 				s.logger.Error("observe: reset (no step) failed", "droplet", item.ID, "error", err)
 			}
 			continue
@@ -407,11 +407,11 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 
 		switch result {
 		case ResultPass:
-			s.logger.Info("Droplet cleared cataracta", "droplet", item.ID, "cataracta", step.Name)
+			s.logger.Info("Droplet cleared cataracta", "droplet", item.ID, "cataractae", step.Name)
 		case ResultRecirculate:
-			s.logger.Info("Droplet recirculated", "droplet", item.ID, "cataracta", step.Name)
+			s.logger.Info("Droplet recirculated", "droplet", item.ID, "cataractae", step.Name)
 		default:
-			s.logger.Info("Droplet stagnant at cataracta", "droplet", item.ID, "cataracta", step.Name, "outcome", item.Outcome)
+			s.logger.Info("Droplet stagnant at cataracta", "droplet", item.ID, "cataractae", step.Name, "outcome", item.Outcome)
 		}
 
 		// Phantom commit prevention: when implement passes, verify that HEAD has
@@ -536,10 +536,10 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 		s.logger.Info("Droplet entering cataracta",
 			"droplet", item.ID,
 			"operator", worker.Name,
-			"cataracta", step.Name,
+			"cataractae", step.Name,
 		)
 
-		req := CataractaRequest{
+		req := CataractaeRequest{
 			Item:       item,
 			Step:       *step,
 			Workflow:   wf,
@@ -554,7 +554,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 				s.logger.Error("spawn failed",
 					"repo", repo.Name,
 					"droplet", req.Item.ID,
-					"cataracta", req.Step.Name,
+					"cataractae", req.Step.Name,
 					"error", err,
 				)
 				// Reset to open so the item can be re-dispatched to same aqueduct.
@@ -602,9 +602,9 @@ func parseOutcome(outcome string) (Result, string) {
 // currentCataracta determines which workflow step a work item is at.
 // If the item has a current_step, look up that step.
 // Otherwise, start at the first step in the aqueduct.
-func currentCataracta(item *cistern.Droplet, wf *aqueduct.Workflow) *aqueduct.WorkflowCataracta {
-	if item.CurrentCataracta != "" {
-		return lookupCataracta(wf, item.CurrentCataracta)
+func currentCataracta(item *cistern.Droplet, wf *aqueduct.Workflow) *aqueduct.WorkflowCataractae {
+	if item.CurrentCataractae != "" {
+		return lookupCataracta(wf, item.CurrentCataractae)
 	}
 	if len(wf.Cataractae) > 0 {
 		return &wf.Cataractae[0]
@@ -612,7 +612,7 @@ func currentCataracta(item *cistern.Droplet, wf *aqueduct.Workflow) *aqueduct.Wo
 	return nil
 }
 
-func lookupCataracta(wf *aqueduct.Workflow, name string) *aqueduct.WorkflowCataracta {
+func lookupCataracta(wf *aqueduct.Workflow, name string) *aqueduct.WorkflowCataractae {
 	for i := range wf.Cataractae {
 		if wf.Cataractae[i].Name == name {
 			return &wf.Cataractae[i]
@@ -622,7 +622,7 @@ func lookupCataracta(wf *aqueduct.Workflow, name string) *aqueduct.WorkflowCatar
 }
 
 // route determines the next step name based on the outcome result.
-func route(step aqueduct.WorkflowCataracta, result Result) string {
+func route(step aqueduct.WorkflowCataractae, result Result) string {
 	switch result {
 	case ResultPass:
 		return step.OnPass
@@ -682,7 +682,7 @@ func (s *Castellarius) handleTerminal(client CisternClient, itemID, terminal, fr
 			s.logger.Error("escalate at terminal failed", "droplet", itemID, "error", err)
 		}
 		if strings.ToLower(terminal) == "human" {
-			if err := client.SetCataracta(itemID, "human"); err != nil {
+			if err := client.SetCataractae(itemID, "human"); err != nil {
 				s.logger.Error("set cataracta human failed", "droplet", itemID, "error", err)
 			}
 		}
@@ -715,19 +715,19 @@ func (s *Castellarius) recoverInProgress() {
 			}
 
 			// No outcome: reset to open for re-dispatch.
-			cataracta := item.CurrentCataracta
-			if cataracta == "" {
+			cataractaeName := item.CurrentCataractae
+			if cataractaeName == "" {
 				step := currentCataracta(item, wf)
 				if step != nil {
-					cataracta = step.Name
+					cataractaeName = step.Name
 				} else if len(wf.Cataractae) > 0 {
-					cataracta = wf.Cataractae[0].Name
+					cataractaeName = wf.Cataractae[0].Name
 				}
 			}
 
 			s.logger.Info("recovery: resetting in_progress item to open",
-				"repo", repo.Name, "droplet", item.ID, "cataracta", cataracta)
-			if err := client.Assign(item.ID, "", cataracta); err != nil {
+				"repo", repo.Name, "droplet", item.ID, "cataractae", cataractaeName)
+			if err := client.Assign(item.ID, "", cataractaeName); err != nil {
 				s.logger.Error("recovery: reset failed", "droplet", item.ID, "error", err)
 			}
 		}
@@ -776,7 +776,7 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 
 		// Dead/missing session, no outcome — reset to open for re-dispatch.
 		s.logger.Info("heartbeat: resetting stalled droplet",
-			"repo", repo.Name, "droplet", item.ID, "cataracta", item.CurrentCataracta)
+			"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
 
 		if item.Assignee != "" {
 			if w := pool.FindByName(item.Assignee); w != nil {
@@ -784,7 +784,7 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			}
 		}
 
-		if err := client.Assign(item.ID, "", item.CurrentCataracta); err != nil {
+		if err := client.Assign(item.ID, "", item.CurrentCataractae); err != nil {
 			s.logger.Error("heartbeat: reset failed", "droplet", item.ID, "error", err)
 		}
 	}
@@ -808,7 +808,7 @@ func sandboxHead(dir string) (string, error) {
 
 // WriteContext writes a CONTEXT.md file with notes from previous steps.
 // Call this before spawning the next agent to provide context from prior steps.
-func WriteContext(dir string, notes []cistern.CataractaNote) error {
+func WriteContext(dir string, notes []cistern.CataractaeNote) error {
 	if len(notes) == 0 {
 		return nil
 	}
@@ -816,7 +816,7 @@ func WriteContext(dir string, notes []cistern.CataractaNote) error {
 	var b []byte
 	b = append(b, "# Context from Previous Steps\n\n"...)
 	for _, n := range notes {
-		header := n.CataractaName
+		header := n.CataractaeName
 		if header == "" {
 			header = "unknown"
 		}

@@ -67,7 +67,7 @@ func (p *AqueductPool) FlowingCount() int {
 	return n
 }
 
-// Assign marks an aqueduct as flowing with the given droplet and cataracta.
+// Assign marks an aqueduct as flowing with the given droplet and cataractae.
 func (p *AqueductPool) Assign(a *Aqueduct, dropletID, step string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

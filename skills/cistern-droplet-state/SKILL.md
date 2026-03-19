@@ -4,8 +4,8 @@ Manage droplet state in the Cistern agentic pipeline using the `ct` CLI.
 
 ## When to use this skill
 
-Use at the end of every cataracta session to signal your outcome.
-You MUST signal before exiting. A cataracta that exits without signaling leaves
+Use at the end of every cataractae session to signal your outcome.
+You MUST signal before exiting. A cataractae that exits without signaling leaves
 the droplet stranded in the cistern.
 
 ## Your Droplet ID
@@ -24,7 +24,7 @@ ct droplet pass <id> --notes "Summary of what was done and verified."
 ct droplet recirculate <id> --notes "Specific issues: 1. <issue> 2. <issue>"
 ```
 
-### Recirculate to a specific cataracta
+### Recirculate to a specific cataractae
 ```bash
 ct droplet recirculate <id> --to implement --notes "Reason for routing to implement."
 ```

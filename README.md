@@ -2,7 +2,7 @@
   <img src="cistern_logo.png" alt="Cistern Logo" />
 </p>
 
-Cistern is an agentic delivery system built around a water metaphor. Droplets of work enter the cistern, flow through named aqueducts cataracta by cataracta, and what emerges at the other end is clean enough to ship.
+Cistern is an agentic delivery system built around a water metaphor. Droplets of work enter the cistern, flow through named aqueducts cataractae by cataractae, and what emerges at the other end is clean enough to ship.
 
 ## The Vocabulary
 
@@ -13,10 +13,10 @@ Cistern is an agentic delivery system built around a water metaphor. Droplets of
 | **Filtration** | Optional LLM refinement step. Refine a raw idea before it enters the Cistern. |
 | **Cistern** | The reservoir. Droplets queue here waiting to flow into the aqueduct. |
 | **Drought** | Idle state. The cistern is dry. Drought protocols run maintenance automatically. A drought may also be a forced maintenance window where processing is stopped. |
-| **Aqueduct** | The full pipeline — from intake through cataracta gates to delivery. Named aqueducts are independent instances the Castellarius routes droplets into. |
+| **Aqueduct** | The full pipeline — from intake through cataractae gates to delivery. Named aqueducts are independent instances the Castellarius routes droplets into. |
 | **Castellarius** | The overseer. Watches all aqueducts, routes droplets into aqueducts, runs drought protocols. External to the cistern — pure state machine, no AI. |
-| **Cataracta** | A gate along the aqueduct. Each cataracta implements, reviews, or diverts (LLMs working). |
-| **Recirculate** | Send a droplet back to a previous cataracta for further processing — revision from reviewer or QA. |
+| **Cataractae** | A gate along the aqueduct. Each cataractae implements, reviews, or diverts (LLMs working). |
+| **Recirculate** | Send a droplet back to a previous cataractae for further processing — revision from reviewer or QA. |
 | **Delivered** | A droplet that made it: PR merged, delivered. |
 | **Stagnant** | A droplet that can't flow without human intervention. |
 
@@ -67,19 +67,19 @@ critical:  implement → adversarial-review → qa → security-review → [huma
 
 Filtration is an optional pre-intake step (`--filter`) that refines vague ideas before they enter the pipeline.
 
-1. **Implement** (`implement`) — The Implementer cataracta reads the droplet, writes tests first (TDD/BDD), implements, commits. No outcome until tests pass.
+1. **Implement** (`implement`) — The Implementer cataractae reads the droplet, writes tests first (TDD/BDD), implements, commits. No outcome until tests pass.
 
-2. **Adversarial Review** (`adversarial-review`) — The Adversarial Reviewer cataracta receives *only the diff*. No codebase access, no author context. Finds problems: bugs, security holes, missing tests, logic errors. Context isolation is enforced at the infrastructure level. Files structured issues via `ct droplet issue add`. *Skipped for trivial droplets.*
+2. **Adversarial Review** (`adversarial-review`) — The Adversarial Reviewer cataractae receives *only the diff*. No codebase access, no author context. Finds problems: bugs, security holes, missing tests, logic errors. Context isolation is enforced at the infrastructure level. Files structured issues via `ct droplet issue add`. *Skipped for trivial droplets.*
 
-3. **QA** (`qa`) — The QA cataracta checks test quality, not just whether tests pass. Finds test gaps, weak assertions, missing error paths, coverage theater. Recirculates to implement on revision. *Skipped for trivial and standard droplets.*
+3. **QA** (`qa`) — The QA cataractae checks test quality, not just whether tests pass. Finds test gaps, weak assertions, missing error paths, coverage theater. Recirculates to implement on revision. *Skipped for trivial and standard droplets.*
 
 4. **Security Review** (`security-review`) — An adversarial security audit of the diff. Checks for auth bypass, injection, prompt injection, exposed secrets, resource safety, and path traversal. *Runs only for critical droplets.*
 
 5. **Human Gate** — Critical droplets pause before delivery and require explicit human approval: `ct droplet approve <id>`. This ensures a human signs off before any critical change ships.
 
-6. **Delivery** (`delivery`) — The Delivery cataracta owns all git operations: stash, rebase, PR creation, CI monitoring, PR review response, and merge. One agent cataracta handles the full branch-to-merged lifecycle.
+6. **Delivery** (`delivery`) — The Delivery cataractae owns all git operations: stash, rebase, PR creation, CI monitoring, PR review response, and merge. One agent cataractae handles the full branch-to-merged lifecycle.
 
-7. **Recirculation** — Revision sends the droplet back upstream to a prior cataracta for another pass. No retry limits. The water flows until it's pure.
+7. **Recirculation** — Revision sends the droplet back upstream to a prior cataractae for another pass. No retry limits. The water flows until it's pure.
 
 ## Complexity Levels
 
@@ -152,19 +152,19 @@ myproject-marcia: 1 windows (implement)
 
 By convention, aqueduct names are drawn from historic Roman aqueducts (`virgo`, `marcia`, `claudia`, `traiana`, `julia`, `appia`, `anio`, `tepula`, `alexandrina`, …), but any names work.
 
-## Customizing Cataracta Definitions
+## Customizing Cataractae Definitions
 
-Cataracta definitions are stored in your aqueduct YAML — they're yours to edit. Cistern adapts.
+Cataractae definitions are stored in your aqueduct YAML — they're yours to edit. Cistern adapts.
 
 ```bash
-ct cataractae list                  # See all cataracta definitions and how to edit them
+ct cataractae list                  # See all cataractae definitions and how to edit them
 ct cataractae edit implementer      # Open in $EDITOR, save, CLAUDE.md regenerates
 ct cataractae reset qa              # Restore to built-in default (with confirmation)
 ct cataractae generate              # Regenerate all CLAUDE.md files from YAML
 ct cataractae status                # Show which cataractae are actively processing droplets
 ```
 
-Cataracta content lives in `~/.cistern/aqueduct/feature.yaml` under the `cataracta_definitions:` key. CLAUDE.md files are generated artifacts — the YAML is the source of truth.
+Cataractae content lives in `~/.cistern/aqueduct/feature.yaml` under the `cataractae_definitions:` key. CLAUDE.md files are generated artifacts — the YAML is the source of truth.
 
 ## Drought Protocols
 
@@ -174,7 +174,7 @@ When the cistern is dry, Cistern runs maintenance automatically. Configure in `~
 # Drought protocols — run when Cistern is idle
 drought_hooks:
   - name: sync-cataractae
-    action: cataractae_generate   # Regenerate cataracta files when YAML is newer
+    action: cataractae_generate   # Regenerate cataractae files when YAML is newer
 
   - name: prune-worktrees
     action: worktree_prune     # Prune stale aqueduct registrations
@@ -216,7 +216,7 @@ Config lives at `~/.cistern/cistern.yaml`. Key options:
 # Heartbeat: how often the Castellarius scans for stalled sessions
 heartbeat_interval: 30s
 
-# Rate limit: protect the delivery cataracta API endpoint
+# Rate limit: protect the delivery cataractae API endpoint
 # Omit to use defaults (60 req/min per IP, 120 req/min per token)
 # rate_limit:
 #   per_ip_requests: 60
@@ -258,8 +258,8 @@ ct dashboard                   Live aqueduct arch diagram with cistern and recen
 ct feed                        Alias for dashboard
 
 # Status — observe the system
-ct status                      Overall status: cistern level, aqueduct flow, cataracta chains
-ct aqueduct status             Aqueduct definitions: repos and their cataracta chains
+ct status                      Overall status: cistern level, aqueduct flow, cataractae chains
+ct aqueduct status             Aqueduct definitions: repos and their cataractae chains
 
 # Aqueduct — inspect and validate aqueduct definitions
 ct aqueduct validate           Validate cistern.yaml and all referenced workflow files
@@ -297,10 +297,10 @@ ct droplet purge --older-than 24h --dry-run                       Preview what w
 ct droplet escalate <id> --reason "..."                           Mark a droplet stagnant
 
 # Droplet outcomes — used by agent cataractae to signal completion
-ct droplet pass <id>                                              Advance to next cataracta
+ct droplet pass <id>                                              Advance to next cataractae
 ct droplet pass <id> --notes "..."                                Advance with notes
-ct droplet recirculate <id>                                       Send back to previous cataracta
-ct droplet recirculate <id> --to implement                        Send back to a named cataracta
+ct droplet recirculate <id>                                       Send back to previous cataractae
+ct droplet recirculate <id> --to implement                        Send back to a named cataractae
 ct droplet recirculate <id> --notes "..."                         Recirculate with notes
 ct droplet block <id>                                             Mark genuinely blocked
 ct droplet block <id> --notes "..."                               Block with notes
@@ -321,14 +321,14 @@ ct droplet issue list <id> --open                                 List only open
 ct droplet issue resolve <issue-id> --evidence "..."              Resolve with proof (reviewer only)
 ct droplet issue reject <issue-id> --evidence "..."               Reject as still present (reviewer only)
 
-# Cataractae — manage cataracta definitions
-ct cataractae list                   See all cataracta definitions
+# Cataractae — manage cataractae definitions
+ct cataractae list                   See all cataractae definitions
 ct cataractae status                 Show which cataractae are active and what they're processing
-ct cataractae edit <cataracta>       Edit cataracta definition in $EDITOR
+ct cataractae edit <cataractae>       Edit cataractae definition in $EDITOR
 ct cataractae generate               Regenerate CLAUDE.md files from YAML
-ct cataractae reset <cataracta>      Restore cataracta definition to built-in default
+ct cataractae reset <cataractae>      Restore cataractae definition to built-in default
 
-# Skills — manage cataracta skills
+# Skills — manage cataractae skills
 ct skills install <name> <url>       Install a skill from a URL
 ct skills list                       List installed skills and which cataractae reference them
 ct skills update <name>              Re-fetch a skill from its source URL

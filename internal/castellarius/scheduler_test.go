@@ -24,7 +24,7 @@ type mockClient struct {
 	readyCalls          int
 	steps               map[string]string              // id → current step (for assertions)
 	items               map[string]*cistern.Droplet    // id → item (for List/SetOutcome)
-	notes               map[string][]cistern.CataractaNote
+	notes               map[string][]cistern.CataractaeNote
 	escalated           map[string]string
 	attached            []attachedNote
 	closed              map[string]bool
@@ -39,7 +39,7 @@ func newMockClient() *mockClient {
 	return &mockClient{
 		steps:               make(map[string]string),
 		items:               make(map[string]*cistern.Droplet),
-		notes:               make(map[string][]cistern.CataractaNote),
+		notes:               make(map[string][]cistern.CataractaeNote),
 		escalated:           make(map[string]string),
 		closed:              make(map[string]bool),
 		lastReviewedCommits: make(map[string]string),
@@ -82,7 +82,7 @@ func (m *mockClient) Assign(id, worker, step string) error {
 	defer m.mu.Unlock()
 	m.steps[id] = step
 	if item, ok := m.items[id]; ok {
-		item.CurrentCataracta = step
+		item.CurrentCataractae = step
 		item.Assignee = worker
 		item.Outcome = "" // clear outcome on advance
 		if worker == "" {
@@ -110,7 +110,7 @@ func (m *mockClient) AddNote(id, fromStep, notes string) error {
 	return nil
 }
 
-func (m *mockClient) GetNotes(id string) ([]cistern.CataractaNote, error) {
+func (m *mockClient) GetNotes(id string) ([]cistern.CataractaeNote, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.notes[id], nil
@@ -148,12 +148,12 @@ func (m *mockClient) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 	return 0, nil
 }
 
-func (m *mockClient) SetCataracta(id, cataracta string) error {
+func (m *mockClient) SetCataractae(id, cataractae string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.steps[id] = cataracta
+	m.steps[id] = cataractae
 	if item, ok := m.items[id]; ok {
-		item.CurrentCataracta = cataracta
+		item.CurrentCataractae = cataractae
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func (m *mockClient) GetLastReviewedCommit(id string) (string, error) {
 type mockRunner struct {
 	mu       sync.Mutex
 	outcomes map[string]string // step name → outcome string ("pass", "recirculate", etc.)
-	calls    []CataractaRequest
+	calls    []CataractaeRequest
 	err      error
 	done     chan struct{} // receives after each Spawn call
 	client   *mockClient
@@ -183,7 +183,7 @@ func newMockRunner(client *mockClient) *mockRunner {
 	}
 }
 
-func (r *mockRunner) Spawn(_ context.Context, req CataractaRequest) error {
+func (r *mockRunner) Spawn(_ context.Context, req CataractaeRequest) error {
 	r.mu.Lock()
 	defer func() {
 		r.mu.Unlock()
@@ -229,7 +229,7 @@ func newBlockingRunner() *blockingRunner {
 	}
 }
 
-func (r *blockingRunner) Spawn(ctx context.Context, _ CataractaRequest) error {
+func (r *blockingRunner) Spawn(ctx context.Context, _ CataractaeRequest) error {
 	r.done <- struct{}{}
 	select {
 	case <-r.ch:
@@ -244,16 +244,16 @@ func (r *blockingRunner) Spawn(ctx context.Context, _ CataractaRequest) error {
 func testWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "test",
-		Cataractae: []aqueduct.WorkflowCataracta{
+		Cataractae: []aqueduct.WorkflowCataractae{
 			{
 				Name:   "implement",
-				Type:   aqueduct.CataractaTypeAgent,
+				Type:   aqueduct.CataractaeTypeAgent,
 				OnPass: "review",
 				OnFail: "blocked",
 			},
 			{
 				Name:          "review",
-				Type:          aqueduct.CataractaTypeAgent,
+				Type:          aqueduct.CataractaeTypeAgent,
 				OnPass:        "done",
 				OnFail:        "implement",
 				OnRecirculate: "implement",
@@ -276,7 +276,7 @@ func testConfig() aqueduct.AqueductConfig {
 	}
 }
 
-func testScheduler(client CisternClient, runner CataractaRunner) *Castellarius {
+func testScheduler(client CisternClient, runner CataractaeRunner) *Castellarius {
 	config := testConfig()
 	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
 	clients := map[string]CisternClient{"test-repo": client}
@@ -286,7 +286,7 @@ func testScheduler(client CisternClient, runner CataractaRunner) *Castellarius {
 // --- tests ---
 
 func TestRoute(t *testing.T) {
-	step := aqueduct.WorkflowCataracta{
+	step := aqueduct.WorkflowCataractae{
 		OnPass:        "review",
 		OnFail:        "blocked",
 		OnRecirculate: "implement",
@@ -339,7 +339,7 @@ func TestCurrentStep_FromCurrentStep(t *testing.T) {
 	wf := testWorkflow()
 	item := &cistern.Droplet{
 		ID:               "b1",
-		CurrentCataracta: "review",
+		CurrentCataractae: "review",
 	}
 
 	step := currentCataracta(item, wf)
@@ -352,7 +352,7 @@ func TestCurrentStep_UnknownStep(t *testing.T) {
 	wf := testWorkflow()
 	item := &cistern.Droplet{
 		ID:               "b1",
-		CurrentCataracta: "nonexistent",
+		CurrentCataractae: "nonexistent",
 	}
 
 	step := currentCataracta(item, wf)
@@ -365,25 +365,25 @@ func TestTick_AssignsWork(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1", Title: "test item"}}
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out waiting for runner call")
 	}
 
-	cataracta.mu.Lock()
-	defer cataracta.mu.Unlock()
-	if len(cataracta.calls) != 1 {
-		t.Fatalf("expected 1 runner call, got %d", len(cataracta.calls))
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 runner call, got %d", len(runner.calls))
 	}
-	if cataracta.calls[0].Step.Name != "implement" {
-		t.Errorf("expected step 'implement', got %q", cataracta.calls[0].Step.Name)
+	if runner.calls[0].Step.Name != "implement" {
+		t.Errorf("expected step 'implement', got %q", runner.calls[0].Step.Name)
 	}
-	if cataracta.calls[0].AqueductName != "alpha" {
-		t.Errorf("expected worker 'alpha', got %q", cataracta.calls[0].AqueductName)
+	if runner.calls[0].AqueductName != "alpha" {
+		t.Errorf("expected worker 'alpha', got %q", runner.calls[0].AqueductName)
 	}
 }
 
@@ -391,13 +391,13 @@ func TestTick_RoutesToNextStep(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1", Title: "test"}}
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	// default outcome is "pass"
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	// Dispatch tick.
 	sched.Tick(context.Background())
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out waiting for spawn")
 	}
 	// Observe tick: routes based on outcome written to DB.
@@ -414,15 +414,15 @@ func TestTick_RoutesToNextStep(t *testing.T) {
 func TestTick_TerminalDone(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
-		{ID: "b1", CurrentCataracta: "review"},
+		{ID: "b1", CurrentCataractae: "review"},
 	}
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	// default outcome is "pass"; review.OnPass = "done"
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 	sched.Tick(context.Background())
@@ -438,15 +438,15 @@ func TestTick_TerminalDone(t *testing.T) {
 func TestTick_TerminalBlocked(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
-		{ID: "b1", CurrentCataracta: "implement"},
+		{ID: "b1", CurrentCataractae: "implement"},
 	}
 
-	cataracta := newMockRunner(client)
-	cataracta.outcomes["implement"] = "block" // block → ResultFail → OnFail = "blocked"
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "block" // block → ResultFail → OnFail = "blocked"
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 	sched.Tick(context.Background())
@@ -497,13 +497,13 @@ func TestTick_CrashRequeue(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1"}}
 
-	cataracta := newMockRunner(client)
-	cataracta.err = fmt.Errorf("agent crashed")
+	runner := newMockRunner(client)
+	runner.err = fmt.Errorf("agent crashed")
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -522,25 +522,25 @@ func TestTick_CrashRequeue(t *testing.T) {
 func TestTick_NotesForwarding(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1"}}
-	client.notes["b1"] = []cistern.CataractaNote{
-		{ID: 1, DropletID: "b1", CataractaName: "refine", Content: "specs clarified"},
+	client.notes["b1"] = []cistern.CataractaeNote{
+		{ID: 1, DropletID: "b1", CataractaeName: "refine", Content: "specs clarified"},
 	}
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	// default outcome "pass"
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 
-	cataracta.mu.Lock()
-	req := cataracta.calls[0]
-	cataracta.mu.Unlock()
+	runner.mu.Lock()
+	req := runner.calls[0]
+	runner.mu.Unlock()
 
-	if len(req.Notes) != 1 || req.Notes[0].CataractaName != "refine" {
+	if len(req.Notes) != 1 || req.Notes[0].CataractaeName != "refine" {
 		t.Errorf("expected prior notes forwarded, got %v", req.Notes)
 	}
 }
@@ -549,13 +549,13 @@ func TestTick_NoRoute(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1"}}
 
-	cataracta := newMockRunner(client)
-	cataracta.outcomes["implement"] = "recirculate" // implement has no OnRecirculate
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate" // implement has no OnRecirculate
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 	// Observe tick.
@@ -572,15 +572,15 @@ func TestTick_NoRoute(t *testing.T) {
 
 func TestTick_NoWorkAvailable(t *testing.T) {
 	client := newMockClient()
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
 	time.Sleep(50 * time.Millisecond)
 
-	cataracta.mu.Lock()
-	defer cataracta.mu.Unlock()
-	if len(cataracta.calls) != 0 {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.calls) != 0 {
 		t.Error("expected no runner calls when no work available")
 	}
 }
@@ -597,7 +597,7 @@ func multiRepoConfig() aqueduct.AqueductConfig {
 	}
 }
 
-func multiRepoScheduler(clients map[string]CisternClient, runner CataractaRunner) *Castellarius {
+func multiRepoScheduler(clients map[string]CisternClient, runner CataractaeRunner) *Castellarius {
 	config := multiRepoConfig()
 	wf := testWorkflow()
 	workflows := map[string]*aqueduct.Workflow{
@@ -618,32 +618,32 @@ func TestMultiRepo_ItemsGoToCorrectWorkers(t *testing.T) {
 		{ID: "bf-1", Title: "cistern item 1"},
 	}
 
-	cataracta := newMockRunner(nil) // no routing assertions needed
+	runner := newMockRunner(nil) // no routing assertions needed
 	clients := map[string]CisternClient{
 		"ScaledTest": stClient,
 		"cistern":    bfClient,
 	}
-	sched := multiRepoScheduler(clients, cataracta)
+	sched := multiRepoScheduler(clients, runner)
 
 	// First tick: should pick up items from both repos.
 	sched.Tick(context.Background())
 
 	// ScaledTest has 2 workers and 2 items; cistern has 1 worker and 1 item.
 	// All 3 should be assigned (total 3 = MaxCataractae).
-	if !cataracta.waitCalls(3, 2*time.Second) {
+	if !runner.waitCalls(3, 2*time.Second) {
 		t.Fatal("timed out waiting for 3 runner calls")
 	}
 
-	cataracta.mu.Lock()
-	defer cataracta.mu.Unlock()
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
 
-	if len(cataracta.calls) != 3 {
-		t.Fatalf("expected 3 runner calls, got %d", len(cataracta.calls))
+	if len(runner.calls) != 3 {
+		t.Fatalf("expected 3 runner calls, got %d", len(runner.calls))
 	}
 
 	// Verify ScaledTest items went to cascade/tributary.
 	stWorkers := map[string]bool{}
-	for _, call := range cataracta.calls {
+	for _, call := range runner.calls {
 		if call.RepoConfig.Name == "ScaledTest" {
 			stWorkers[call.AqueductName] = true
 			if call.AqueductName != "cascade" && call.AqueductName != "tributary" {
@@ -706,22 +706,22 @@ func TestMultiRepo_WorkersNeverCrossRepoBoundaries(t *testing.T) {
 	bfClient := newMockClient()
 	bfClient.readyItems = []*cistern.Droplet{{ID: "bf-1"}}
 
-	cataracta := newMockRunner(nil)
+	runner := newMockRunner(nil)
 	clients := map[string]CisternClient{
 		"ScaledTest": stClient,
 		"cistern":    bfClient,
 	}
-	sched := multiRepoScheduler(clients, cataracta)
+	sched := multiRepoScheduler(clients, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(2, time.Second) {
+	if !runner.waitCalls(2, time.Second) {
 		t.Fatal("timed out waiting for runner calls")
 	}
 
-	cataracta.mu.Lock()
-	defer cataracta.mu.Unlock()
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
 
-	for _, call := range cataracta.calls {
+	for _, call := range runner.calls {
 		switch call.RepoConfig.Name {
 		case "ScaledTest":
 			if call.AqueductName != "cascade" && call.AqueductName != "tributary" {
@@ -741,12 +741,12 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 	stClient := newMockClient()
 	bfClient := newMockClient()
 
-	cataracta := newMockRunner(nil)
+	runner := newMockRunner(nil)
 	clients := map[string]CisternClient{
 		"ScaledTest": stClient,
 		"cistern":    bfClient,
 	}
-	sched := multiRepoScheduler(clients, cataracta)
+	sched := multiRepoScheduler(clients, runner)
 
 	// Tick with no work — both repos should be polled.
 	sched.Tick(context.Background())
@@ -772,29 +772,29 @@ func TestMultiRepo_OneRepoEmptyOtherHasWork(t *testing.T) {
 	bfClient := newMockClient()
 	bfClient.readyItems = []*cistern.Droplet{{ID: "bf-1"}}
 
-	cataracta := newMockRunner(nil)
+	runner := newMockRunner(nil)
 	clients := map[string]CisternClient{
 		"ScaledTest": stClient,
 		"cistern":    bfClient,
 	}
-	sched := multiRepoScheduler(clients, cataracta)
+	sched := multiRepoScheduler(clients, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 
-	cataracta.mu.Lock()
-	defer cataracta.mu.Unlock()
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
 
-	if len(cataracta.calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(cataracta.calls))
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(runner.calls))
 	}
-	if cataracta.calls[0].Item.ID != "bf-1" {
-		t.Errorf("expected bf-1, got %s", cataracta.calls[0].Item.ID)
+	if runner.calls[0].Item.ID != "bf-1" {
+		t.Errorf("expected bf-1, got %s", runner.calls[0].Item.ID)
 	}
-	if cataracta.calls[0].AqueductName != "confluence" {
-		t.Errorf("expected confluence, got %s", cataracta.calls[0].AqueductName)
+	if runner.calls[0].AqueductName != "confluence" {
+		t.Errorf("expected confluence, got %s", runner.calls[0].AqueductName)
 	}
 }
 
@@ -832,7 +832,7 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 	client2 := newMockClient()
 	client2.readyItems = []*cistern.Droplet{{ID: "r2-b1"}}
 
-	cataracta := newMockRunner(nil)
+	runner := newMockRunner(nil)
 
 	config := aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -844,20 +844,20 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 	wf := testWorkflow()
 	clients := map[string]CisternClient{"repo1": client1, "repo2": client2}
 	workflows := map[string]*aqueduct.Workflow{"repo1": wf, "repo2": wf}
-	sched := NewFromParts(config, workflows, clients, cataracta)
+	sched := NewFromParts(config, workflows, clients, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(2, time.Second) {
+	if !runner.waitCalls(2, time.Second) {
 		t.Fatal("timed out waiting for 2 runner calls")
 	}
 
-	cataracta.mu.Lock()
-	defer cataracta.mu.Unlock()
-	if len(cataracta.calls) != 2 {
-		t.Fatalf("expected 2 runner calls (one per repo), got %d", len(cataracta.calls))
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.calls) != 2 {
+		t.Fatalf("expected 2 runner calls (one per repo), got %d", len(runner.calls))
 	}
 
-	for _, call := range cataracta.calls {
+	for _, call := range runner.calls {
 		if call.Item.ID == "r1-b1" && call.AqueductName != "w1" {
 			t.Errorf("repo1 item assigned to wrong worker: %s", call.AqueductName)
 		}
@@ -869,8 +869,8 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 
 func TestRun_CancelledContext(t *testing.T) {
 	client := newMockClient()
-	cataracta := newMockRunner(nil)
-	sched := testScheduler(client, cataracta)
+	runner := newMockRunner(nil)
+	sched := testScheduler(client, runner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -951,9 +951,9 @@ func TestDefaultWorkerNames(t *testing.T) {
 
 func TestWriteContext(t *testing.T) {
 	dir := t.TempDir()
-	notes := []cistern.CataractaNote{
-		{CataractaName: "implement", Content: "wrote the feature"},
-		{CataractaName: "review", Content: "needs error handling"},
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "implement", Content: "wrote the feature"},
+		{CataractaeName: "review", Content: "needs error handling"},
 	}
 
 	if err := WriteContext(dir, notes); err != nil {
@@ -1043,11 +1043,11 @@ func TestLookupStep(t *testing.T) {
 func complexityWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
-		Cataractae: []aqueduct.WorkflowCataracta{
-			{Name: "implement", Type: aqueduct.CataractaTypeAgent, OnPass: "adversarial-review", OnFail: "blocked"},
-			{Name: "adversarial-review", Type: aqueduct.CataractaTypeAgent, SkipFor: []int{1}, OnPass: "qa", OnFail: "implement", OnRecirculate: "implement"},
-			{Name: "qa", Type: aqueduct.CataractaTypeAgent, SkipFor: []int{1, 2}, OnPass: "delivery", OnFail: "implement"},
-			{Name: "delivery", Type: aqueduct.CataractaTypeAgent, OnPass: "done", OnRecirculate: "implement", OnEscalate: "human"},
+		Cataractae: []aqueduct.WorkflowCataractae{
+			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, OnPass: "adversarial-review", OnFail: "blocked"},
+			{Name: "adversarial-review", Type: aqueduct.CataractaeTypeAgent, SkipFor: []int{1}, OnPass: "qa", OnFail: "implement", OnRecirculate: "implement"},
+			{Name: "qa", Type: aqueduct.CataractaeTypeAgent, SkipFor: []int{1, 2}, OnPass: "delivery", OnFail: "implement"},
+			{Name: "delivery", Type: aqueduct.CataractaeTypeAgent, OnPass: "done", OnRecirculate: "implement", OnEscalate: "human"},
 		},
 		Complexity: aqueduct.ComplexityConfig{
 			Trivial:  aqueduct.ComplexityLevel{Level: 1, SkipCataractae: []string{"adversarial-review", "qa"}},
@@ -1108,10 +1108,10 @@ func TestComplexity_CriticalHumanGateBeforeMerge(t *testing.T) {
 	wf := complexityWorkflow()
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
-		{ID: "crit-1", CurrentCataracta: "qa", Complexity: 4},
+		{ID: "crit-1", CurrentCataractae: "qa", Complexity: 4},
 	}
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	// default outcome "pass"; qa.OnPass = "delivery" → critical → "human" → escalate
 
 	config := aqueduct.AqueductConfig{
@@ -1122,10 +1122,10 @@ func TestComplexity_CriticalHumanGateBeforeMerge(t *testing.T) {
 	}
 	workflows := map[string]*aqueduct.Workflow{"test-repo": wf}
 	clients := map[string]CisternClient{"test-repo": client}
-	sched := NewFromParts(config, workflows, clients, cataracta)
+	sched := NewFromParts(config, workflows, clients, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 	sched.Tick(context.Background())
@@ -1146,7 +1146,7 @@ func TestTick_TrivialDropSkipsReviewAndQA(t *testing.T) {
 		{ID: "triv-1", Complexity: 1},
 	}
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	// default outcome "pass"; implement.OnPass = "adversarial-review"
 	// trivial skips adversarial-review and qa → goes to delivery
 
@@ -1158,10 +1158,10 @@ func TestTick_TrivialDropSkipsReviewAndQA(t *testing.T) {
 	}
 	workflows := map[string]*aqueduct.Workflow{"test-repo": wf}
 	clients := map[string]CisternClient{"test-repo": client}
-	sched := NewFromParts(config, workflows, clients, cataracta)
+	sched := NewFromParts(config, workflows, clients, runner)
 	sched.Tick(context.Background())
 
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out")
 	}
 	sched.Tick(context.Background())
@@ -1175,11 +1175,11 @@ func TestTick_TrivialDropSkipsReviewAndQA(t *testing.T) {
 	}
 }
 
-func TestComplexity_HumanGateSetsCurrentCataracta(t *testing.T) {
+func TestComplexity_HumanGateSetsCurrentCataractae(t *testing.T) {
 	wf := complexityWorkflow()
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
-		{ID: "crit-2", CurrentCataracta: "qa", Complexity: 4},
+		{ID: "crit-2", CurrentCataractae: "qa", Complexity: 4},
 	}
 
 	runner := newMockRunner(client)
@@ -1202,12 +1202,12 @@ func TestComplexity_HumanGateSetsCurrentCataracta(t *testing.T) {
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	// Human gate: escalated and current_cataracta must be set to "human".
+	// Human gate: escalated and current_cataractae must be set to "human".
 	if _, ok := client.escalated["crit-2"]; !ok {
 		t.Errorf("expected critical droplet escalated, not found in escalated map")
 	}
 	if client.steps["crit-2"] != "human" {
-		t.Errorf("expected current_cataracta='human', got %q", client.steps["crit-2"])
+		t.Errorf("expected current_cataractae='human', got %q", client.steps["crit-2"])
 	}
 }
 
@@ -1281,7 +1281,7 @@ func TestObserve_HeadNotAdvanced(t *testing.T) {
 	client := newMockClient()
 	item := &cistern.Droplet{
 		ID:               "ph-1",
-		CurrentCataracta: "implement",
+		CurrentCataractae: "implement",
 		Assignee:         "alpha",
 		Status:           "in_progress",
 		Outcome:          "pass",
@@ -1298,11 +1298,11 @@ func TestObserve_HeadNotAdvanced(t *testing.T) {
 	// Record the same hash as the last reviewed commit — HEAD has not advanced.
 	client.lastReviewedCommits["ph-1"] = headHash
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	config := testConfig()
 	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
 	clients := map[string]CisternClient{"test-repo": client}
-	sched := NewFromParts(config, workflows, clients, cataracta,
+	sched := NewFromParts(config, workflows, clients, runner,
 		WithSandboxRoot(sandboxRoot))
 
 	// Observe tick should detect the phantom commit and recirculate.
@@ -1336,7 +1336,7 @@ func TestObserve_HeadAdvanced(t *testing.T) {
 	client := newMockClient()
 	item := &cistern.Droplet{
 		ID:               "ph-2",
-		CurrentCataracta: "implement",
+		CurrentCataractae: "implement",
 		Assignee:         "alpha",
 		Status:           "in_progress",
 		Outcome:          "pass",
@@ -1368,11 +1368,11 @@ func TestObserve_HeadAdvanced(t *testing.T) {
 	// Record the OLD hash as last reviewed — HEAD has now advanced past it.
 	client.lastReviewedCommits["ph-2"] = oldHash
 
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 	config := testConfig()
 	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
 	clients := map[string]CisternClient{"test-repo": client}
-	sched := NewFromParts(config, workflows, clients, cataracta,
+	sched := NewFromParts(config, workflows, clients, runner,
 		WithSandboxRoot(sandboxRoot))
 
 	sched.Tick(context.Background())
@@ -1393,7 +1393,7 @@ func TestObserve_FirstPass(t *testing.T) {
 	client := newMockClient()
 	item := &cistern.Droplet{
 		ID:               "ph-3",
-		CurrentCataracta: "implement",
+		CurrentCataractae: "implement",
 		Assignee:         "alpha",
 		Status:           "in_progress",
 		Outcome:          "pass",
@@ -1401,8 +1401,8 @@ func TestObserve_FirstPass(t *testing.T) {
 	client.items["ph-3"] = item
 	// lastReviewedCommits["ph-3"] is empty — first pass.
 
-	cataracta := newMockRunner(client)
-	sched := testScheduler(client, cataracta)
+	runner := newMockRunner(client)
+	sched := testScheduler(client, runner)
 
 	sched.Tick(context.Background())
 	time.Sleep(10 * time.Millisecond)

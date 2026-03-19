@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-var validCataractaTypes = map[CataractaType]bool{
-	CataractaTypeAgent:     true,
-	CataractaTypeAutomated: true,
-	CataractaTypeGate:      true,
-	CataractaTypeHuman:     true,
+var validCataractaeTypes = map[CataractaeType]bool{
+	CataractaeTypeAgent:     true,
+	CataractaeTypeAutomated: true,
+	CataractaeTypeGate:      true,
+	CataractaeTypeHuman:     true,
 }
 
 var validContextLevels = map[ContextLevel]bool{
@@ -27,19 +27,19 @@ func Validate(w *Workflow) error {
 		return fmt.Errorf("workflow %q has no cataractae", w.Name)
 	}
 
-	cataractaNames := make(map[string]bool, len(w.Cataractae))
+	cataractaeNames := make(map[string]bool, len(w.Cataractae))
 	for _, s := range w.Cataractae {
 		if s.Name == "" {
 			return fmt.Errorf("workflow %q: cataracta name is required", w.Name)
 		}
-		if cataractaNames[s.Name] {
+		if cataractaeNames[s.Name] {
 			return fmt.Errorf("workflow %q: duplicate cataracta name %q", w.Name, s.Name)
 		}
-		cataractaNames[s.Name] = true
+		cataractaeNames[s.Name] = true
 	}
 
 	for _, s := range w.Cataractae {
-		if err := validateCataracta(w, s, cataractaNames); err != nil {
+		if err := validateCataractae(w, s, cataractaeNames); err != nil {
 			return err
 		}
 	}
@@ -51,13 +51,13 @@ func Validate(w *Workflow) error {
 	return nil
 }
 
-func validateCataracta(w *Workflow, s WorkflowCataracta, cataractaNames map[string]bool) error {
+func validateCataractae(w *Workflow, s WorkflowCataractae, cataractaeNames map[string]bool) error {
 	// Default type to agent if not specified.
 	if s.Type == "" {
-		s.Type = CataractaTypeAgent
+		s.Type = CataractaeTypeAgent
 	}
 
-	if !validCataractaTypes[s.Type] {
+	if !validCataractaeTypes[s.Type] {
 		return fmt.Errorf("workflow %q cataracta %q: unknown type %q", w.Name, s.Name, s.Type)
 	}
 
@@ -66,11 +66,11 @@ func validateCataracta(w *Workflow, s WorkflowCataracta, cataractaNames map[stri
 	}
 
 	// Validate cataracta references in routing fields.
-	for _, ref := range cataractaRefs(s) {
+	for _, ref := range cataractaeRefs(s) {
 		if ref.target == "" {
 			continue
 		}
-		if !isTerminal(ref.target) && !cataractaNames[ref.target] {
+		if !isTerminal(ref.target) && !cataractaeNames[ref.target] {
 			return fmt.Errorf("workflow %q cataracta %q: %s references unknown cataracta %q", w.Name, s.Name, ref.field, ref.target)
 		}
 	}
@@ -78,13 +78,13 @@ func validateCataracta(w *Workflow, s WorkflowCataracta, cataractaNames map[stri
 	return nil
 }
 
-type cataractaRef struct {
+type cataractaeRef struct {
 	field  string
 	target string
 }
 
-func cataractaRefs(s WorkflowCataracta) []cataractaRef {
-	return []cataractaRef{
+func cataractaeRefs(s WorkflowCataractae) []cataractaeRef {
+	return []cataractaeRef{
 		{"on_pass", s.OnPass},
 		{"on_fail", s.OnFail},
 		{"on_recirculate", s.OnRecirculate},
@@ -154,12 +154,12 @@ func checkCircularRoutes(w *Workflow) error {
 	// has a route to another step that can terminate. We compute this via
 	// backward propagation from terminal-reachable steps.
 
-	cataractaSet := make(map[string]bool, len(w.Cataractae))
+	cataractaeSet := make(map[string]bool, len(w.Cataractae))
 	// routes maps step name -> all targets (including terminals).
 	routes := make(map[string][]string, len(w.Cataractae))
 	for _, s := range w.Cataractae {
-		cataractaSet[s.Name] = true
-		for _, ref := range cataractaRefs(s) {
+		cataractaeSet[s.Name] = true
+		for _, ref := range cataractaeRefs(s) {
 			if ref.target != "" {
 				routes[s.Name] = append(routes[s.Name], ref.target)
 			}
@@ -191,7 +191,7 @@ func checkCircularRoutes(w *Workflow) error {
 	revAdj := make(map[string][]string, len(w.Cataractae))
 	for name, targets := range routes {
 		for _, t := range targets {
-			if cataractaSet[t] {
+			if cataractaeSet[t] {
 				revAdj[t] = append(revAdj[t], name)
 			}
 		}

@@ -5,7 +5,7 @@
 First stable release of Cistern — a Mad Max–themed agentic workflow orchestrator for software development.
 
 ### Core pipeline
-- **4-cataracta pipeline**: implement → adversarial-review → qa → delivery
+- **4-cataractae pipeline**: implement → adversarial-review → qa → delivery
 - **Non-blocking Castellarius**: observe-dispatch loop; agents write outcomes directly to SQLite via `ct droplet pass/recirculate/block`
 - **Dedicated sandbox clones**: each aqueduct gets a full independent git clone; worktree conflicts are impossible
 - **Sticky aqueduct assignment**: droplets stay on their first aqueduct for all pipeline steps
@@ -20,13 +20,13 @@ First stable release of Cistern — a Mad Max–themed agentic workflow orchestr
 - `ct castellarius start/stop/status` — manage the Castellarius daemon
 - `ct flow status` — show aqueduct and cistern state
 - `ct doctor` — health check with CLAUDE.md integrity verification and skills validation
-- `ct roles list/generate/edit/reset` — manage cataracta role definitions
+- `ct roles list/generate/edit/reset` — manage cataractae role definitions
 - `ct version` — print version
 
 ### Dashboard
 - TUI dashboard with Roman aqueduct arch diagram (one arch per aqueduct)
 - Arch crown material + tapered brick piers with staggered mortar courses
-- Active cataracta glows green; semicircle intrados via adaptive formula
+- Active cataractae glows green; semicircle intrados via adaptive formula
 - CISTERN section: queued droplets with priority, age, and blocked-by status
 - RECENT FLOW: last 10 delivered droplets
 - Served via ttyd WebSocket at port 5737 (systemd user service, auto-restart)
@@ -36,7 +36,7 @@ First stable release of Cistern — a Mad Max–themed agentic workflow orchestr
 - **Implementer**: TDD/BDD approach, grep-verify each revision note, `git show HEAD` diff scan before signaling pass
 - **Adversarial reviewer**: binary pass/recirculate only; two-phase review (Phase 1: evidence for prior issues; Phase 2: fresh diff)
 - **QA**: active verification — run the actual tests, not just read the code
-- **Delivery**: PR creation → CI gate → merge in a single agent cataracta
+- **Delivery**: PR creation → CI gate → merge in a single agent cataractae
 - **Security** (priority 1 only): adversarial security review for critical droplets
 
 ### Infrastructure

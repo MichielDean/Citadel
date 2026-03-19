@@ -30,7 +30,7 @@ type Droplet struct {
 	Complexity       int    `json:"complexity"`
 	Status           string `json:"status"`
 	Assignee         string `json:"assignee"` // empty string when unassigned
-	CurrentCataracta string `json:"current_cataracta"`
+	CurrentCataractae string `json:"current_cataractae"`
 	// Outcome is set by agents via `ct droplet pass/recirculate/block`.
 	// Empty string means no outcome yet (NULL in DB).
 	Outcome string `json:"outcome,omitempty"`
@@ -46,11 +46,11 @@ type Droplet struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// CataractaNote is a note attached by a workflow cataracta.
-type CataractaNote struct {
+// CataractaeNote is a note attached by a workflow cataractae.
+type CataractaeNote struct {
 	ID        int       `json:"id"`
 	DropletID    string    `json:"droplet_id"`
-	CataractaName string   `json:"cataracta_name"`
+	CataractaeName string   `json:"cataractae_name"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -72,13 +72,13 @@ func New(dbPath, prefix string) (*Client, error) {
 	// Each statement is idempotent — errors are ignored (already-renamed or fresh DB).
 	db.Exec(`ALTER TABLE work_items RENAME TO droplets`)
 	db.Exec(`ALTER TABLE drops RENAME TO droplets`)
-	db.Exec(`ALTER TABLE step_notes RENAME TO cataracta_notes`)
-	db.Exec(`ALTER TABLE cataracta_notes RENAME COLUMN item_id TO droplet_id`)
-	db.Exec(`ALTER TABLE cataracta_notes RENAME COLUMN drop_id TO droplet_id`)
-	db.Exec(`ALTER TABLE cataracta_notes RENAME COLUMN step_name TO cataracta_name`)
+	db.Exec(`ALTER TABLE step_notes RENAME TO cataractae_notes`)
+	db.Exec(`ALTER TABLE cataractae_notes RENAME COLUMN item_id TO droplet_id`)
+	db.Exec(`ALTER TABLE cataractae_notes RENAME COLUMN drop_id TO droplet_id`)
+	db.Exec(`ALTER TABLE cataractae_notes RENAME COLUMN step_name TO cataractae_name`)
 	db.Exec(`ALTER TABLE events RENAME COLUMN item_id TO droplet_id`)
 	db.Exec(`ALTER TABLE events RENAME COLUMN drop_id TO droplet_id`)
-	db.Exec(`ALTER TABLE droplets RENAME COLUMN current_step TO current_cataracta`)
+	db.Exec(`ALTER TABLE droplets RENAME COLUMN current_step TO current_cataractae`)
 	db.Exec(`ALTER TABLE droplets ADD COLUMN complexity INTEGER DEFAULT 3`)
 	db.Exec(`ALTER TABLE droplets ADD COLUMN outcome TEXT DEFAULT NULL`)
 	// Vocabulary migrations: update legacy status values to canonical vocabulary.
@@ -108,6 +108,10 @@ func New(dbPath, prefix string) (*Client, error) {
 	db.Exec(`ALTER TABLE droplets ADD COLUMN assigned_aqueduct TEXT DEFAULT ''`)
 	// Phantom commit prevention: track the last reviewed commit hash (idempotent).
 	db.Exec(`ALTER TABLE droplets ADD COLUMN last_reviewed_commit TEXT DEFAULT NULL`)
+	// Vocabulary: cataracta → cataractae (idempotent — errors ignored on already-renamed DBs).
+	db.Exec(`ALTER TABLE cataracta_notes RENAME TO cataractae_notes`)
+	db.Exec(`ALTER TABLE cataractae_notes RENAME COLUMN cataracta_name TO cataractae_name`)
+	db.Exec(`ALTER TABLE droplets RENAME COLUMN current_cataracta TO current_cataractae`)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("cistern: schema: %w", err)
@@ -207,7 +211,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 	defer tx.Rollback()
 
 	row := tx.QueryRow(
-		`SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataracta, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
+		`SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets d
 		 WHERE d.repo = ? AND d.status = 'open'
 		   AND NOT EXISTS (
@@ -234,7 +238,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 		return nil, fmt.Errorf("cistern: scan ready droplet: %w", err)
 	}
 	droplet.Assignee = assignee.String
-	droplet.CurrentCataracta = currentCataracta.String
+	droplet.CurrentCataractae = currentCataracta.String
 	droplet.Outcome = outcome.String
 	droplet.AssignedAqueduct = assignedAqueduct.String
 	droplet.LastReviewedCommit = lastReviewedCommit.String
@@ -268,7 +272,7 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 	defer tx.Rollback()
 
 	row := tx.QueryRow(
-		`SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataracta, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
+		`SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets d
 		 WHERE d.repo = ? AND d.status = 'open'
 		   AND (d.assigned_aqueduct = '' OR d.assigned_aqueduct IS NULL OR d.assigned_aqueduct = ?)
@@ -297,7 +301,7 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 		return nil, fmt.Errorf("cistern: scan ready droplet: %w", err)
 	}
 	droplet.Assignee = assignee.String
-	droplet.CurrentCataracta = currentCataracta.String
+	droplet.CurrentCataractae = currentCataracta.String
 	droplet.Outcome = outcome.String
 	droplet.AssignedAqueduct = assignedAqueduct.String
 	droplet.LastReviewedCommit = lastReviewedCommit.String
@@ -326,13 +330,13 @@ func (c *Client) Assign(id, worker, step string) error {
 	var err error
 	if worker == "" {
 		res, err = c.db.Exec(
-			`UPDATE droplets SET assignee = ?, current_cataracta = ?, outcome = NULL, status = 'open',
+			`UPDATE droplets SET assignee = ?, current_cataractae = ?, outcome = NULL, status = 'open',
 			 updated_at = ? WHERE id = ?`,
 			worker, step, now, id,
 		)
 	} else {
 		res, err = c.db.Exec(
-			`UPDATE droplets SET assignee = ?, current_cataracta = ?, outcome = NULL,
+			`UPDATE droplets SET assignee = ?, current_cataractae = ?, outcome = NULL,
 			 updated_at = ? WHERE id = ?`,
 			worker, step, now, id,
 		)
@@ -409,7 +413,7 @@ func (c *Client) UpdateStatus(id, status string) error {
 // AddNote attaches a cataracta note to a droplet.
 func (c *Client) AddNote(id, step, content string) error {
 	_, err := c.db.Exec(
-		`INSERT INTO cataracta_notes (droplet_id, cataracta_name, content, created_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO cataractae_notes (droplet_id, cataractae_name, content, created_at) VALUES (?, ?, ?, ?)`,
 		id, step, content, time.Now().UTC(),
 	)
 	if err != nil {
@@ -419,10 +423,10 @@ func (c *Client) AddNote(id, step, content string) error {
 }
 
 // GetNotes returns all cataracta notes for a droplet, ordered by creation time.
-func (c *Client) GetNotes(id string) ([]CataractaNote, error) {
+func (c *Client) GetNotes(id string) ([]CataractaeNote, error) {
 	rows, err := c.db.Query(
-		`SELECT id, droplet_id, cataracta_name, content, created_at
-		 FROM cataracta_notes
+		`SELECT id, droplet_id, cataractae_name, content, created_at
+		 FROM cataractae_notes
 		 WHERE droplet_id = ?
 		 ORDER BY created_at ASC`,
 		id,
@@ -432,10 +436,10 @@ func (c *Client) GetNotes(id string) ([]CataractaNote, error) {
 	}
 	defer rows.Close()
 
-	var notes []CataractaNote
+	var notes []CataractaeNote
 	for rows.Next() {
-		var n CataractaNote
-		if err := rows.Scan(&n.ID, &n.DropletID, &n.CataractaName, &n.Content, &n.CreatedAt); err != nil {
+		var n CataractaeNote
+		if err := rows.Scan(&n.ID, &n.DropletID, &n.CataractaeName, &n.Content, &n.CreatedAt); err != nil {
 			return nil, fmt.Errorf("cistern: scan note: %w", err)
 		}
 		notes = append(notes, n)
@@ -501,11 +505,11 @@ func (c *Client) SetOutcome(id, outcome string) error {
 	return checkRowsAffected(res, id)
 }
 
-// SetCataracta updates the current_cataracta field on a droplet without changing
+// SetCataracta updates the current_cataractae field on a droplet without changing
 // any other fields. Used by the scheduler to mark a droplet as awaiting human approval.
-func (c *Client) SetCataracta(id, cataracta string) error {
+func (c *Client) SetCataractae(id, cataracta string) error {
 	res, err := c.db.Exec(
-		`UPDATE droplets SET current_cataracta = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE droplets SET current_cataractae = ?, updated_at = ? WHERE id = ?`,
 		cataracta, time.Now().UTC(), id,
 	)
 	if err != nil {
@@ -517,7 +521,7 @@ func (c *Client) SetCataracta(id, cataracta string) error {
 // Get retrieves a single droplet by ID. Returns an error if not found.
 func (c *Client) Get(id string) (*Droplet, error) {
 	row := c.db.QueryRow(
-		`SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataracta, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
+		`SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets WHERE id = ?`,
 		id,
 	)
@@ -533,7 +537,7 @@ func (c *Client) Get(id string) (*Droplet, error) {
 
 // List returns droplets filtered by repo and/or status. Empty strings mean no filter.
 func (c *Client) List(repo, status string) ([]*Droplet, error) {
-	query := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataracta, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
+	query := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets WHERE 1=1`
 	var args []any
 	if repo != "" {
@@ -564,7 +568,7 @@ func (c *Client) List(repo, status string) ([]*Droplet, error) {
 			return nil, fmt.Errorf("cistern: scan droplet: %w", err)
 		}
 		droplet.Assignee = assignee.String
-		droplet.CurrentCataracta = currentCataracta.String
+		droplet.CurrentCataractae = currentCataracta.String
 		droplet.Outcome = outcome.String
 		droplet.AssignedAqueduct = assignedAqueduct.String
 		droplet.LastReviewedCommit = lastReviewedCommit.String
@@ -578,7 +582,7 @@ func (c *Client) List(repo, status string) ([]*Droplet, error) {
 // (empty means all). priority is an exact match on priority (0 means all).
 // Results are ordered by priority ASC, created_at ASC.
 func (c *Client) Search(query, status string, priority int) ([]*Droplet, error) {
-	qry := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataracta, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
+	qry := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets WHERE 1=1`
 	var args []any
 	if query != "" {
@@ -613,7 +617,7 @@ func (c *Client) Search(query, status string, priority int) ([]*Droplet, error) 
 			return nil, fmt.Errorf("cistern: scan droplet: %w", err)
 		}
 		droplet.Assignee = assignee.String
-		droplet.CurrentCataracta = currentCataracta.String
+		droplet.CurrentCataractae = currentCataracta.String
 		droplet.Outcome = outcome.String
 		droplet.AssignedAqueduct = assignedAqueduct.String
 		droplet.LastReviewedCommit = lastReviewedCommit.String
@@ -638,7 +642,7 @@ func scanDroplet(row *sql.Row) (*Droplet, error) {
 		return nil, err
 	}
 	droplet.Assignee = assignee.String
-	droplet.CurrentCataracta = currentCataracta.String
+	droplet.CurrentCataractae = currentCataracta.String
 	droplet.Outcome = outcome.String
 	droplet.AssignedAqueduct = assignedAqueduct.String
 	droplet.LastReviewedCommit = lastReviewedCommit.String
@@ -646,7 +650,7 @@ func scanDroplet(row *sql.Row) (*Droplet, error) {
 }
 
 // Purge deletes delivered/stagnant droplets older than olderThan, cascading to
-// cataracta_notes and events. Returns the count of droplets deleted (or that would be
+// cataractae_notes and events. Returns the count of droplets deleted (or that would be
 // deleted in dry-run mode).
 func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 	cutoff := time.Now().UTC().Add(-olderThan)
@@ -670,11 +674,11 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		`DELETE FROM cataracta_notes WHERE droplet_id IN (
+		`DELETE FROM cataractae_notes WHERE droplet_id IN (
 			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
-		return 0, fmt.Errorf("cistern: purge cataracta_notes: %w", err)
+		return 0, fmt.Errorf("cistern: purge cataractae_notes: %w", err)
 	}
 
 	if _, err := tx.Exec(
@@ -719,12 +723,12 @@ type RecentEvent struct {
 }
 
 // ListRecentEvents returns up to limit recent entries from the events and
-// cataracta_notes tables, ordered newest-first.
+// cataractae_notes tables, ordered newest-first.
 func (c *Client) ListRecentEvents(limit int) ([]RecentEvent, error) {
 	rows, err := c.db.Query(`
 		SELECT droplet_id, event_type, created_at FROM events
 		UNION ALL
-		SELECT droplet_id, cataracta_name, created_at FROM cataracta_notes
+		SELECT droplet_id, cataractae_name, created_at FROM cataractae_notes
 		ORDER BY created_at DESC
 		LIMIT ?`, limit)
 	if err != nil {

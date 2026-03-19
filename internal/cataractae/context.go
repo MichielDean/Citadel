@@ -1,4 +1,4 @@
-package cataracta
+package cataractae
 
 import (
 	"bytes"
@@ -38,8 +38,8 @@ type ContextParams struct {
 	Level      aqueduct.ContextLevel
 	SandboxDir string
 	Item       *cistern.Droplet
-	Step       *aqueduct.WorkflowCataracta
-	Notes      []cistern.CataractaNote
+	Step       *aqueduct.WorkflowCataractae
+	Notes      []cistern.CataractaeNote
 	// OpenIssues is the list of open droplet_issues for this droplet.
 	// For reviewer cataractae, these drive the Phase 1 verification list.
 	OpenIssues []cistern.DropletIssue
@@ -174,7 +174,7 @@ func writeContextFile(path string, p ContextParams) error {
 
 	b.WriteString("\n")
 
-	isReviewer := isReviewerCataracta(p.Step)
+	isReviewer := isReviewerCataractae(p.Step)
 	revisionNotes := revisionCycleNotes(p.Notes)
 
 	if isReviewer && len(p.OpenIssues) > 0 {
@@ -211,7 +211,7 @@ func writeContextFile(path string, p ContextParams) error {
 		b.WriteString("No opinions. No pattern-matching from memory. Run the command. Paste the output.\n")
 		b.WriteString("If you cannot verify with a command, state what you checked and what you found.\n\n")
 		for i, n := range revisionNotes {
-			b.WriteString(fmt.Sprintf("#### Prior Issue %d (flagged by: %s)\n\n", i+1, n.CataractaName))
+			b.WriteString(fmt.Sprintf("#### Prior Issue %d (flagged by: %s)\n\n", i+1, n.CataractaeName))
 			b.WriteString(n.Content)
 			b.WriteString("\n\n")
 		}
@@ -226,7 +226,7 @@ func writeContextFile(path string, p ContextParams) error {
 		b.WriteString("This droplet was recirculated. The following issues were found and **must** be fixed.\n")
 		b.WriteString("Do not proceed to implementation until you have read and understood each issue.\n\n")
 		for i, n := range revisionNotes {
-			b.WriteString(fmt.Sprintf("### Issue %d (from: %s)\n\n", i+1, n.CataractaName))
+			b.WriteString(fmt.Sprintf("### Issue %d (from: %s)\n\n", i+1, n.CataractaeName))
 			b.WriteString(n.Content)
 			b.WriteString("\n\n")
 		}
@@ -241,8 +241,8 @@ func writeContextFile(path string, p ContextParams) error {
 		}
 		b.WriteString("## Recent Step Notes\n\n")
 		for _, n := range recent {
-			if n.CataractaName != "" {
-				b.WriteString(fmt.Sprintf("### From: %s\n\n", n.CataractaName))
+			if n.CataractaeName != "" {
+				b.WriteString(fmt.Sprintf("### From: %s\n\n", n.CataractaeName))
 			}
 			b.WriteString(n.Content)
 			b.WriteString("\n\n")
@@ -322,12 +322,12 @@ func buildSpecContent(item *cistern.Droplet) string {
 }
 
 // revisionCycleNotes returns the notes from the most recent recirculate cycle —
-// i.e. all notes appended since the last "pass" or "block" note from a cataracta.
+// i.e. all notes appended since the last "pass" or "block" note from a cataractae.
 // These are surfaced at the top of CONTEXT.md so the implementer sees them first.
-func revisionCycleNotes(notes []cistern.CataractaNote) []cistern.CataractaNote {
+func revisionCycleNotes(notes []cistern.CataractaeNote) []cistern.CataractaeNote {
 	// Walk backwards to find the start of the latest recirculate cycle.
 	// A new cycle begins after any note whose content starts with "pass" or contains "No issues".
-	var cycle []cistern.CataractaNote
+	var cycle []cistern.CataractaeNote
 	for i := len(notes) - 1; i >= 0; i-- {
 		n := notes[i]
 		content := strings.TrimSpace(n.Content)
@@ -340,12 +340,12 @@ func revisionCycleNotes(notes []cistern.CataractaNote) []cistern.CataractaNote {
 			break
 		}
 		// Prepend so order is oldest-first within the cycle.
-		cycle = append([]cistern.CataractaNote{n}, cycle...)
+		cycle = append([]cistern.CataractaeNote{n}, cycle...)
 	}
 	// Only return notes from reviewer/security/qa cataractae — not implementer self-notes.
-	var filtered []cistern.CataractaNote
+	var filtered []cistern.CataractaeNote
 	for _, n := range cycle {
-		name := strings.ToLower(n.CataractaName)
+		name := strings.ToLower(n.CataractaeName)
 		if strings.Contains(name, "review") || strings.Contains(name, "qa") || strings.Contains(name, "security") {
 			filtered = append(filtered, n)
 		}
@@ -353,9 +353,9 @@ func revisionCycleNotes(notes []cistern.CataractaNote) []cistern.CataractaNote {
 	return filtered
 }
 
-// isReviewerCataracta returns true if the step is a review or QA cataracta —
+// isReviewerCataractae returns true if the step is a review or QA cataracta —
 // i.e. one that should use the two-phase verification protocol.
-func isReviewerCataracta(step *aqueduct.WorkflowCataracta) bool {
+func isReviewerCataractae(step *aqueduct.WorkflowCataractae) bool {
 	if step == nil {
 		return false
 	}

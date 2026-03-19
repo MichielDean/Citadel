@@ -1,13 +1,13 @@
 package aqueduct
 
-// CataractaType classifies what runs in a workflow step.
-type CataractaType string
+// CataractaeType classifies what runs in a workflow step.
+type CataractaeType string
 
 const (
-	CataractaTypeAgent     CataractaType = "agent"
-	CataractaTypeAutomated CataractaType = "automated"
-	CataractaTypeGate      CataractaType = "gate"
-	CataractaTypeHuman     CataractaType = "human"
+	CataractaeTypeAgent     CataractaeType = "agent"
+	CataractaeTypeAutomated CataractaeType = "automated"
+	CataractaeTypeGate      CataractaeType = "gate"
+	CataractaeTypeHuman     CataractaeType = "human"
 )
 
 // ContextLevel controls what context an agent step receives.
@@ -33,10 +33,10 @@ type SkillRef struct {
 	Path string `yaml:"path,omitempty"` // repo-relative path (in-repo skills only)
 }
 
-// WorkflowCataracta defines a single step in an aqueduct.
-type WorkflowCataracta struct {
+// WorkflowCataractae defines a single step in an aqueduct.
+type WorkflowCataractae struct {
 	Name    string       `yaml:"name"`
-	Type    CataractaType     `yaml:"type"`
+	Type    CataractaeType     `yaml:"type"`
 	Identity string       `yaml:"identity,omitempty"`
 	Model   string       `yaml:"model,omitempty"`
 	Context ContextLevel `yaml:"context,omitempty"`
@@ -50,8 +50,8 @@ type WorkflowCataracta struct {
 	OnEscalate     string     `yaml:"on_escalate,omitempty"`
 }
 
-// CataractaDefinition defines an agent role in YAML.
-type CataractaDefinition struct {
+// CataractaeDefinition defines an agent role in YAML.
+type CataractaeDefinition struct {
 	Name         string `yaml:"name"`
 	Description  string `yaml:"description"`
 	Instructions string `yaml:"instructions"`
@@ -76,10 +76,10 @@ type ComplexityConfig struct {
 // complexity level, derived from each cataracta's skip_for field.
 func (wf *Workflow) SkipCataractaeForLevel(level int) []string {
 	var skipped []string
-	for _, cataracta := range wf.Cataractae {
-		for _, cx := range cataracta.SkipFor {
+	for _, step := range wf.Cataractae {
+		for _, cx := range step.SkipFor {
 			if cx == level {
-				skipped = append(skipped, cataracta.Name)
+				skipped = append(skipped, step.Name)
 				break
 			}
 		}
@@ -114,8 +114,8 @@ func (cc ComplexityConfig) RequireHumanForLevel(level int) bool {
 // Workflow is a named sequence of cataractae parsed from a YAML file.
 type Workflow struct {
 	Name       string                    `yaml:"name"`
-	Cataractae    []WorkflowCataracta          `yaml:"cataractae"`
-	CataractaDefinitions map[string]CataractaDefinition `yaml:"cataracta_definitions,omitempty"`
+	Cataractae    []WorkflowCataractae          `yaml:"cataractae"`
+	CataractaeDefinitions map[string]CataractaeDefinition `yaml:"cataractae_definitions,omitempty"`
 	Complexity ComplexityConfig          `yaml:"complexity"`
 }
 

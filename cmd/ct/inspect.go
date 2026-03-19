@@ -21,7 +21,7 @@ type cisternStateInfo struct {
 	Running     bool   `json:"running"`
 }
 
-type cataractaInfo struct {
+type cataractaeInfo struct {
 	Name           string  `json:"name"`
 	Repo           string  `json:"repo"`
 	Session        *string `json:"session"`
@@ -60,7 +60,7 @@ type recentEvent struct {
 
 type inspectOutput struct {
 	Cistern      cisternStateInfo `json:"cistern"`
-	Cataractae      []cataractaInfo     `json:"cataractae"`
+	Cataractae      []cataractaeInfo     `json:"cataractae"`
 	Counts       cisternInfo      `json:"counts"`
 	Droplets     []dropletInfo    `json:"droplets"`
 	RecentEvents []recentEvent    `json:"recent_events"`
@@ -96,7 +96,7 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 			Config:  cfgPath,
 			Running: lockErr == nil,
 		},
-		Cataractae:      []cataractaInfo{},
+		Cataractae:      []cataractaeInfo{},
 		Droplets:     []dropletInfo{},
 		RecentEvents: []recentEvent{},
 	}
@@ -146,7 +146,7 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 			assigneeMap[item.Assignee] = assignInfo{
 				id:        item.ID,
 				title:     item.Title,
-				stage:     item.CurrentCataracta,
+				stage:     item.CurrentCataractae,
 				updatedAt: item.UpdatedAt,
 			}
 		}
@@ -156,7 +156,7 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 	// Build cataractae from config operators.
 	for _, repo := range cfg.Repos {
 		for _, name := range repoWorkerNames(repo) {
-			ch := cataractaInfo{
+			ch := cataractaeInfo{
 				Name: name,
 				Repo: repo.Name,
 			}
@@ -175,7 +175,7 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 		}
 	}
 	if out.Cataractae == nil {
-		out.Cataractae = []cataractaInfo{}
+		out.Cataractae = []cataractaeInfo{}
 	}
 
 	// Build droplets (exclude delivered).
@@ -189,7 +189,7 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 			Complexity:     item.Complexity,
 			ComplexityName: complexityName(item.Complexity),
 			Status:         item.Status,
-			Stage:          item.CurrentCataracta,
+			Stage:          item.CurrentCataractae,
 			Operator:       item.Assignee,
 			UpdatedAt:      item.UpdatedAt,
 		}

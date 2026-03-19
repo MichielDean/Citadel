@@ -1,4 +1,4 @@
-package cataracta
+package cataractae
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/MichielDean/cistern/internal/aqueduct"
 )
 
-// Adapter wraps Runner instances to implement castellarius.CataractaRunner.
+// Adapter wraps Runner instances to implement castellarius.CataractaeRunner.
 type Adapter struct {
 	runners      map[string]*Runner // keyed by repo name
 	executor     *gates.Executor
@@ -48,12 +48,12 @@ func NewAdapter(configs []aqueduct.RepoConfig, workflows map[string]*aqueduct.Wo
 	}, nil
 }
 
-// Spawn implements castellarius.CataractaRunner.
+// Spawn implements castellarius.CataractaeRunner.
 // For automated steps, runs synchronously and writes the outcome to the DB.
 // For agent steps, spawns a tmux session and returns immediately; the agent
 // signals completion by calling `ct droplet pass/recirculate/block <id>`.
-func (a *Adapter) Spawn(ctx context.Context, req castellarius.CataractaRequest) error {
-	if req.Step.Type == aqueduct.CataractaTypeAutomated {
+func (a *Adapter) Spawn(ctx context.Context, req castellarius.CataractaeRequest) error {
+	if req.Step.Type == aqueduct.CataractaeTypeAutomated {
 		return a.spawnAutomated(ctx, req)
 	}
 
@@ -74,7 +74,7 @@ func (a *Adapter) Spawn(ctx context.Context, req castellarius.CataractaRequest) 
 // spawnAutomated runs an automated (gate) step synchronously, then writes the
 // outcome and any metadata notes directly to the DB so the observe phase can
 // route the item on the next tick.
-func (a *Adapter) spawnAutomated(ctx context.Context, req castellarius.CataractaRequest) error {
+func (a *Adapter) spawnAutomated(ctx context.Context, req castellarius.CataractaeRequest) error {
 	client, ok := a.queueClients[req.RepoConfig.Name]
 	if !ok {
 		return fmt.Errorf("adapter: no queue client for repo %q", req.RepoConfig.Name)

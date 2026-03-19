@@ -1,7 +1,7 @@
 # Cistern configuration
 # Water is life. Code is water. The Cistern keeps it moving.
 #
-# Repos flow through aqueducts. Cataracta operators process droplets along the way.
+# Repos flow through aqueducts. Cataractae operators process droplets along the way.
 # Work items are droplets. The cistern holds them until they flow free.
 
 repos:
@@ -9,7 +9,7 @@ repos:
     url: https://github.com/example/ScaledTest
     workflow_path: aqueduct/aqueduct.yaml
     cataractae: 2
-    # Cataracta operator names — who processes the droplets
+    # Cataractae operator names — who processes the droplets
     names:
       - upstream
       - tributary
@@ -27,7 +27,7 @@ repos:
 max_cataractae: 4
 handoff_token_threshold: 100000
 
-# rate_limit configures the delivery cataracta API endpoint.
+# rate_limit configures the delivery cataractae API endpoint.
 # Limits are applied per source IP and per auth token within a sliding window.
 # Omit this section to use built-in defaults (60 req/min per IP, 120 req/min per token).
 # rate_limit:

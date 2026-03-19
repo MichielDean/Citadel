@@ -58,8 +58,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("parse aqueduct workflow: %w", err)
 	}
-	if len(w.CataractaDefinitions) > 0 {
-		if _, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir); err != nil {
+	if len(w.CataractaeDefinitions) > 0 {
+		if _, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir); err != nil {
 			return fmt.Errorf("generate cataractae: %w", err)
 		}
 	}

@@ -43,10 +43,10 @@ func TestDroughtHook_FiresOnDroughtTransition(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1"}}
 
-	cataracta := newMockRunner(client)
-	cataracta.outcomes["implement"] = "pass"
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "pass"
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 
 	// Create a temp file for shell hook to write to, proving it ran.
 	tmpDir := t.TempDir()
@@ -63,7 +63,7 @@ func TestDroughtHook_FiresOnDroughtTransition(t *testing.T) {
 
 	// First tick: picks up work (busy). wasDrought starts false.
 	sched.Tick(context.Background())
-	if !cataracta.waitCalls(1, time.Second) {
+	if !runner.waitCalls(1, time.Second) {
 		t.Fatal("timed out waiting for runner")
 	}
 	// Allow routing to complete.
@@ -82,9 +82,9 @@ func TestDroughtHook_FiresOnDroughtTransition(t *testing.T) {
 func TestDroughtHook_DoesNotFireWhenAlreadyDrought(t *testing.T) {
 	// When scheduler is already drought (wasDrought true→true), hooks should NOT fire again.
 	client := newMockClient()
-	cataracta := newMockRunner(client)
+	runner := newMockRunner(client)
 
-	sched := testScheduler(client, cataracta)
+	sched := testScheduler(client, runner)
 
 	tmpDir := t.TempDir()
 	counterFile := filepath.Join(tmpDir, "counter")
@@ -174,7 +174,7 @@ cataractae:
   - name: impl
     type: agent
     on_pass: done
-cataracta_definitions:
+cataractae_definitions:
   implementer:
     name: Implementer
     description: test
@@ -223,7 +223,7 @@ cataractae:
   - name: impl
     type: agent
     on_pass: done
-cataracta_definitions:
+cataractae_definitions:
   implementer:
     name: Implementer
     description: test

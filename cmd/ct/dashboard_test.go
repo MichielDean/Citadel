@@ -85,8 +85,8 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 
 	data := fetchDashboardData(cfgPath, dbPath)
 
-	if data.CataractaCount != 2 {
-		t.Errorf("CataractaCount = %d, want 2", data.CataractaCount)
+	if data.CataractaeCount != 2 {
+		t.Errorf("CataractaeCount = %d, want 2", data.CataractaeCount)
 	}
 	if data.FlowingCount != 1 {
 		t.Errorf("FlowingCount = %d, want 1", data.FlowingCount)
@@ -105,7 +105,7 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 	}
 
 	// Cataracta "virgo" should be assigned to the flowing item.
-	var virgo *CataractaInfo
+	var virgo *CataractaeInfo
 	for i := range data.Cataractae {
 		if data.Cataractae[i].Name == "virgo" {
 			virgo = &data.Cataractae[i]
@@ -120,15 +120,15 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 	if virgo.Step != "implement" {
 		t.Errorf("virgo.Step = %q, want %q", virgo.Step, "implement")
 	}
-	if virgo.CataractaIndex != 1 {
-		t.Errorf("virgo.CataractaIndex = %d, want 1", virgo.CataractaIndex)
+	if virgo.CataractaeIndex != 1 {
+		t.Errorf("virgo.CataractaeIndex = %d, want 1", virgo.CataractaeIndex)
 	}
 	if virgo.TotalCataractae != 3 {
 		t.Errorf("virgo.TotalCataractae = %d, want 3", virgo.TotalCataractae)
 	}
 
 	// Cataracta "marcia" should be dry.
-	var marcia *CataractaInfo
+	var marcia *CataractaeInfo
 	for i := range data.Cataractae {
 		if data.Cataractae[i].Name == "marcia" {
 			marcia = &data.Cataractae[i]
@@ -164,8 +164,8 @@ func TestFetchDashboardData_FarmNotRunning_ShowsDroughtState(t *testing.T) {
 		if data.FarmRunning {
 			t.Error("FarmRunning should be false when config is missing")
 		}
-		if data.CataractaCount != 0 {
-			t.Errorf("CataractaCount = %d, want 0", data.CataractaCount)
+		if data.CataractaeCount != 0 {
+			t.Errorf("CataractaeCount = %d, want 0", data.CataractaeCount)
 		}
 		if data.FetchedAt.IsZero() {
 			t.Error("FetchedAt should always be set")
@@ -183,8 +183,8 @@ func TestFetchDashboardData_FarmNotRunning_ShowsDroughtState(t *testing.T) {
 		// that a fresh empty DB yields all-dry cataractae and zero counts.
 		data := fetchDashboardData(cfgPath, dbPath)
 
-		if data.CataractaCount != 2 {
-			t.Errorf("CataractaCount = %d, want 2 (from config)", data.CataractaCount)
+		if data.CataractaeCount != 2 {
+			t.Errorf("CataractaeCount = %d, want 2 (from config)", data.CataractaeCount)
 		}
 		if data.FlowingCount != 0 {
 			t.Errorf("FlowingCount = %d, want 0 for empty DB", data.FlowingCount)
@@ -267,19 +267,19 @@ func TestDashboard_ExitsWhenInputClosed(t *testing.T) {
 func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 	steps := []string{"implement", "review", "merge"}
 	data := &DashboardData{
-		CataractaCount: 2,
+		CataractaeCount: 2,
 		FlowingCount:   1,
 		QueuedCount:    1,
 		DoneCount:      3,
-		Cataractae: []CataractaInfo{
-			{Name: "virgo", DropletID: "ci-abc12", Step: "implement", Steps: steps, CataractaIndex: 1, TotalCataractae: 3, Elapsed: 2*time.Minute + 14*time.Second},
+		Cataractae: []CataractaeInfo{
+			{Name: "virgo", DropletID: "ci-abc12", Step: "implement", Steps: steps, CataractaeIndex: 1, TotalCataractae: 3, Elapsed: 2*time.Minute + 14*time.Second},
 			{Name: "marcia", Steps: steps},
 		},
 		CisternItems: []*cistern.Droplet{
-			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataracta: "implement", Complexity: 2},
+			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataractae: "implement", Complexity: 2},
 		},
 		RecentItems: []*cistern.Droplet{
-			{ID: "ci-xyz99", Status: "delivered", CurrentCataracta: "merge", UpdatedAt: time.Now()},
+			{ID: "ci-xyz99", Status: "delivered", CurrentCataractae: "merge", UpdatedAt: time.Now()},
 		},
 		FarmRunning: true,
 		FetchedAt:   time.Date(2026, 3, 14, 15, 7, 42, 0, time.UTC),
@@ -323,13 +323,13 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 func TestRenderFlowGraphRow_ActiveStep(t *testing.T) {
 	// Use step="review" (non-first step) to verify ● appears on the incoming edge,
 	// i.e. before the active step name: implement ──●──▶ review ──○──▶ qa
-	ch := CataractaInfo{
+	ch := CataractaeInfo{
 		Name:            "virgo",
 		DropletID:       "ci-s76ho",
 		Step:            "review",
 		Steps:           []string{"implement", "review", "qa"},
 		Elapsed:         3*time.Minute + 12*time.Second,
-		CataractaIndex:  2,
+		CataractaeIndex:  2,
 		TotalCataractae: 3,
 	}
 	graphLine, infoLine := renderFlowGraphRow(ch)
@@ -389,7 +389,7 @@ func TestRenderFlowGraphRow_ActiveStep(t *testing.T) {
 }
 
 func TestRenderFlowGraphRow_Idle(t *testing.T) {
-	ch := CataractaInfo{
+	ch := CataractaeInfo{
 		Name:  "marcia",
 		Steps: []string{"implement", "review", "qa"},
 	}
@@ -407,12 +407,12 @@ func TestRenderFlowGraphRow_Idle(t *testing.T) {
 }
 
 func TestRenderFlowGraphRow_PointerAligned(t *testing.T) {
-	ch := CataractaInfo{
+	ch := CataractaeInfo{
 		Name:            "virgo",
 		DropletID:       "ci-abc",
 		Step:            "review",
 		Steps:           []string{"implement", "review", "qa"},
-		CataractaIndex:  2,
+		CataractaeIndex:  2,
 		TotalCataractae: 3,
 	}
 	graphLine, infoLine := renderFlowGraphRow(ch)
@@ -476,7 +476,7 @@ func TestRenderFlowGraphRow_PointerAligned(t *testing.T) {
 
 func TestRenderDashboard_AqueductsClosedWhenNoCataractae(t *testing.T) {
 	data := &DashboardData{
-		Cataractae:   []CataractaInfo{},
+		Cataractae:   []CataractaeInfo{},
 		FetchedAt: time.Now(),
 	}
 	out := renderDashboard(data)
@@ -517,19 +517,19 @@ func TestProgressBar_FilledAndEmpty(t *testing.T) {
 // --- TestStepIndexInWorkflow ---
 
 func TestStepIndexInWorkflow_ReturnsCorrectIndex(t *testing.T) {
-	steps := []aqueduct.WorkflowCataracta{
+	steps := []aqueduct.WorkflowCataractae{
 		{Name: "implement"},
 		{Name: "review"},
 		{Name: "merge"},
 	}
 
-	if idx := cataractaIndexInWorkflow("implement", steps); idx != 1 {
+	if idx := cataractaeIndexInWorkflow("implement", steps); idx != 1 {
 		t.Errorf("stepIndex(implement) = %d, want 1", idx)
 	}
-	if idx := cataractaIndexInWorkflow("merge", steps); idx != 3 {
+	if idx := cataractaeIndexInWorkflow("merge", steps); idx != 3 {
 		t.Errorf("stepIndex(merge) = %d, want 3", idx)
 	}
-	if idx := cataractaIndexInWorkflow("unknown", steps); idx != 0 {
+	if idx := cataractaeIndexInWorkflow("unknown", steps); idx != 0 {
 		t.Errorf("stepIndex(unknown) = %d, want 0", idx)
 	}
 }

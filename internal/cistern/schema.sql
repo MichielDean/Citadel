@@ -7,17 +7,17 @@ CREATE TABLE IF NOT EXISTS droplets (
     complexity INTEGER DEFAULT 3,
     status TEXT DEFAULT 'open',
     assignee TEXT DEFAULT '',
-    current_cataracta TEXT DEFAULT '',
+    current_cataractae TEXT DEFAULT '',
     outcome TEXT DEFAULT NULL,
     assigned_aqueduct TEXT DEFAULT '',
     last_reviewed_commit TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS cataracta_notes (
+CREATE TABLE IF NOT EXISTS cataractae_notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     droplet_id TEXT NOT NULL,
-    cataracta_name TEXT NOT NULL,
+    cataractae_name TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

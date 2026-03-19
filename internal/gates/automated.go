@@ -102,7 +102,7 @@ func (e *Executor) Noop(_ context.Context, bc DropletContext) *StepOutcome {
 
 // RunStep dispatches an automated step by name.
 // pr-create, ci-gate, and merge were removed from the pipeline in favour of
-// the delivery agent cataracta. They remain available here for testing and
+// the delivery agent cataractae. They remain available here for testing and
 // potential future use, but are not called from the live pipeline.
 // Unknown step names are treated as noop (passthrough).
 func (e *Executor) RunStep(ctx context.Context, stepName string, bc DropletContext) *StepOutcome {

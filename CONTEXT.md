@@ -2,7 +2,7 @@
 
 ## Item: ci-vwi46
 
-**Title:** Add rate limiting to the delivery cataracta API endpoint
+**Title:** Add rate limiting to the delivery cataractae API endpoint
 **Status:** in_progress
 **Priority:** 1
 

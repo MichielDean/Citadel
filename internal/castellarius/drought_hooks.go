@@ -89,7 +89,7 @@ func hookCataractaeGenerate(cfg *aqueduct.AqueductConfig, logger *slog.Logger) e
 				logger.Warn("cataractae_generate: parse workflow failed", "path", wfPath, "error", err)
 				continue
 			}
-			written, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir)
+			written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir)
 			if err != nil {
 				return fmt.Errorf("generate role files: %w", err)
 			}
