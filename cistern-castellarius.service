@@ -1,0 +1,37 @@
+[Unit]
+Description=Cistern Castellarius — aqueduct scheduler
+After=network.target
+# Restart after ttyd so the dashboard is ready when agents come online.
+After=cistern-ttyd.service
+
+[Service]
+Type=simple
+ExecStart=/home/lobsterdog/go/bin/ct castellarius start
+
+# Always restart — covers both intentional exits (os.Exit(0) for self-restart)
+# and unexpected crashes. systemd is the process supervisor.
+Restart=always
+RestartSec=5
+
+# Crash-loop protection: if it fails 10 times within 2 minutes, stop trying.
+# Reset the failure counter manually: systemctl --user reset-failed cistern-castellarius
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+# On hitting the limit, send a journal notice so it's easy to diagnose.
+StartLimitAction=none
+
+# Graceful shutdown — let in-flight agents settle before killing.
+TimeoutStopSec=15
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Persistent log alongside the journal — easy to tail without journalctl.
+StandardOutput=append:/home/lobsterdog/.cistern/castellarius.log
+StandardError=append:/home/lobsterdog/.cistern/castellarius.log
+
+Environment=HOME=/home/lobsterdog
+Environment=PATH=/home/lobsterdog/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
