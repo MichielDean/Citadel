@@ -78,6 +78,31 @@ type Castellarius struct {
 	dbPath              string
 	wasDrought          bool
 	startupBinaryMtime  time.Time // mtime of the binary at startup; used to detect updates
+	supervised          bool      // true if managed by systemd/supervisord/etc.
+	reloadCh            chan struct{} // signals Tick() to hot-reload workflows from disk
+}
+
+// isSupervisedProcess returns true when the Castellarius is being managed by
+// a process supervisor that will restart it after a clean exit.
+// Checks (in order):
+//   - CT_SUPERVISED=1   — explicit user override for custom supervisors
+//   - INVOCATION_ID      — set by systemd for every managed unit
+//   - SUPERVISOR_ENABLED — set by supervisord
+//   - parent PID == 1    — running as direct child of init (Docker, etc.)
+func isSupervisedProcess() bool {
+	if os.Getenv("CT_SUPERVISED") == "1" {
+		return true
+	}
+	if os.Getenv("INVOCATION_ID") != "" {
+		return true // systemd
+	}
+	if os.Getenv("SUPERVISOR_ENABLED") == "1" {
+		return true // supervisord
+	}
+	if os.Getppid() == 1 {
+		return true // direct child of init/PID1
+	}
+	return false
 }
 
 // Option configures a flow.
@@ -121,6 +146,8 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 		heartbeatInterval:  30 * time.Second,
 		dbPath:             dbPath,
 		startupBinaryMtime: startupBinaryMtime,
+		supervised:         isSupervisedProcess(),
+		reloadCh:           make(chan struct{}, 1),
 	}
 	for _, o := range opts {
 		o(s)
@@ -242,9 +269,14 @@ func defaultAqueductNames(n int) []string {
 
 // Run starts the scheduler loop. It blocks until ctx is cancelled.
 func (s *Castellarius) Run(ctx context.Context) error {
+	supervisorStatus := "unsupervised (manual restart required for binary updates)"
+	if s.supervised {
+		supervisorStatus = "supervised (will self-restart via supervisor)"
+	}
 	s.logger.Info("Cistern online. Aqueducts open.",
 		"repos", len(s.config.Repos),
 		"cataractae", s.config.MaxCataractae,
+		"supervisor", supervisorStatus,
 	)
 
 	// Integrity check: regenerate any missing or corrupt CLAUDE.md files before
@@ -339,6 +371,29 @@ func (s *Castellarius) Tick(ctx context.Context) {
 	s.tick(ctx)
 }
 
+// doReloadWorkflows re-parses workflow YAMLs from disk and updates the in-memory
+// map. Called on the main goroutine so no locking is needed.
+func (s *Castellarius) doReloadWorkflows() {
+	for _, repo := range s.config.Repos {
+		wfPath := repo.WorkflowPath
+		if !filepath.IsAbs(wfPath) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				s.logger.Error("hot-reload: home dir", "error", err)
+				continue
+			}
+			wfPath = filepath.Join(home, ".cistern", wfPath)
+		}
+		wf, err := aqueduct.ParseWorkflow(wfPath)
+		if err != nil {
+			s.logger.Error("hot-reload: failed to load workflow", "repo", repo.Name, "path", wfPath, "error", err)
+			continue
+		}
+		s.workflows[repo.Name] = wf
+		s.logger.Info("hot-reload: workflow reloaded", "repo", repo.Name, "cataractae", len(wf.Cataractae))
+	}
+}
+
 func (s *Castellarius) tick(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -349,6 +404,15 @@ func (s *Castellarius) tick(ctx context.Context) {
 			)
 		}
 	}()
+
+	// Drain the reload channel: if a drought hook signaled a workflow change
+	// and we're not supervised, apply the hot-reload here on the main goroutine
+	// (safe — no concurrent map writes).
+	select {
+	case <-s.reloadCh:
+		s.doReloadWorkflows()
+	default:
+	}
 
 	for _, repo := range s.config.Repos {
 		if err := ctx.Err(); err != nil {
@@ -365,7 +429,13 @@ func (s *Castellarius) tick(ctx context.Context) {
 	if isDrought && !s.wasDrought {
 		if len(s.config.DroughtHooks) > 0 {
 			s.logger.Info("Drought protocols running.")
-			go RunDroughtHooks(s.config.DroughtHooks, &s.config, s.dbPath, s.sandboxRoot, s.logger, s.startupBinaryMtime)
+			reloadFn := func() {
+				select {
+				case s.reloadCh <- struct{}{}:
+				default: // already pending
+				}
+			}
+			go RunDroughtHooks(s.config.DroughtHooks, &s.config, s.dbPath, s.sandboxRoot, s.logger, s.startupBinaryMtime, s.supervised, reloadFn)
 		}
 	}
 	s.wasDrought = isDrought

@@ -19,12 +19,16 @@ import (
 
 // RunDroughtHooks executes all configured drought hooks sequentially.
 // Errors are logged but do not crash the flow.
-// If any hook signals that a restart is needed (e.g. git_sync updated the workflow
-// and restart_if_updated is set, or action is restart_self), the process exits
-// cleanly with code 0 after all hooks finish — safe because drought means no
-// active agents. A process supervisor (systemd Restart=always) brings it back fresh.
-func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig, dbPath string, sandboxRoot string, logger *slog.Logger, startupBinaryMtime time.Time) {
+//
+// Restart behaviour depends on whether the process is supervised:
+//   - supervised (systemd/supervisord/etc.): os.Exit(0) — supervisor restarts cleanly.
+//   - unsupervised (manual run): workflow changes trigger an in-process hot-reload via
+//     onReload(); binary updates log a warning but do NOT exit (Castellarius stays alive).
+//
+// This ensures the Castellarius never dies without something to bring it back.
+func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig, dbPath string, sandboxRoot string, logger *slog.Logger, startupBinaryMtime time.Time, supervised bool, onReload func()) {
 	needsRestart := false
+	workflowChanged := false
 	restartReason := ""
 
 	for _, hook := range hooks {
@@ -34,9 +38,12 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 		case "git_sync":
 			var changed bool
 			changed, err = hookGitSync(cfg, sandboxRoot, logger)
-			if changed && hook.RestartIfUpdated {
-				needsRestart = true
-				restartReason = "workflow YAML updated by git_sync"
+			if changed {
+				workflowChanged = true
+				if hook.RestartIfUpdated {
+					needsRestart = true
+					restartReason = "workflow YAML updated by git_sync"
+				}
 			}
 		case "cataractae_generate":
 			err = hookCataractaeGenerate(cfg, logger)
@@ -67,11 +74,13 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 	}
 
 	// Binary-update detection: if the on-disk binary is newer than when we started,
-	// exit so the supervisor restarts with the fresh binary.
+	// a restart is needed to run the new code.
+	binaryUpdated := false
 	if !startupBinaryMtime.IsZero() {
 		if exe, err := os.Executable(); err == nil {
 			if info, err := os.Stat(exe); err == nil {
 				if info.ModTime().After(startupBinaryMtime) {
+					binaryUpdated = true
 					needsRestart = true
 					restartReason = "binary updated on disk"
 				}
@@ -79,9 +88,30 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 		}
 	}
 
-	if needsRestart {
+	if !needsRestart {
+		return
+	}
+
+	if supervised {
+		// Supervisor (systemd, supervisord, etc.) will restart us.
 		logger.Info("Castellarius exiting for clean restart", "reason", restartReason)
 		os.Exit(0)
+	}
+
+	// Unsupervised — never exit on our own. Apply what we can in-process.
+	if workflowChanged && !binaryUpdated && onReload != nil {
+		// Workflow change: hot-reload the parsed YAML in the main goroutine.
+		logger.Info("Workflow updated — applying hot-reload (no supervisor)",
+			"hint", "For automatic restarts, run under systemd: systemctl --user start cistern-castellarius")
+		onReload()
+	} else if binaryUpdated {
+		// Binary change: in-process reload is impossible. Warn and keep running.
+		logger.Warn("Binary updated on disk — manual restart required to apply new code",
+			"hint", "Run: systemctl --user restart cistern-castellarius  (or Ctrl-C and restart manually)")
+	} else {
+		logger.Warn("Restart requested but no supervisor detected — skipping",
+			"reason", restartReason,
+			"hint", "Set CT_SUPERVISED=1 or run under systemd to enable automatic restarts")
 	}
 }
 
