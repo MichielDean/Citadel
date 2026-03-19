@@ -7,7 +7,7 @@
 repos:
   - name: ScaledTest
     url: https://github.com/example/ScaledTest
-    workflow_path: aqueduct/feature.yaml
+    workflow_path: aqueduct/aqueduct.yaml
     cataractae: 2
     # Cataracta operator names — who processes the droplets
     names:
@@ -17,7 +17,7 @@ repos:
 
   - name: cistern
     url: https://github.com/example/cistern
-    workflow_path: aqueduct/feature.yaml
+    workflow_path: aqueduct/aqueduct.yaml
     cataractae: 2
     names:
       - virgo

@@ -20,7 +20,7 @@ func tempDB(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "test.db")
 }
 
-// tempCfg writes a minimal cistern.yaml referencing a feature.yaml stub.
+// tempCfg writes a minimal cistern.yaml referencing an aqueduct.yaml stub.
 // Returns the path to the config file.
 func tempCfg(t *testing.T) string {
 	t.Helper()
@@ -36,7 +36,7 @@ cataractae:
   - name: merge
     type: automated
 `
-	wfPath := filepath.Join(dir, "feature.yaml")
+	wfPath := filepath.Join(dir, "aqueduct.yaml")
 	if err := os.WriteFile(wfPath, []byte(wfContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ cataractae:
 	cfgContent := `repos:
   - name: myrepo
     url: https://example.com/repo
-    workflow_path: feature.yaml
+    workflow_path: aqueduct.yaml
     cataractae: 2
     names:
       - virgo

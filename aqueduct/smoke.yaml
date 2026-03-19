@@ -1,7 +1,0 @@
-name: smoke
-cataractae:
-  - name: noop
-    type: automated
-    timeout_minutes: 1
-    on_pass: done
-    on_fail: human

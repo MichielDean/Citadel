@@ -117,7 +117,7 @@ cataracta_definitions:
       ## Cross-reference checks (within the diff only)
       7. CLI flag consistency — if the diff uses --foo flag anywhere (in docs, skills, tests), verify the same diff also defines --foo in the CLI command. If flag is used but not defined: required issue.
       8. URL patterns — for every URL in the diff, check the path structure makes sense.
-      9. Mirror consistency — if the diff touches two files that should match (e.g., aqueduct/feature.yaml AND cmd/ct/assets/aqueduct/feature.yaml), compare them.
+      9. Mirror consistency — if the diff touches two files that should match (e.g., aqueduct/aqueduct.yaml AND cmd/ct/assets/aqueduct/aqueduct.yaml), compare them.
       10. New cataracta steps — if a new step is added to cataractae:, verify it has: on_pass, on_fail, skip_for (if applicable).
 
       ## Decision rule — binary, no suggestions

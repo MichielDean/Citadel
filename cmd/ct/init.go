@@ -13,11 +13,8 @@ import (
 //go:embed assets/cistern.yaml
 var defaultCisternConfig []byte
 
-//go:embed assets/aqueduct/feature.yaml
-var defaultFeatureWorkflow []byte
-
-//go:embed assets/aqueduct/bug.yaml
-var defaultBugWorkflow []byte
+//go:embed assets/aqueduct/aqueduct.yaml
+var defaultAqueductWorkflow []byte
 
 var initForce bool
 
@@ -50,26 +47,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 3. Copy default workflow files.
-	workflows := []struct {
-		name string
-		data []byte
-	}{
-		{"feature.yaml", defaultFeatureWorkflow},
-		{"bug.yaml", defaultBugWorkflow},
-	}
-	for _, wf := range workflows {
-		dst := filepath.Join(aqueductDir, wf.name)
-		if err := writeFileIfAbsent(dst, wf.data, initForce); err != nil {
-			return err
-		}
+	// 3. Copy default workflow file.
+	aqueductDst := filepath.Join(aqueductDir, "aqueduct.yaml")
+	if err := writeFileIfAbsent(aqueductDst, defaultAqueductWorkflow, initForce); err != nil {
+		return err
 	}
 
-	// 4. Generate role files from the feature aqueduct.
-	featureWfPath := filepath.Join(aqueductDir, "feature.yaml")
-	w, err := aqueduct.ParseWorkflow(featureWfPath)
+	// 4. Generate role files from the aqueduct workflow.
+	w, err := aqueduct.ParseWorkflow(aqueductDst)
 	if err != nil {
-		return fmt.Errorf("parse feature workflow: %w", err)
+		return fmt.Errorf("parse aqueduct workflow: %w", err)
 	}
 	if len(w.CataractaDefinitions) > 0 {
 		if _, err := aqueduct.GenerateCataractaFiles(w, cataractaeDir); err != nil {
@@ -80,7 +67,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// 5. Print next-steps message.
 	fmt.Printf(`Cistern initialized.
   Config     : ~/.cistern/cistern.yaml
-  Aqueduct   : ~/.cistern/aqueduct/
+  Aqueduct   : ~/.cistern/aqueduct/aqueduct.yaml
   Cataractae : ~/.cistern/cataractae/
 
 Next:

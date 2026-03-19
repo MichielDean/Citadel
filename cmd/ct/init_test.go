@@ -63,20 +63,18 @@ t.Setenv("USERPROFILE", home)
 	}
 
 	aqueductDir := filepath.Join(home, ".cistern", "aqueduct")
-	for _, name := range []string{"feature.yaml", "bug.yaml"} {
-		path := filepath.Join(aqueductDir, name)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Errorf("expected workflow file to exist: %s", name)
-		}
+	aqueductYAML := filepath.Join(aqueductDir, "aqueduct.yaml")
+	if _, err := os.Stat(aqueductYAML); os.IsNotExist(err) {
+		t.Errorf("expected workflow file to exist: aqueduct.yaml")
 	}
 
-	// Verify feature.yaml content matches embedded template.
-	featureData, err := os.ReadFile(filepath.Join(aqueductDir, "feature.yaml"))
+	// Verify aqueduct.yaml content matches embedded template.
+	aqueductData, err := os.ReadFile(aqueductYAML)
 	if err != nil {
-		t.Fatalf("read feature.yaml: %v", err)
+		t.Fatalf("read aqueduct.yaml: %v", err)
 	}
-	if string(featureData) != string(defaultFeatureWorkflow) {
-		t.Error("feature.yaml content does not match embedded template")
+	if string(aqueductData) != string(defaultAqueductWorkflow) {
+		t.Error("aqueduct.yaml content does not match embedded template")
 	}
 }
 
