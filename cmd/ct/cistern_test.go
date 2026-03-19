@@ -439,3 +439,148 @@ func TestDisplayStatusForDroplet_AwaitingApproval(t *testing.T) {
 		t.Errorf("expected ⏸ icon for 'awaiting', got %q", icon)
 	}
 }
+
+func TestDropletSearch(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	captureStdout := func(t *testing.T, fn func()) string {
+		t.Helper()
+		old := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		fn()
+		w.Close()
+		os.Stdout = old
+		var buf bytes.Buffer
+		buf.ReadFrom(r)
+		return buf.String()
+	}
+
+	// Seed data.
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("repo", "Fix login bug", "", 1, 3)
+	c.Add("repo", "Add dashboard", "", 2, 3)
+	ip, _ := c.Add("repo", "Fix payments", "", 1, 3)
+	c.UpdateStatus(ip.ID, "in_progress")
+	c.Close()
+
+	t.Run("query filter matches title substring", func(t *testing.T) {
+		searchQuery = "fix"
+		searchStatus = ""
+		searchPriority = 0
+		searchOutput = "table"
+		out := captureStdout(t, func() {
+			if err := dropletSearchCmd.RunE(dropletSearchCmd, nil); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Fix login bug") {
+			t.Errorf("expected 'Fix login bug' in output:\n%s", out)
+		}
+		if !strings.Contains(out, "Fix payments") {
+			t.Errorf("expected 'Fix payments' in output:\n%s", out)
+		}
+		if strings.Contains(out, "Add dashboard") {
+			t.Errorf("'Add dashboard' should be filtered out:\n%s", out)
+		}
+	})
+
+	t.Run("empty results shows Cistern dry.", func(t *testing.T) {
+		searchQuery = "xyz-no-match"
+		searchStatus = ""
+		searchPriority = 0
+		searchOutput = "table"
+		out := captureStdout(t, func() {
+			if err := dropletSearchCmd.RunE(dropletSearchCmd, nil); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if strings.TrimSpace(out) != "Cistern dry." {
+			t.Fatalf("expected 'Cistern dry.', got %q", out)
+		}
+	})
+
+	t.Run("json output", func(t *testing.T) {
+		searchQuery = ""
+		searchStatus = ""
+		searchPriority = 0
+		searchOutput = "json"
+		old := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		err := dropletSearchCmd.RunE(dropletSearchCmd, nil)
+		w.Close()
+		os.Stdout = old
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var buf bytes.Buffer
+		buf.ReadFrom(r)
+		out := buf.String()
+		var items []*cistern.Droplet
+		if err := json.Unmarshal([]byte(out), &items); err != nil {
+			t.Fatalf("output is not valid JSON: %v\noutput: %s", err, out)
+		}
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(items))
+		}
+	})
+
+	t.Run("status filter", func(t *testing.T) {
+		searchQuery = ""
+		searchStatus = "in_progress"
+		searchPriority = 0
+		searchOutput = "table"
+		out := captureStdout(t, func() {
+			if err := dropletSearchCmd.RunE(dropletSearchCmd, nil); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Fix payments") {
+			t.Errorf("expected 'Fix payments' in output:\n%s", out)
+		}
+		if strings.Contains(out, "Fix login bug") {
+			t.Errorf("'Fix login bug' should be filtered out:\n%s", out)
+		}
+	})
+
+	t.Run("priority filter", func(t *testing.T) {
+		searchQuery = ""
+		searchStatus = ""
+		searchPriority = 2
+		searchOutput = "table"
+		out := captureStdout(t, func() {
+			if err := dropletSearchCmd.RunE(dropletSearchCmd, nil); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Add dashboard") {
+			t.Errorf("expected 'Add dashboard' in output:\n%s", out)
+		}
+		if strings.Contains(out, "Fix login bug") {
+			t.Errorf("'Fix login bug' should be filtered out:\n%s", out)
+		}
+	})
+
+	t.Run("invalid output flag", func(t *testing.T) {
+		searchQuery = ""
+		searchStatus = ""
+		searchPriority = 0
+		searchOutput = "csv"
+		err := dropletSearchCmd.RunE(dropletSearchCmd, nil)
+		if err == nil {
+			t.Fatal("expected error for invalid --output value")
+		}
+	})
+
+	// Reset flags.
+	searchQuery = ""
+	searchStatus = ""
+	searchPriority = 0
+	searchOutput = "table"
+}

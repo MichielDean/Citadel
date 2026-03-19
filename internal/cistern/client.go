@@ -561,6 +561,55 @@ func (c *Client) List(repo, status string) ([]*Droplet, error) {
 	return droplets, rows.Err()
 }
 
+// Search returns droplets matching the given filters. query is a case-insensitive
+// substring match on title (empty means all). status is an exact match on status
+// (empty means all). priority is an exact match on priority (0 means all).
+// Results are ordered by priority ASC, created_at ASC.
+func (c *Client) Search(query, status string, priority int) ([]*Droplet, error) {
+	qry := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataracta, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
+		 FROM droplets WHERE 1=1`
+	var args []any
+	if query != "" {
+		qry += ` AND lower(title) LIKE lower(?)`
+		args = append(args, "%"+query+"%")
+	}
+	if status != "" {
+		qry += ` AND status = ?`
+		args = append(args, status)
+	}
+	if priority != 0 {
+		qry += ` AND priority = ?`
+		args = append(args, priority)
+	}
+	qry += ` ORDER BY priority ASC, created_at ASC`
+
+	rows, err := c.db.Query(qry, args...)
+	if err != nil {
+		return nil, fmt.Errorf("cistern: search: %w", err)
+	}
+	defer rows.Close()
+
+	var droplets []*Droplet
+	for rows.Next() {
+		var droplet Droplet
+		var assignee, currentCataracta, outcome, assignedAqueduct, lastReviewedCommit sql.NullString
+		if err := rows.Scan(
+			&droplet.ID, &droplet.Repo, &droplet.Title, &droplet.Description,
+			&droplet.Priority, &droplet.Complexity, &droplet.Status, &assignee, &currentCataracta, &outcome, &assignedAqueduct, &lastReviewedCommit,
+			&droplet.CreatedAt, &droplet.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("cistern: scan droplet: %w", err)
+		}
+		droplet.Assignee = assignee.String
+		droplet.CurrentCataracta = currentCataracta.String
+		droplet.Outcome = outcome.String
+		droplet.AssignedAqueduct = assignedAqueduct.String
+		droplet.LastReviewedCommit = lastReviewedCommit.String
+		droplets = append(droplets, &droplet)
+	}
+	return droplets, rows.Err()
+}
+
 // scanDroplet scans a single row into a Droplet. Returns nil, nil for sql.ErrNoRows.
 func scanDroplet(row *sql.Row) (*Droplet, error) {
 	var droplet Droplet
