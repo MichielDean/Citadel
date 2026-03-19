@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,21 +31,19 @@ type tuiDataMsg *DashboardData
 // --- Model ---
 
 type dashboardTUIModel struct {
-	cfgPath   string
-	dbPath    string
-	data      *DashboardData
-	logoLines []string
-	width     int
-	height    int
+	cfgPath string
+	dbPath  string
+	data    *DashboardData
+	width   int
+	height  int
 }
 
 func newDashboardTUIModel(cfgPath, dbPath string) dashboardTUIModel {
 	return dashboardTUIModel{
-		cfgPath:   cfgPath,
-		dbPath:    dbPath,
-		logoLines: loadLogoLines(),
-		width:     100,
-		height:    24,
+		cfgPath: cfgPath,
+		dbPath:  dbPath,
+		width:   100,
+		height:  24,
 	}
 }
 
@@ -133,20 +129,6 @@ func (m dashboardTUIModel) View() string {
 }
 
 func (m dashboardTUIModel) viewLogo() []string {
-	logoHeight := len(m.logoLines)
-	if logoHeight > 0 && m.height >= logoHeight+16 {
-		// Full logo — truncate each line to terminal width.
-		lines := make([]string, 0, logoHeight)
-		for _, line := range m.logoLines {
-			r := []rune(line)
-			if len(r) > m.width {
-				line = string(r[:m.width])
-			}
-			lines = append(lines, line)
-		}
-		return lines
-	}
-	// Condensed 3-line banner.
 	return []string{
 		tuiStyleDim.Render(strings.Repeat("▓", m.width)),
 		tuiStyleHeader.Bold(true).Render(tuiPadCenter("◈  C I S T E R N  ◈", m.width)),
@@ -595,27 +577,6 @@ func tuiPadCenter(s string, width int) string {
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
 }
 
-// loadLogoLines loads the ASCII logo from well-known search paths,
-// using the same search order as displayASCIILogo in root.go.
-func loadLogoLines() []string {
-	var candidates []string
-	if env := os.Getenv("CT_ASCII_LOGO"); env != "" {
-		candidates = append(candidates, env)
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".cistern", "cistern_logo_ascii.txt"))
-	}
-	candidates = append(candidates, "cistern_logo_ascii.txt")
-
-	for _, p := range candidates {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	}
-	return nil
-}
 
 // RunDashboardTUI runs the Bubble Tea TUI dashboard using the alternate screen.
 func RunDashboardTUI(cfgPath, dbPath string) error {
