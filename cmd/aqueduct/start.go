@@ -123,6 +123,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 // cisternAdder adapts *cistern.Client to the delivery.DropletAdder interface.
 type cisternAdder struct{ c *cistern.Client }
 
+// Add adapts the delivery DropletAdder convention (title, repo, ...) to the
+// cistern.Client convention (repo, title, ...). The swap is intentional.
 func (a *cisternAdder) Add(title, repo, description string, priority, complexity int) (string, error) {
 	d, err := a.c.Add(repo, title, description, priority, complexity)
 	if err != nil {

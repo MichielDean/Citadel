@@ -268,6 +268,40 @@ func TestHandler_RealIPFromXForwardedFor(t *testing.T) {
 	}
 }
 
+func TestHandler_UntrustedProxyHeadersIgnored(t *testing.T) {
+	// Verify that X-Real-IP / X-Forwarded-For are ignored when RemoteAddr is not
+	// a trusted proxy. This is the primary defence against per-IP rate-limit
+	// bypass. A regression in isTrustedProxy would let any client spoof its IP.
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 1, 100)
+
+	makeReq := func(remoteAddr, xRealIP string) *http.Request {
+		body := `{"title":"t","repo":"github.com/org/repo"}`
+		req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer tok-a")
+		req.RemoteAddr = remoteAddr
+		req.Header.Set("X-Real-IP", xRealIP)
+		return req
+	}
+
+	// Consume the rate limit for 5.6.7.8 (an untrusted RemoteAddr).
+	h.ServeHTTP(httptest.NewRecorder(), makeReq("5.6.7.8:9999", "1.2.3.4"))
+
+	// A second request from the same RemoteAddr must be blocked.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, makeReq("5.6.7.8:9999", "1.2.3.4"))
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 for exhausted RemoteAddr, got %d", w.Code)
+	}
+
+	// A request from a fresh RemoteAddr sharing the same X-Real-IP must succeed,
+	// proving the header was not used as the rate-limit key.
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, makeReq("9.9.9.9:9999", "1.2.3.4"))
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for fresh RemoteAddr with reused X-Real-IP, got %d", w2.Code)
+	}
+}
+
 func TestHandler_ContentTypeJSON(t *testing.T) {
 	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 
