@@ -25,8 +25,11 @@ var (
 
 // --- Messages ---
 
-type tuiTickMsg time.Time
-type tuiDataMsg *DashboardData
+type tuiTickMsg  time.Time
+type tuiAnimMsg  time.Time
+type tuiDataMsg  *DashboardData
+
+const animInterval = 150 * time.Millisecond // water animation speed
 
 // --- Model ---
 
@@ -34,6 +37,7 @@ type dashboardTUIModel struct {
 	cfgPath string
 	dbPath  string
 	data    *DashboardData
+	frame   int  // animation frame counter — increments every animInterval
 	width   int
 	height  int
 }
@@ -48,12 +52,18 @@ func newDashboardTUIModel(cfgPath, dbPath string) dashboardTUIModel {
 }
 
 func (m dashboardTUIModel) Init() tea.Cmd {
-	return tea.Batch(m.fetchDataCmd(), tuiTick())
+	return tea.Batch(m.fetchDataCmd(), tuiTick(), tuiAnimTick())
 }
 
 func tuiTick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg {
 		return tuiTickMsg(t)
+	})
+}
+
+func tuiAnimTick() tea.Cmd {
+	return tea.Tick(animInterval, func(t time.Time) tea.Msg {
+		return tuiAnimMsg(t)
 	})
 }
 
@@ -73,6 +83,10 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tuiTickMsg:
 		return m, tea.Batch(m.fetchDataCmd(), tuiTick())
+
+	case tuiAnimMsg:
+		m.frame++
+		return m, tuiAnimTick()
 
 	case tuiDataMsg:
 		m.data = (*DashboardData)(msg)
@@ -153,7 +167,7 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 		if i > 0 {
 			lines = append(lines, "") // gap between aqueducts
 		}
-		lines = append(lines, m.tuiAqueductRow(ch)...)
+		lines = append(lines, m.tuiAqueductRow(ch, m.frame)...)
 	}
 	return lines
 }
@@ -189,7 +203,7 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 //	              ▀▀▀▀▀▀▀▀▀             ▀▀▀▀▀▀▀▀▀             ▀▀▀▀▀▀▀▀▀
 //	              █████████             █████████             █████████
 //	           implement        adv-review              qa              delivery
-func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
+func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo, frame int) []string {
 	const (
 		colW      = 20  // wider columns → bigger arch span → more room for the curve
 		archTopW  = 10  // narrower pier top → span = colW-archTopW = 10 chars at keystone
@@ -267,31 +281,36 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 
 	cStyle := dim
 	l1     := prefix + chanPad + cStyle.Render(strings.Repeat("▀", chanW))
-	// waveSegment renders a short flowing-water motif using block chars + ≈.
-	// Looks like: ░▒▓≈▒░  — density fades from core outward.
-	waveSegment := wfDim.Render("░") + wfMid.Render("▒") + wfBright.Render("▓") +
-		wfMid.Render("≈") + wfMid.Render("▒") + wfDim.Render("░")
-	const waveViz = 6 // visual width of one waveSegment (no ANSI codes)
+	// Wave pattern: 6-char repeating unit. Each char has a style.
+	// Animated by offsetting the start position each frame — water flows left→right.
+	type waveCell struct { ch string; sty lipgloss.Style }
+	waveCells := []waveCell{
+		{"░", wfDim}, {"▒", wfMid}, {"▓", wfBright},
+		{"≈", wfMid}, {"▒", wfMid}, {"░", wfDim},
+	}
+	const waveViz = 6
 
-	// buildChanWater centers `infoStr` in the channel with wave motifs on each side.
-	// Waves fill remaining space so the total width is always chanW-2.
+	// renderWave renders `n` chars of the scrolling wave at the current frame offset.
+	// offset>0 = pattern scrolls left (water flows right through the channel).
+	renderWave := func(n int) string {
+		var wb strings.Builder
+		for i := 0; i < n; i++ {
+			cell := waveCells[(i+frame)%waveViz]
+			wb.WriteString(cell.sty.Render(cell.ch))
+		}
+		return wb.String()
+	}
+
+	// buildChanWater centers `infoStr` with animated wave filling each side.
 	buildChanWater := func(infoStr string, infoStyle lipgloss.Style) string {
 		info     := infoStyle.Render(infoStr)
 		infoViz  := len([]rune(infoStr))
-		remaining := chanW - 2 - infoViz
-		if remaining < 0 { remaining = 0 }
-		leftTiles  := remaining / 2 / waveViz
-		rightTiles := remaining / 2 / waveViz
-		leftRem    := remaining/2 - leftTiles*waveViz
-		rightRem   := chanW - 2 - infoViz - leftTiles*waveViz - leftRem - rightTiles*waveViz
-		if rightRem < 0 { rightRem = 0 }
-		var wb strings.Builder
-		for range leftTiles  { wb.WriteString(waveSegment) }
-		wb.WriteString(wfDim.Render(strings.Repeat("░", leftRem)))
-		wb.WriteString(info)
-		for range rightTiles { wb.WriteString(waveSegment) }
-		wb.WriteString(wfDim.Render(strings.Repeat("░", rightRem)))
-		return wb.String()
+		sideW    := (chanW - 2 - infoViz) / 2
+		if sideW < 0 { sideW = 0 }
+		// Right side may be 1 wider to fill odd remainder.
+		rightW := chanW - 2 - infoViz - sideW
+		if rightW < 0 { rightW = 0 }
+		return renderWave(sideW) + info + renderWave(rightW)
 	}
 
 	var water string
@@ -303,32 +322,43 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 		water = buildChanWater("  — idle —  ", wfDim)
 	}
 
-	// Eight pre-built waterfall row strings — one per arch sub-row (0=mort lr=0 … 7=brick lr=3).
-	// Shape: water exits horizontally with momentum, arcs under gravity, thins to a
-	// near-vertical stream, widens again at the base (splash / pool).
-	// Chars: ▓ = dense core  ▒ = mid flow  ≈ = surface turbulence  ░ = spray/mist
+	// Waterfall: parabolic arc, animated by cycling the brightness pattern downward
+	// each frame — creates the illusion of water accelerating as it falls.
+	// There are 3 brightness frames; the ▓ core shifts one position down per cycle.
+	// wfRow(subRow) returns the rendered waterfall string for that sub-row.
 	sp := func(n int) string { return strings.Repeat(" ", n) }
-	wfRows := [8]string{
-		// sub 0 (mort lr=0): exits channel — wide horizontal jet, still at height
-		sp(1) + wfDim.Render("░") + wfMid.Render("≈") + wfBright.Render("▓") + wfMid.Render("≈") + wfDim.Render("░"),
-		// sub 1 (brick lr=0): spreading outward, gravity just starting to pull
-		sp(2) + wfDim.Render("░") + wfMid.Render("≈") + wfBright.Render("▓") + wfMid.Render("≈"),
-		// sub 2 (mort lr=1): arc turning — stream narrows, picks up speed
-		sp(4) + wfMid.Render("≈") + wfBright.Render("▓▓") + wfMid.Render("≈"),
-		// sub 3 (brick lr=1): steep, thin curtain
-		sp(6) + wfMid.Render("≈") + wfBright.Render("▓▓"),
-		// sub 4 (mort lr=2): nearly vertical, tight stream
-		sp(7) + wfBright.Render("▓") + wfMid.Render("▒"),
-		// sub 5 (brick lr=2): vertical fall
-		sp(7) + wfMid.Render("▒") + wfBright.Render("▓"),
-		// sub 6 (mort lr=3): approaching base — starts to widen again
-		sp(6) + wfDim.Render("░") + wfMid.Render("▒") + wfBright.Render("▓") + wfMid.Render("▒"),
-		// sub 7 (brick lr=3): base splash — wide pool, bright core, spray at both sides
-		sp(4) + wfDim.Render("░≈") + wfMid.Render("▒") + wfBright.Render("▓▓") + wfMid.Render("▒") + wfDim.Render("≈░"),
+
+	// Brightness pattern rotates with frame so ▓ appears to fall through the curtain.
+	// f0=bright, f1=mid, f2=dim — a 3-position cycle.
+	wfA := func(sub int) lipgloss.Style {
+		switch (sub + frame) % 3 {
+		case 0: return wfBright
+		case 1: return wfMid
+		default: return wfDim
+		}
 	}
 
-	// Water exits the right channel wall as a wide horizontal jet.
-	wfExit := wfDim.Render("░") + wfMid.Render("≈") + wfBright.Render("▓▓") + wfMid.Render("≈") + wfDim.Render("░")
+	wfRows := [8]string{
+		// sub 0: exits channel — wide horizontal jet
+		sp(1) + wfDim.Render("░") + wfMid.Render("≈") + wfA(0).Render("▓") + wfMid.Render("≈") + wfDim.Render("░"),
+		// sub 1: spreading, gravity starting
+		sp(2) + wfDim.Render("░") + wfMid.Render("≈") + wfA(1).Render("▓") + wfMid.Render("≈"),
+		// sub 2: arc turning, narrows
+		sp(4) + wfMid.Render("≈") + wfA(2).Render("▓") + wfA(0).Render("▓") + wfMid.Render("≈"),
+		// sub 3: steep thin curtain
+		sp(6) + wfMid.Render("≈") + wfA(1).Render("▓") + wfA(2).Render("▓"),
+		// sub 4: nearly vertical
+		sp(7) + wfA(0).Render("▓") + wfMid.Render("▒"),
+		// sub 5: vertical fall
+		sp(7) + wfMid.Render("▒") + wfA(1).Render("▓"),
+		// sub 6: base approaching, widening
+		sp(6) + wfDim.Render("░") + wfMid.Render("▒") + wfA(2).Render("▓") + wfMid.Render("▒"),
+		// sub 7: base splash — wide pool, spray at edges
+		sp(4) + wfDim.Render("░≈") + wfMid.Render("▒") + wfA(0).Render("▓") + wfA(1).Render("▓") + wfMid.Render("▒") + wfDim.Render("≈░"),
+	}
+
+	// Channel exit: water shoots out horizontally — also animated.
+	wfExit := wfDim.Render("░") + wfMid.Render("≈") + wfA(0).Render("▓") + wfA(1).Render("▓") + wfMid.Render("≈") + wfDim.Render("░")
 	l2 := indent + chanPad + cStyle.Render("█") + water + cStyle.Render("█") + wfExit
 
 	// Arch + pier rows: each logical row → 2 rendered sub-rows.
