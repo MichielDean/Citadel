@@ -33,15 +33,16 @@ const (
 
 
 
-// CataractaeInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataracta chain that droplet is.
+// CataractaeInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataractae chain that droplet is.
 type CataractaeInfo struct {
 	Name            string
 	DropletID       string
 	Step            string
 	Steps           []string // workflow step names in order
 	Elapsed         time.Duration
-	CataractaeIndex  int // 1-based index of current cataracta; 0 if unknown
+	CataractaeIndex  int // 1-based index of current cataractae; 0 if unknown
 	TotalCataractae int
+	NoteCount       int // number of reviewer/QA notes; >0 means the droplet has been revised
 }
 
 // DashboardData holds all data required to render the dashboard.
@@ -70,7 +71,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 		return data
 	}
 
-	// Build aqueduct list and load cataracta chain for each repo.
+	// Build aqueduct list and load cataractae chain for each repo.
 	type cataractaeEntry struct {
 		name string
 		repo string
@@ -140,7 +141,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 		}
 	}
 
-	// Build cataracta infos.
+	// Build cataractae infos.
 	cataractae := make([]CataractaeInfo, len(configCataractae))
 	for i, ch := range configCataractae {
 		ci := CataractaeInfo{Name: ch.name}
@@ -154,6 +155,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 			wfCataractae := allSteps[ch.repo]
 			ci.TotalCataractae = len(wfCataractae)
 			ci.CataractaeIndex = cataractaeIndexInWorkflow(item.CurrentCataractae, wfCataractae)
+			ci.NoteCount = c.GetNoteCount(item.ID)
 		}
 		cataractae[i] = ci
 	}
@@ -191,7 +193,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	return data
 }
 
-// cataractaeIndexInWorkflow returns the 1-based index of stepName in the cataracta list, or 0 if not found.
+// cataractaeIndexInWorkflow returns the 1-based index of stepName in the cataractae list, or 0 if not found.
 func cataractaeIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCataractae) int {
 	for i, s := range cataractae {
 		if s.Name == stepName {
@@ -201,7 +203,7 @@ func cataractaeIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCa
 	return 0
 }
 
-// stepNames extracts step names from a workflow cataracta slice.
+// stepNames extracts step names from a workflow cataractae slice.
 func stepNames(wf []aqueduct.WorkflowCataractae) []string {
 	names := make([]string, len(wf))
 	for i, s := range wf {
@@ -247,7 +249,7 @@ func padRight(s string, width int) string {
 }
 
 // renderAqueductRow renders a single aqueduct as a Roman aqueduct arch diagram.
-// Each cataracta is an arch pier. The channel on top carries the flowing droplet.
+// Each cataractae is an arch pier. The channel on top carries the flowing droplet.
 // Returns a multi-line string (7 lines) suitable for the TUI dashboard.
 //
 // Example output (active in green, idle piers dim):
@@ -262,7 +264,7 @@ func padRight(s string, width int) string {
 //	           implement      adv-review            qa          delivery
 func renderAqueductRow(ch CataractaeInfo) string {
 	const (
-		colW    = 15 // visual width per cataracta column (label + spacing)
+		colW    = 15 // visual width per cataractae column (label + spacing)
 		pierInW = 5  // inner width of pier box: "  ●  " or " impl"
 		nameW   = 10 // left label column width
 	)

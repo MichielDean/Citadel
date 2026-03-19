@@ -28,7 +28,7 @@ const filterSystemPrompt = `You are a software project planning assistant in the
 Cistern vocabulary:
   droplet   — a unit of work (like a ticket or story)
   aqueduct  — a workflow pipeline that processes droplets
-  cataracta — a gate/step in an aqueduct (e.g., implement, review, test)
+  cataractae — a gate/step in an aqueduct (e.g., implement, review, test)
 
 Complexity guide:
   trivial  (1) — typo fix, config change, minor doc update

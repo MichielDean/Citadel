@@ -57,17 +57,17 @@ type Config struct {
 // are configured, workers are numbered worker-0, worker-1, etc.
 func New(cfg Config) (*Runner, error) {
 	if cfg.Workflow == nil {
-		return nil, fmt.Errorf("cataracta: workflow is required")
+		return nil, fmt.Errorf("cataractae: workflow is required")
 	}
 	if cfg.CisternClient == nil {
-		return nil, fmt.Errorf("cataracta: queue client is required")
+		return nil, fmt.Errorf("cataractae: queue client is required")
 	}
 
 	sandboxRoot := cfg.SandboxRoot
 	if sandboxRoot == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("cataracta: home dir: %w", err)
+			return nil, fmt.Errorf("cataractae: home dir: %w", err)
 		}
 		sandboxRoot = filepath.Join(home, ".cistern", "sandboxes")
 	}
@@ -89,7 +89,7 @@ func New(cfg Config) (*Runner, error) {
 	if !cfg.SkipInitialClone {
 		for _, w := range workers {
 			if err := EnsureDedicatedClone(w.SandboxDir, cfg.Repo.URL); err != nil {
-				return nil, fmt.Errorf("cataracta: initial clone for %q/%s: %w", cfg.Repo.Name, w.Name, err)
+				return nil, fmt.Errorf("cataractae: initial clone for %q/%s: %w", cfg.Repo.Name, w.Name, err)
 			}
 		}
 	}
@@ -109,7 +109,7 @@ func New(cfg Config) (*Runner, error) {
 func initWorkers(repo aqueduct.RepoConfig, sandboxBase string) ([]*Worker, error) {
 	count := repo.Cataractae
 	if count <= 0 {
-		return nil, fmt.Errorf("cataracta: repo %q has no workers configured", repo.Name)
+		return nil, fmt.Errorf("cataractae: repo %q has no workers configured", repo.Name)
 	}
 
 	workers := make([]*Worker, count)
@@ -184,7 +184,7 @@ func (r *Runner) findWorkerByName(name string) *Worker {
 // `ct droplet pass/recirculate/block <id>`, which the Castellarius observe loop
 // detects on its next tick.
 func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.WorkflowCataractae) error {
-	log.Printf("cataracta: %s/%s: spawning step %q for item %s", r.repo.Name, w.Name, step.Name, item.ID)
+	log.Printf("cataractae: %s/%s: spawning step %q for item %s", r.repo.Name, w.Name, step.Name, item.ID)
 
 		// 1. Position the dedicated clone on the item's feature branch.
 	// PrepareBranch fetches latest origin/main and creates or resumes the branch.
@@ -199,12 +199,12 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 	// 2. Prepare context directory and CONTEXT.md.
 	notes, err := r.queue.GetNotes(item.ID)
 	if err != nil {
-		log.Printf("cataracta: warning: could not fetch notes for %s: %v", item.ID, err)
+		log.Printf("cataractae: warning: could not fetch notes for %s: %v", item.ID, err)
 	}
 
 	openIssues, err := r.queue.ListIssues(item.ID, true)
 	if err != nil {
-		log.Printf("cataracta: warning: could not fetch open issues for %s: %v", item.ID, err)
+		log.Printf("cataractae: warning: could not fetch open issues for %s: %v", item.ID, err)
 	}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
@@ -233,18 +233,18 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 		} else {
 			// External skill: must already be installed locally.
 			if !skills.IsInstalled(skill.Name) {
-				log.Printf("cataracta: warning: skill %q not installed — run `ct skills install %s <url>`", skill.Name, skill.Name)
+				log.Printf("cataractae: warning: skill %q not installed — run `ct skills install %s <url>`", skill.Name, skill.Name)
 				continue
 			}
 			src = skills.LocalPath(skill.Name)
 		}
 		dest := filepath.Join(w.SandboxDir, ".claude", "skills", skill.Name, "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			log.Printf("cataracta: warning: mkdir skills dir for %q: %v", skill.Name, err)
+			log.Printf("cataractae: warning: mkdir skills dir for %q: %v", skill.Name, err)
 			continue
 		}
 		if err := copyFile(src, dest); err != nil {
-			log.Printf("cataracta: warning: copy skill %q: %v", skill.Name, err)
+			log.Printf("cataractae: warning: copy skill %q: %v", skill.Name, err)
 		}
 	}
 

@@ -47,13 +47,14 @@ drought_hooks:
     action: cataractae_generate # Regenerate role files when workflow YAML is newer
 
   - name: prune-worktrees
-    action: worktree_prune # Prune stale aqueduct registrations
+    action: worktree_prune      # Prune stale aqueduct registrations
 
+  - name: vacuum-db
+    action: db_vacuum           # Compact the cistern database (SQLite VACUUM)
 
-  # - name: vacuum-db
-  #   action: db_vacuum     # Compact the cistern database
+  - name: prune-events
+    action: events_prune        # Remove events older than 30 days
+    keep_days: 30
 
-  # - name: custom
-  #   action: shell
-  #   command: "echo idle >> ~/.cistern/drought.log"
-  #   timeout_seconds: 5
+  - name: cleanup-tmp
+    action: tmp_cleanup         # Remove stale ct-diff/ct-review temp dirs (>2h old)

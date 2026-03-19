@@ -20,7 +20,7 @@ Skills are stored locally in ~/.cistern/skills/<name>/SKILL.md — that is the
 only place the runtime reads from. Install skills explicitly before use; the
 Castellarius never fetches skills automatically during agent spawn.
 
-To use a skill in a cataracta, add it to the cataracta's skills: list in your
+To use a skill in a cataractae, add it to the cataractae's skills: list in your
 aqueduct YAML, then run ct cataractae generate to rebuild CLAUDE.md files.
 
 In-repo skills (path: field) are copied directly from the agent's sandbox

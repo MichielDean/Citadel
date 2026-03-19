@@ -174,14 +174,14 @@ var castellariusStatusCmd = &cobra.Command{
 
 var aqueductCmd = &cobra.Command{
 	Use:   "aqueduct",
-	Short: "Inspect and validate aqueducts — cataracta chains, repo bindings, and config",
+	Short: "Inspect and validate aqueducts — cataractae chains, repo bindings, and config",
 }
 
 // ct aqueduct status — aqueduct definition view
 
 var aqueductStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show configured aqueducts — repos and their cataracta chains",
+	Short: "Show configured aqueducts — repos and their cataractae chains",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -280,7 +280,7 @@ var aqueductValidateCmd = &cobra.Command{
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Overall system status — cistern level, aqueduct flow, and cataracta chains",
+	Short: "Overall system status — cistern level, aqueduct flow, and cataractae chains",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)

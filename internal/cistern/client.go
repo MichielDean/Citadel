@@ -1,7 +1,7 @@
 // Package queue provides a SQLite-backed work queue for Cistern.
 //
 // Each droplet flows through an aqueduct. The queue stores droplets,
-// cataracta notes, and events. No external dependencies — just SQLite.
+// cataractae notes, and events. No external dependencies — just SQLite.
 package cistern
 
 import (
@@ -320,10 +320,10 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 	return &droplet, nil
 }
 
-// Assign records the worker and cataracta on a droplet. When worker is non-empty
-// it only updates the assignee and cataracta (status is already in-progress from
+// Assign records the worker and cataractae on a droplet. When worker is non-empty
+// it only updates the assignee and cataractae (status is already in-progress from
 // GetReady). When worker is empty the droplet is set back to "open" (used when
-// advancing to the next cataracta without a specific worker assignment).
+// advancing to the next cataractae without a specific worker assignment).
 func (c *Client) Assign(id, worker, step string) error {
 	now := time.Now().UTC()
 	var res sql.Result
@@ -410,7 +410,7 @@ func (c *Client) UpdateStatus(id, status string) error {
 	return checkRowsAffected(res, id)
 }
 
-// AddNote attaches a cataracta note to a droplet.
+// AddNote attaches a cataractae note to a droplet.
 func (c *Client) AddNote(id, step, content string) error {
 	_, err := c.db.Exec(
 		`INSERT INTO cataractae_notes (droplet_id, cataractae_name, content, created_at) VALUES (?, ?, ?, ?)`,
@@ -422,7 +422,7 @@ func (c *Client) AddNote(id, step, content string) error {
 	return nil
 }
 
-// GetNotes returns all cataracta notes for a droplet, ordered by creation time.
+// GetNotes returns all cataractae notes for a droplet, ordered by creation time.
 func (c *Client) GetNotes(id string) ([]CataractaeNote, error) {
 	rows, err := c.db.Query(
 		`SELECT id, droplet_id, cataractae_name, content, created_at
@@ -445,6 +445,14 @@ func (c *Client) GetNotes(id string) ([]CataractaeNote, error) {
 		notes = append(notes, n)
 	}
 	return notes, rows.Err()
+}
+
+// GetNoteCount returns the number of notes attached to a droplet.
+// Used by the dashboard to indicate revision cycles.
+func (c *Client) GetNoteCount(id string) int {
+	var n int
+	c.db.QueryRow(`SELECT count(*) FROM cataractae_notes WHERE droplet_id = ?`, id).Scan(&n)
+	return n
 }
 
 // Escalate marks a droplet as needing human attention and records the reason.
@@ -505,15 +513,15 @@ func (c *Client) SetOutcome(id, outcome string) error {
 	return checkRowsAffected(res, id)
 }
 
-// SetCataracta updates the current_cataractae field on a droplet without changing
+// SetCataractae updates the current_cataractae field on a droplet without changing
 // any other fields. Used by the scheduler to mark a droplet as awaiting human approval.
-func (c *Client) SetCataractae(id, cataracta string) error {
+func (c *Client) SetCataractae(id, cataractaeName string) error {
 	res, err := c.db.Exec(
 		`UPDATE droplets SET current_cataractae = ?, updated_at = ? WHERE id = ?`,
-		cataracta, time.Now().UTC(), id,
+		cataractaeName, time.Now().UTC(), id,
 	)
 	if err != nil {
-		return fmt.Errorf("cistern: set cataracta %s: %w", id, err)
+		return fmt.Errorf("cistern: set cataractae %s: %w", id, err)
 	}
 	return checkRowsAffected(res, id)
 }

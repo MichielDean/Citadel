@@ -197,7 +197,7 @@ func (m dashboardTUIModel) viewStatusBar() string {
 }
 
 // viewAqueductArches renders each aqueduct as a Roman arch diagram.
-// Each cataracta is a pier supporting the water channel above.
+// Each cataractae is a pier supporting the water channel above.
 func (m dashboardTUIModel) viewAqueductArches() []string {
 	if len(m.data.Cataractae) == 0 {
 		return []string{tuiStyleDim.Render("  No aqueducts configured")}
@@ -355,9 +355,16 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 
 	var water string
 	if ch.DropletID != "" {
-		bar     := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
-		infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-		water    = buildChanWater(infoStr, wfMid)
+		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
+		if ch.NoteCount > 0 {
+			// Droplet has been revised: show ♻ indicator + amber coloring.
+			// The ♻ before the ID signals this is not the first pass.
+			infoStr := fmt.Sprintf("  ♻ %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
+			water    = buildChanWater(infoStr, tuiStyleYellow)
+		} else {
+			infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
+			water    = buildChanWater(infoStr, wfMid)
+		}
 	} else {
 		water = buildChanWater("  — idle —  ", wfDim)
 	}
@@ -607,12 +614,19 @@ func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaeInfo) (graphLine, infoLi
 	graphLine = g.String()
 	if activeVisualCol >= 0 {
 		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
+		revisedMark := ""
+		revisedStyle := tuiStyleGreen
+		if ch.NoteCount > 0 {
+			revisedMark = tuiStyleYellow.Render(" ♻") // visible recirculation indicator
+			revisedStyle = tuiStyleYellow
+		}
 		infoLine = strings.Repeat(" ", activeVisualCol) +
 			tuiStyleDim.Render("↑ ") +
-			tuiStyleGreen.Render(ch.Name) +
+			revisedStyle.Render(ch.Name) +
 			tuiStyleDim.Render(" · "+ch.DropletID) +
+			revisedMark +
 			"  " + formatElapsed(ch.Elapsed) +
-			"  " + tuiStyleGreen.Render(bar)
+			"  " + revisedStyle.Render(bar)
 	}
 	return
 }

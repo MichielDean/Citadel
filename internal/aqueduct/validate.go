@@ -30,10 +30,10 @@ func Validate(w *Workflow) error {
 	cataractaeNames := make(map[string]bool, len(w.Cataractae))
 	for _, s := range w.Cataractae {
 		if s.Name == "" {
-			return fmt.Errorf("workflow %q: cataracta name is required", w.Name)
+			return fmt.Errorf("workflow %q: cataractae name is required", w.Name)
 		}
 		if cataractaeNames[s.Name] {
-			return fmt.Errorf("workflow %q: duplicate cataracta name %q", w.Name, s.Name)
+			return fmt.Errorf("workflow %q: duplicate cataractae name %q", w.Name, s.Name)
 		}
 		cataractaeNames[s.Name] = true
 	}
@@ -58,20 +58,20 @@ func validateCataractae(w *Workflow, s WorkflowCataractae, cataractaeNames map[s
 	}
 
 	if !validCataractaeTypes[s.Type] {
-		return fmt.Errorf("workflow %q cataracta %q: unknown type %q", w.Name, s.Name, s.Type)
+		return fmt.Errorf("workflow %q cataractae %q: unknown type %q", w.Name, s.Name, s.Type)
 	}
 
 	if s.Context != "" && !validContextLevels[s.Context] {
-		return fmt.Errorf("workflow %q cataracta %q: unknown context %q", w.Name, s.Name, s.Context)
+		return fmt.Errorf("workflow %q cataractae %q: unknown context %q", w.Name, s.Name, s.Context)
 	}
 
-	// Validate cataracta references in routing fields.
+	// Validate cataractae references in routing fields.
 	for _, ref := range cataractaeRefs(s) {
 		if ref.target == "" {
 			continue
 		}
 		if !isTerminal(ref.target) && !cataractaeNames[ref.target] {
-			return fmt.Errorf("workflow %q cataracta %q: %s references unknown cataracta %q", w.Name, s.Name, ref.field, ref.target)
+			return fmt.Errorf("workflow %q cataractae %q: %s references unknown cataractae %q", w.Name, s.Name, ref.field, ref.target)
 		}
 	}
 
@@ -130,7 +130,7 @@ func ValidateAqueductConfig(cfg *AqueductConfig) error {
 			prefixes[repo.Prefix] = repo.Name
 		}
 
-		// Determine effective cataracta count.
+		// Determine effective cataractae count.
 		cataractae := repo.Cataractae
 		if len(repo.Names) > 0 {
 			if cataractae > 0 && cataractae != len(repo.Names) {

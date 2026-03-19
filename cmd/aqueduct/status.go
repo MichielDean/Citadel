@@ -12,7 +12,7 @@ import (
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show repos, cataracta operators, and global cataracta count",
+	Short: "Show repos, cataractae operators, and global cataractae count",
 	RunE:  runStatus,
 }
 

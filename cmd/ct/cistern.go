@@ -873,7 +873,7 @@ var passNotes string
 
 var dropletPassCmd = &cobra.Command{
 	Use:   "pass <id>",
-	Short: "Signal pass outcome — work complete, advance to next cataracta",
+	Short: "Signal pass outcome — work complete, advance to next cataractae",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := cistern.New(resolveDBPath(), "")
@@ -992,7 +992,7 @@ var dropletApproveCmd = &cobra.Command{
 			return err
 		}
 		if item.CurrentCataractae != "human" {
-			return fmt.Errorf("%s is not awaiting human approval (cataracta: %s)", id, item.CurrentCataractae)
+			return fmt.Errorf("%s is not awaiting human approval (cataractae: %s)", id, item.CurrentCataractae)
 		}
 		if err := c.Assign(id, "", "delivery"); err != nil {
 			return err
@@ -1136,7 +1136,7 @@ func init() {
 	dropletPurgeCmd.Flags().BoolVar(&purgeDryRun, "dry-run", false, "show what would be deleted without deleting")
 
 	dropletPassCmd.Flags().StringVar(&passNotes, "notes", "", "add a note before signaling pass")
-	dropletRecirculateCmd.Flags().StringVar(&recirculateTo, "to", "", "named cataracta to recirculate to (e.g. --to implement)")
+	dropletRecirculateCmd.Flags().StringVar(&recirculateTo, "to", "", "named cataractae to recirculate to (e.g. --to implement)")
 	dropletRecirculateCmd.Flags().StringVar(&recirculateNotes, "notes", "", "add a note before signaling recirculate")
 	dropletBlockCmd.Flags().StringVar(&blockNotes, "notes", "", "add a note before signaling block")
 
