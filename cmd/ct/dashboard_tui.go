@@ -251,23 +251,25 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 		return lf, og, rf
 	}
 
-	// Channel rows — brick masonry style matching the pier aesthetic.
-	// Top cap: full-width ▀ mortar (chanW + 2 to cover the wall thickness).
-	// Middle: solid █ walls with water/idle content.
-	// Bottom cap: same mortar line; merges visually with arch crown mortar at row 0.
-	wallW   := chanW + 2
-	cStyle  := dim // channel uses same dim stone when idle
-	l1      := prefix + chanPad + cStyle.Render(strings.Repeat("▀", wallW))
+	// Channel rows — brick masonry style.
+	// l1: ▀ mortar cap, exactly chanW wide — matches arch mortar row 0 perfectly.
+	// l2: solid █ walls + water content (chanW-2 body = chanW total incl. walls).
+	// No l3: arch mortar row 0 is the channel floor — seamless connection.
+	//
+	// Waterfall: water overflows the right wall (l2) and falls diagonally after delivery.
+	// Each arch sub-row gets (lr spaces + ▀/█ + ≈) appended — 1 char rightward per row.
+	cStyle := dim
+	l1     := prefix + chanPad + cStyle.Render(strings.Repeat("▀", chanW))
 	var water string
 	if ch.DropletID != "" {
 		bar     := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
 		content := fmt.Sprintf(" ≈ ≈  %s  %s  %s  ≈ ≈ ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-		water    = g.Render(padOrTruncCenter(content, chanW))
+		water    = g.Render(padOrTruncCenter(content, chanW-2))
 	} else {
-		water = dim.Render(padOrTruncCenter(" — idle — ", chanW))
+		water = dim.Render(padOrTruncCenter(" — idle — ", chanW-2))
 	}
-	l2 := indent + chanPad + cStyle.Render("█") + water + cStyle.Render("█")
-	l3 := indent + chanPad + cStyle.Render(strings.Repeat("▀", wallW))
+	// Water overflows the right wall — start of the waterfall cascade.
+	l2 := indent + chanPad + cStyle.Render("█") + water + cStyle.Render("█") + g.Render("≈≈")
 
 	// Arch + pier rows: each logical row → 2 rendered sub-rows.
 	// Piers are brick-textured (tapered). Arch-crown material fills the inter-pier
@@ -368,6 +370,13 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 				}
 			}
 		}
+		// Waterfall: diagonal cascade falling to the right of the last pier.
+		// Each logical row shifts 1 char rightward, matching the taper geometry.
+		// Mortar sub-rows get ▀ (mortar cap), brick sub-rows get █ (wall body).
+		wfPad := strings.Repeat(" ", lr)
+		mortSB.WriteString(wfPad + dim.Render("▀") + g.Render("≈"))
+		brickSB.WriteString(wfPad + dim.Render("█") + g.Render("≈"))
+
 		archLines = append(archLines, mortSB.String(), brickSB.String())
 	}
 
@@ -387,7 +396,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaInfo) []string {
 		}
 	}
 
-	result := []string{l1, l2, l3}
+	result := []string{l1, l2}
 	result  = append(result, archLines...)
 	result  = append(result, lblLine.String())
 	return result
