@@ -657,3 +657,97 @@ func TestStats_WithData(t *testing.T) {
 		t.Errorf("Stagnant = %d, want 1", s.Stagnant)
 	}
 }
+
+func TestSearch(t *testing.T) {
+	c := testClient(t)
+	c.Add("repo", "Fix login bug", "", 1, 3)
+	c.Add("repo", "Add dashboard feature", "", 2, 3)
+	c.Add("repo", "Fix signup flow", "", 1, 2)
+	ip, _ := c.Add("repo", "Refactor auth module", "", 3, 3)
+	c.UpdateStatus(ip.ID, "in_progress")
+
+	t.Run("empty query returns all", func(t *testing.T) {
+		results, err := c.Search("", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 4 {
+			t.Fatalf("expected 4 results, got %d", len(results))
+		}
+	})
+
+	t.Run("query matches title substring case-insensitive", func(t *testing.T) {
+		results, err := c.Search("fix", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
+		titles := map[string]bool{}
+		for _, r := range results {
+			titles[r.Title] = true
+		}
+		if !titles["Fix login bug"] {
+			t.Error("expected 'Fix login bug' in results")
+		}
+		if !titles["Fix signup flow"] {
+			t.Error("expected 'Fix signup flow' in results")
+		}
+	})
+
+	t.Run("status filter", func(t *testing.T) {
+		results, err := c.Search("", "in_progress", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Title != "Refactor auth module" {
+			t.Errorf("expected 'Refactor auth module', got %q", results[0].Title)
+		}
+	})
+
+	t.Run("priority filter", func(t *testing.T) {
+		results, err := c.Search("", "", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
+	})
+
+	t.Run("combined query and status", func(t *testing.T) {
+		results, err := c.Search("fix", "open", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
+	})
+
+	t.Run("no matches returns empty slice", func(t *testing.T) {
+		results, err := c.Search("xyz-no-match", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 0 {
+			t.Fatalf("expected 0 results, got %d", len(results))
+		}
+	})
+
+	t.Run("results ordered by priority then created_at", func(t *testing.T) {
+		results, err := c.Search("", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Priority 1 items should come before priority 2 and 3.
+		if results[0].Priority > results[len(results)-1].Priority {
+			t.Errorf("results not ordered by priority: first=%d last=%d",
+				results[0].Priority, results[len(results)-1].Priority)
+		}
+	})
+}

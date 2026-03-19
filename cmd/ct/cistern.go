@@ -259,6 +259,92 @@ func displayStatusForDroplet(item *cistern.Droplet) string {
 	return displayStatus(item.Status)
 }
 
+// --- cistern search ---
+
+var (
+	searchQuery    string
+	searchStatus   string
+	searchPriority int
+	searchOutput   string
+)
+
+var dropletSearchCmd = &cobra.Command{
+	Use:   "search",
+	Short: "Search droplets by title, status, and priority",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if searchOutput != "table" && searchOutput != "json" {
+			return fmt.Errorf("--output must be table or json")
+		}
+		c, err := cistern.New(resolveDBPath(), "")
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		items, err := c.Search(searchQuery, searchStatus, searchPriority)
+		if err != nil {
+			return err
+		}
+
+		if searchOutput == "json" {
+			if items == nil {
+				items = []*cistern.Droplet{}
+			}
+			out, err := json.MarshalIndent(items, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(out))
+			return nil
+		}
+
+		if len(items) == 0 {
+			fmt.Println("Cistern dry.")
+			return nil
+		}
+
+		titleMax := 40
+		if isTerminal() {
+			if w := termWidth(); w-55 > 15 {
+				titleMax = w - 55
+			}
+		}
+
+		if isTerminal() {
+			printDropletListTerminal(items, nil, false, titleMax)
+			return nil
+		}
+
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tCOMPLEXITY\tTITLE\tSTATUS\tELAPSED\tCATARACTA")
+		for _, item := range items {
+			ds := displayStatusForDroplet(item)
+			cataracta := item.CurrentCataracta
+			if cataracta == "" {
+				cataracta = "\u2014"
+			}
+			if item.Status == "open" {
+				blockedBy, _ := c.GetBlockedBy(item.ID)
+				if len(blockedBy) > 0 {
+					ds = "\u2298 blocked"
+					cataracta = "waiting: " + blockedBy[0]
+				}
+			}
+			if ds == "awaiting" {
+				ds = "\u23f8 awaiting approval"
+			}
+			elapsed := "\u2014"
+			if item.Status == "in_progress" {
+				elapsed = formatElapsed(time.Since(item.UpdatedAt))
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				item.ID, complexityName(item.Complexity), truncate(item.Title, titleMax),
+				ds, elapsed, cataracta)
+		}
+		return tw.Flush()
+	},
+}
+
 // --- cistern show ---
 
 var dropletShowCmd = &cobra.Command{
@@ -905,6 +991,11 @@ func init() {
 	dropletListCmd.Flags().StringVar(&listOutput, "output", "table", "output format: table or json")
 	dropletListCmd.Flags().BoolVar(&listAll, "all", false, "include delivered droplets in a dimmed section below active ones")
 
+	dropletSearchCmd.Flags().StringVar(&searchQuery, "query", "", "filter by title substring (case-insensitive)")
+	dropletSearchCmd.Flags().StringVar(&searchStatus, "status", "", "filter by status (open|in_progress|delivered|stagnant)")
+	dropletSearchCmd.Flags().IntVar(&searchPriority, "priority", 0, "filter by priority (0 means no filter)")
+	dropletSearchCmd.Flags().StringVar(&searchOutput, "output", "table", "output format: table or json")
+
 	dropletEscalateCmd.Flags().StringVar(&escalateReason, "reason", "", "escalation reason (required)")
 
 	dropletPurgeCmd.Flags().StringVar(&purgeOlderThan, "older-than", "", "delete droplets older than this duration (e.g. 30d, 24h) (required)")
@@ -930,7 +1021,7 @@ func init() {
 	dropletCmd.AddCommand(dropletAddCmd, dropletListCmd, dropletShowCmd, dropletNoteCmd,
 		dropletCloseCmd, dropletReopenCmd, dropletEscalateCmd, dropletPurgeCmd,
 		dropletPassCmd, dropletRecirculateCmd, dropletBlockCmd, dropletApproveCmd,
-		dropletStatsCmd, dropletDepsCmd, dropletPeekCmd, dropletIssueCmd)
+		dropletStatsCmd, dropletDepsCmd, dropletPeekCmd, dropletIssueCmd, dropletSearchCmd)
 	rootCmd.AddCommand(dropletCmd)
 }
 
