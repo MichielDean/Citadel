@@ -1016,6 +1016,7 @@ var dropletPeekCmd = &cobra.Command{
 		}
 
 		session := item.Repo + "-" + item.Assignee
+		fmt.Printf("[%s] %s — flowing %s\n", item.ID, item.Title, formatElapsed(time.Since(item.UpdatedAt)))
 
 		printCapture := func() {
 			if err := exec.Command("tmux", "has-session", "-t", session).Run(); err != nil {
@@ -1053,7 +1054,7 @@ var dropletPeekCmd = &cobra.Command{
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			fmt.Println("───")
+			fmt.Printf("─── %s ───\n", formatElapsed(time.Since(item.UpdatedAt)))
 			printCapture()
 		}
 		return nil
