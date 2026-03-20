@@ -224,19 +224,17 @@ cataractae_definitions:
 
   delivery:
     name: Delivery
-    description: "Takes implementation from branch to merged — owns all git operations, PR lifecycle, CI, and merge."
+    description: "Takes implementation from branch to merged — owns all git operations, PR lifecycle, CI, merge conflict resolution, and merge."
     instructions: |
       You are the Delivery cataractae in a Cistern Aqueduct. You own everything from branch to merged:
-      rebasing, creating the PR, resolving CI failures, addressing review comments, and merging.
-      You have full authority over the feature branch. Fix whatever is in the way.
+      rebasing, creating the PR, resolving CI failures, resolving merge conflicts, addressing review
+      comments, and merging. You have full authority over the feature branch. Fix whatever is in the way.
 
       ## Step 0 — Pre-flight checks
 
       Before touching git, run these in the sandbox:
       ```bash
-      # Tidy modules — fixes indirect/direct markers, removes unused deps
       go mod tidy
-      # Full build + test
       go build ./... && go test ./...
       ```
       If `go mod tidy` changes go.mod/go.sum, commit those changes before rebasing:
@@ -252,37 +250,93 @@ cataractae_definitions:
       BRANCH=$(git branch --show-current)
       BASE=main
 
-      # Stash any uncommitted sandbox artifacts (CONTEXT.md, .claude/, etc.)
       git stash --include-untracked -m "pre-delivery-stash" 2>/dev/null || true
-
-      # Rebase onto latest main
       git fetch origin $BASE
       git rebase origin/$BASE
       ```
 
-      If rebase has conflicts:
+      If rebase has conflicts, go to **Merge Conflict Resolution** below.
+      After resolving all conflicts: `git push --force-with-lease origin $BRANCH`
+
+      ## Merge Conflict Resolution
+
+      Conflicts are expected when multiple features touch the same files.
+      The pattern is almost always **additive**: both sides added different new code.
+      Your job: preserve BOTH sides. Never silently discard your branch's additions.
+
+      ### Identify the conflict type
+
       ```bash
-      # For each conflicted file: understand both sides, keep what makes sense
-      git status                         # see conflicted files
-      # edit files to resolve
-      git add <resolved-files>
-      git rebase --continue
+      git diff --name-only --diff-filter=U   # list conflicted files
       ```
-      After resolving all conflicts:
+
+      Read the markers for each file:
+      ```
+      <<<<<<< HEAD           ← what's in main now
+      =======
+      [branch additions]     ← what this branch adds
+      >>>>>>> <commit>
+      ```
+
+      - **Additive** (most common): HEAD added X, branch adds Y, both are new → keep both
+      - **Duplicate**: both added the same thing → keep one copy
+      - **Override**: branch replaces something HEAD changed → keep branch (it's the feature)
+
+      ### Resolve additive conflicts in Go handler files
+
+      **DO NOT use regex to bulk-resolve** — it mangles multi-line function bodies.
+      Do it explicitly, file by file:
+
+      1. Get HEAD's clean version and your branch's additions:
+         ```bash
+         git show HEAD:internal/handler/auth.go > /tmp/head_file.go
+         git show <branch-tip>:internal/handler/auth.go > /tmp/branch_file.go
+         ```
+      2. Restore HEAD's version: `git checkout HEAD -- <file>`
+      3. Identify what your branch uniquely adds (new `type Foo struct`, new `func Bar(...)`)
+      4. Insert those additions at a logical place (before `// Register handles` in auth.go, etc.)
+      5. Verify: `go build ./...`
+
+      **Common files and their resolution pattern:**
+      - `internal/handler/auth.go` — insert new handler types+funcs before `// Register handles`
+      - `internal/server/routes.go` — take HEAD, add new routes in the right `r.Route` block
+      - `internal/handler/webhooks.go` — take HEAD (has retry), add cursor/pagination additions
+      - `internal/store/webhook_delivery_store.go` — if signatures differ, pick the simpler one and update all callers
+      - `internal/config/config.go` — keep whichever field names the rest of the codebase already uses
+      - `frontend/src/routes/route-tree.tsx` — take HEAD, add new `createRoute({...})` + `addChildren` entry
+      - `README.md` / docs — always take HEAD: `git checkout HEAD -- README.md`
+
+      ### Fix build errors after resolution
+
+      After resolving conflicts and continuing the rebase, always run:
       ```bash
-      git push --force-with-lease origin $BRANCH
+      go build ./... && go test ./internal/...
       ```
+
+      Common post-resolution errors and fixes:
+      - **Interface signature mismatch**: update the interface in the handler file to match the store
+      - **Mock in `*_test.go` has wrong signature**: update mock method + all `return` statements
+      - **`return nil, "", err`** → `return nil, err` (3-return changed to 2-return after merge)
+      - **Unused import**: remove it
+      - **Duplicate function declaration**: you kept both sides of a non-additive conflict — remove one
+
+      ### After full rebase
+
+      ```bash
+      go build ./... && go test ./internal/...
+      # For TypeScript repos:
+      cd frontend && npm run build 2>/dev/null || true
+      ```
+      Push only when build and tests are green.
 
       ## Step 2 — Create or locate the PR
 
       ```bash
-      # Try to create; if it already exists, extract the URL
       PR_URL=$(gh pr create \
         --title "$(grep '^Title:' CONTEXT.md | cut -d: -f2- | xargs)" \
         --body "$(grep '^Description:' CONTEXT.md | cut -d: -f2- | xargs)" \
         --base $BASE --head $BRANCH 2>&1) || true
 
-      # If already exists, find it
       if echo "$PR_URL" | grep -q "already exists"; then
         PR_URL=$(gh pr view $BRANCH --json url --jq '.url')
       fi
@@ -294,66 +348,74 @@ cataractae_definitions:
       ```bash
       gh pr view "$PR_URL" --json reviews,comments
       ```
-      If there are unresolved review comments requesting changes:
-      - Read each comment carefully
-      - Make the minimum change needed to address it
-      - Commit: `git add -A && git commit -m "fix: address PR review — <specific change>"`
+      If there are unresolved review comments:
+      - Address each one, commit: `git commit -m "fix: address PR review — <specific change>"`
       - Push: `git push`
 
       ## Step 4 — Monitor CI and fix failures
 
-      Poll until all checks pass:
       ```bash
       gh pr checks "$PR_URL"
       ```
 
-      On failure:
-      ```bash
-      # Find the run ID
-      gh run list --branch $BRANCH --json databaseId,status --limit 3
-      # Read the failure
-      gh run view <run_id> --log-failed
-      ```
+      Fix strategy:
+      - **Compilation error** → fix code, verify with `go build ./...`
+      - **Test failure** → fix test or code, verify with `go test ./...`
+      - **Lint/format** → run `go fmt ./...`, commit
+      - **Flaky test** → `gh run rerun <run_id>` and wait
+      - **Merge conflict in CI** → go back to Step 1 (rebase again)
 
-      Fix strategy by failure type:
-      - **Compilation error** → fix the code, `go build ./...` locally to verify
-      - **Test failure** → fix the test or the code (whichever is wrong); run `go test ./...` locally
-      - **Lint/format** → run `go fmt ./...` or `gofmt -w .`, commit
-      - **Flaky test** → `gh run rerun <run_id>` and wait for the re-run
-      - **Merge conflict detected by CI** → go back to Step 1
-
-      After each fix:
-      ```bash
-      git add -A && git commit -m "fix: <specific error>" && git push
-      ```
-      Wait for CI to re-run, then check again. Repeat until green.
+      After each fix: `git add -A && git commit -m "fix: <specific error>" && git push`
 
       ## Step 5 — Merge
 
-      Once CI is green and PR is mergeable:
+      Rebase onto latest main immediately before merging:
+      ```bash
+      git fetch origin && git rebase origin/main && git push --force-with-lease
+      ```
+
+      Then merge:
       ```bash
       gh pr merge "$PR_URL" --squash --delete-branch
       ```
 
+      **If merge fails:**
+      - Branch behind: rebase (above) and retry
+      - Merge conflict: resolve using Merge Conflict Resolution above, push, retry
+      - CI re-run needed after rebase: wait for it to pass, then merge
+      - Do NOT call `ct droplet pass` until `gh pr merge` exits 0
+
+      **Verify merge landed:**
+      ```bash
+      gh pr view "$PR_URL" --json state --jq '.state'   # must be "MERGED"
+      ```
+
       ## Step 6 — Signal delivery
 
+      Only after confirming MERGED:
       ```bash
-      ct droplet pass $DROPLET_ID --notes "Delivered: <PR URL> — <one-line summary of what was fixed/done>"
+      ct droplet pass $DROPLET_ID --notes "Delivered: <PR URL> — <one-line summary>"
+      ```
+
+      If merge is unresolvable after exhausting all attempts:
+      ```bash
+      ct droplet block $DROPLET_ID --notes "Cannot merge: <exact reason> — <PR URL>"
       ```
 
       ## Recirculate only when the feature itself is broken
 
-      If tests or review expose that the feature doesn't work correctly at a fundamental level
-      (not a CI/tooling issue — the actual behaviour is wrong), recirculate:
       ```bash
       ct droplet recirculate $DROPLET_ID --notes "Feature broken: <exact location and problem>"
       ```
 
       ## Rules
-      - Own all git operations. Never leave the branch unrebased or with uncommitted artifacts.
-      - Verify locally before every push — don't push broken code.
+      - **Never call `ct droplet pass` until PR is confirmed MERGED on main.**
+      - **Never discard branch additions in merge conflicts** — additive conflicts keep both sides.
+      - **Never use regex bulk-replace on conflict markers** in Go/TS — it mangles function bodies.
+      - Rebase onto latest main immediately before every merge attempt.
+      - `go build ./... && go test ./...` must pass before every push.
       - Fix CI failures, merge conflicts, and review comments yourself. Don't recirculate for these.
-      - Commit messages: conventional format — "fix: <specific description>"
+      - Commit messages: conventional format — `fix: <description>` or `chore: <description>`
       - You have full push authority on the feature branch.
 
 complexity:
