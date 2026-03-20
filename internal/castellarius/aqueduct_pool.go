@@ -54,17 +54,18 @@ func (p *AqueductPool) AvailableAqueduct() *Aqueduct {
 	return nil
 }
 
-// IdleCount returns the number of aqueducts currently idle (no droplet assigned).
-func (p *AqueductPool) IdleCount() int {
+// AvailableAqueductExcluding returns the first idle aqueduct whose name is not
+// in the exclude set. Used by dispatchRepo to skip workers already tried this
+// round without disturbing the pool's flowing/idle state.
+func (p *AqueductPool) AvailableAqueductExcluding(exclude map[string]bool) *Aqueduct {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	n := 0
 	for _, a := range p.aqueducts {
-		if a.Status == AqueductIdle {
-			n++
+		if a.Status == AqueductIdle && !exclude[a.Name] {
+			return a
 		}
 	}
-	return n
+	return nil
 }
 
 // FlowingCount returns the number of aqueducts currently carrying a droplet.

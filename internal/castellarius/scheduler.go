@@ -563,30 +563,22 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 	client := s.clients[repo.Name]
 	wf := s.workflows[repo.Name]
 
-	// emptyRounds tracks consecutive workers that found no ready droplet.
-	// When emptyRounds reaches the idle count, every idle worker has been tried
-	// without finding work — safe to stop dispatching for this tick.
-	// This is essential for sticky dispatch: a droplet pinned to aqueduct B must
-	// not be missed just because aqueduct A (tried first) has no work.
-	emptyRounds := 0
+	// tried tracks which workers have been polled and found no work this round.
+	// AvailableAqueductExcluding skips already-tried workers so every idle
+	// aqueduct gets a chance each tick — critical for sticky dispatch where a
+	// droplet is pinned to a specific aqueduct (e.g. sc-uvfhw → appia) and
+	// AvailableAqueduct would otherwise always return the same worker first.
+	tried := map[string]bool{}
 
 	for {
-		idleCount := pool.IdleCount()
-		if idleCount == 0 {
-			return
-		}
-		if emptyRounds >= idleCount {
-			// Every idle worker was tried; none had a ready droplet.
-			return
-		}
-
-		worker := pool.AvailableAqueduct()
-		if worker == nil {
-			return
-		}
-
 		if s.totalBusy() >= s.config.MaxCataractae {
-			pool.Release(worker)
+			return
+		}
+
+		// Skip workers already tried (and found empty) this round.
+		worker := pool.AvailableAqueductExcluding(tried)
+		if worker == nil {
+			// All idle workers tried with no work found, or no idle workers.
 			return
 		}
 
@@ -596,15 +588,13 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 		item, err := client.GetReadyForAqueduct(repo.Name, worker.Name)
 		if err != nil {
 			s.logger.Error("poll failed", "repo", repo.Name, "error", err)
-			pool.Release(worker)
 			return
 		}
 		if item == nil {
-			pool.Release(worker)
-			emptyRounds++
+			tried[worker.Name] = true // don't try this worker again this round
 			continue
 		}
-		emptyRounds = 0 // found work — reset the lap counter
+		tried = map[string]bool{} // found work — reset for next round
 
 		// Pin the aqueduct on first dispatch (no-op if already set).
 		if err := client.SetAssignedAqueduct(item.ID, worker.Name); err != nil {
