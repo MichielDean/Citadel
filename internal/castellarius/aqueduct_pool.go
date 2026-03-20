@@ -54,6 +54,19 @@ func (p *AqueductPool) AvailableAqueduct() *Aqueduct {
 	return nil
 }
 
+// IdleCount returns the number of aqueducts currently idle (no droplet assigned).
+func (p *AqueductPool) IdleCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := 0
+	for _, a := range p.aqueducts {
+		if a.Status == AqueductIdle {
+			n++
+		}
+	}
+	return n
+}
+
 // FlowingCount returns the number of aqueducts currently carrying a droplet.
 func (p *AqueductPool) FlowingCount() int {
 	p.mu.Lock()
