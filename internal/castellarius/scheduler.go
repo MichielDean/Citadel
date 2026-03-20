@@ -563,13 +563,30 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 	client := s.clients[repo.Name]
 	wf := s.workflows[repo.Name]
 
+	// emptyRounds tracks consecutive workers that found no ready droplet.
+	// When emptyRounds reaches the idle count, every idle worker has been tried
+	// without finding work — safe to stop dispatching for this tick.
+	// This is essential for sticky dispatch: a droplet pinned to aqueduct B must
+	// not be missed just because aqueduct A (tried first) has no work.
+	emptyRounds := 0
+
 	for {
+		idleCount := pool.IdleCount()
+		if idleCount == 0 {
+			return
+		}
+		if emptyRounds >= idleCount {
+			// Every idle worker was tried; none had a ready droplet.
+			return
+		}
+
 		worker := pool.AvailableAqueduct()
 		if worker == nil {
 			return
 		}
 
 		if s.totalBusy() >= s.config.MaxCataractae {
+			pool.Release(worker)
 			return
 		}
 
@@ -584,8 +601,10 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 		}
 		if item == nil {
 			pool.Release(worker)
-			return
+			emptyRounds++
+			continue
 		}
+		emptyRounds = 0 // found work — reset the lap counter
 
 		// Pin the aqueduct on first dispatch (no-op if already set).
 		if err := client.SetAssignedAqueduct(item.ID, worker.Name); err != nil {

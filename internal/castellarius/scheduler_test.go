@@ -748,7 +748,9 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 	}
 	sched := multiRepoScheduler(clients, runner)
 
-	// Tick with no work — both repos should be polled.
+	// Tick with no work — each idle worker is polled once per tick.
+	// ScaledTest has 2 workers (cascade, tributary) → 2 polls.
+	// cistern has 1 worker (confluence) → 1 poll.
 	sched.Tick(context.Background())
 
 	stClient.mu.Lock()
@@ -759,11 +761,11 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 	bfCalls := bfClient.readyCalls
 	bfClient.mu.Unlock()
 
-	if stCalls != 1 {
-		t.Errorf("expected ScaledTest polled once, got %d", stCalls)
+	if stCalls != 2 {
+		t.Errorf("expected ScaledTest polled twice (2 idle workers), got %d", stCalls)
 	}
 	if bfCalls != 1 {
-		t.Errorf("expected cistern polled once, got %d", bfCalls)
+		t.Errorf("expected cistern polled once (1 idle worker), got %d", bfCalls)
 	}
 }
 
