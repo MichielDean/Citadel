@@ -5,10 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MichielDean/cistern/internal/cistern"
 )
@@ -465,4 +469,122 @@ func TestWsPeek_MissingKeyRejected(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
 	}
+}
+
+// TestWsPeek_SuccessfulStreamIdle connects a real WebSocket to the WS peek
+// endpoint for an idle aqueduct and verifies "session not active" is streamed.
+func TestWsPeek_SuccessfulStreamIdle(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	key := "dGhlIHNhbXBsZSBub25jZQ=="
+	fmt.Fprintf(conn, "GET /ws/aqueducts/virgo/peek HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", key)
+
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read handshake response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	payload, err := readWSTextFrame(br)
+	if err != nil {
+		t.Fatalf("read WS frame: %v", err)
+	}
+	if payload != "session not active" {
+		t.Errorf("payload = %q, want %q", payload, "session not active")
+	}
+}
+
+// TestWsPeek_SuccessfulStreamActive seeds an in_progress droplet with a mock
+// capturer and verifies the pane content is streamed over WebSocket.
+func TestWsPeek_SuccessfulStreamActive(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := c.Add("myrepo", "Peek work", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(item.ID, "virgo", "implement")
+	c.Close()
+
+	orig := defaultCapturer
+	t.Cleanup(func() { defaultCapturer = orig })
+	defaultCapturer = mockCapturer{hasSession: true, content: "live pane output"}
+
+	mux := newDashboardMux(tempCfg(t), db)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	key := "dGhlIHNhbXBsZSBub25jZQ=="
+	fmt.Fprintf(conn, "GET /ws/aqueducts/virgo/peek HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", key)
+
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read handshake response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	payload, err := readWSTextFrame(br)
+	if err != nil {
+		t.Fatalf("read WS frame: %v", err)
+	}
+	if !strings.Contains(payload, "live pane output") {
+		t.Errorf("payload = %q, want it to contain %q", payload, "live pane output")
+	}
+}
+
+// readWSTextFrame reads one unmasked WebSocket text frame from br and returns the payload.
+func readWSTextFrame(br *bufio.Reader) (string, error) {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(br, header); err != nil {
+		return "", err
+	}
+	if header[0] != 0x81 {
+		return "", fmt.Errorf("unexpected frame byte[0]: 0x%02x, want 0x81", header[0])
+	}
+	rawLen := int(header[1] & 0x7F)
+	var length int
+	switch rawLen {
+	case 126:
+		ext := make([]byte, 2)
+		if _, err := io.ReadFull(br, ext); err != nil {
+			return "", err
+		}
+		length = int(ext[0])<<8 | int(ext[1])
+	case 127:
+		ext := make([]byte, 8)
+		if _, err := io.ReadFull(br, ext); err != nil {
+			return "", err
+		}
+		length = int(ext[4])<<24 | int(ext[5])<<16 | int(ext[6])<<8 | int(ext[7])
+	default:
+		length = rawLen
+	}
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(br, payload); err != nil {
+		return "", err
+	}
+	return string(payload), nil
 }

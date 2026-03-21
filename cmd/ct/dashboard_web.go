@@ -439,7 +439,7 @@ function render(d){
       h+='<div class="aqueduct">';
       h+='<div class="aq-name">'+esc(ch.name)+'</div>';
       if(ch.droplet_id){
-        h+='<div class="aq-channel active" onclick="peekOpen(\''+esc(ch.name)+'\')" title="Click to observe live session">\u2248\u2248  '+esc(ch.droplet_id)+'  '+bar(ch.cataractae_index,ch.total_cataractae,8)+'  '+fmtNs(ch.elapsed)+'  \u2248\u2248</div>';
+        h+='<div class="aq-channel active" data-aqname="'+esc(ch.name)+'" title="Click to observe live session">\u2248\u2248  '+esc(ch.droplet_id)+'  '+bar(ch.cataractae_index,ch.total_cataractae,8)+'  '+fmtNs(ch.elapsed)+'  \u2248\u2248</div>';
       } else {
         h+='<div class="aq-channel idle">\u2014 idle \u2014</div>';
       }
@@ -609,6 +609,11 @@ function peekConnect(name){
 // Close peek when clicking the backdrop.
 document.getElementById('peek-overlay').addEventListener('click',function(e){
   if(e.target===this)peekClose();
+});
+// Open peek when clicking an active aqueduct channel.
+app.addEventListener('click',function(e){
+  var el=e.target.closest&&e.target.closest('[data-aqname]');
+  if(el)peekOpen(el.dataset.aqname);
 });
 </script>
 </body>
