@@ -4,7 +4,6 @@ package cataractae
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -220,31 +219,12 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 		return fmt.Errorf("context: %w", err)
 	}
 
-	// 3. Copy skills into sandbox/.claude/skills/<name>/SKILL.md.
-	// The runtime never fetches skills automatically — they must be installed
-	// ahead of time via `ct skills install`. In-repo skills (path: set) are
-	// copied from the sandbox worktree; external skills are read from the
-	// local store at ~/.cistern/skills/<name>/SKILL.md.
+	// 3. Verify skills are installed in ~/.cistern/skills/. Claude reads them
+	// directly via --add-dir ~/.cistern/skills (injected in session.go) using
+	// the absolute paths written into CONTEXT.md by context.go. No file copying.
 	for _, skill := range step.Skills {
-		var src string
-		if skill.Path != "" {
-			// In-repo skill: resolve relative to the sandbox worktree.
-			src = filepath.Join(w.SandboxDir, skill.Path)
-		} else {
-			// External skill: must already be installed locally.
-			if !skills.IsInstalled(skill.Name) {
-				log.Printf("cataractae: warning: skill %q not installed — run `ct skills install %s <url>`", skill.Name, skill.Name)
-				continue
-			}
-			src = skills.LocalPath(skill.Name)
-		}
-		dest := filepath.Join(w.SandboxDir, ".claude", "skills", skill.Name, "SKILL.md")
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			log.Printf("cataractae: warning: mkdir skills dir for %q: %v", skill.Name, err)
-			continue
-		}
-		if err := copyFile(src, dest); err != nil {
-			log.Printf("cataractae: warning: copy skill %q: %v", skill.Name, err)
+		if !skills.IsInstalled(skill.Name) {
+			log.Printf("cataractae: warning: skill %q not installed — run `ct skills install %s <url>`", skill.Name, skill.Name)
 		}
 	}
 
@@ -291,29 +271,6 @@ func (r *Runner) CataractaeByName(name string) *aqueduct.WorkflowCataractae {
 		if r.workflow.Cataractae[i].Name == name {
 			return &r.workflow.Cataractae[i]
 		}
-	}
-	return nil
-}
-
-// copyFile copies src to dst, creating dst if it does not exist.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", src, err)
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", dst, err)
-	}
-
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
-	}
-	if err := out.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", dst, err)
 	}
 	return nil
 }

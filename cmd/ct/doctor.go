@@ -193,14 +193,11 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 			}, claudeFix) && ok
 		}
 
-		// Check 2: Skills installed (deduplicated by name across all repos).
-		// In-repo skills (skill.Path != "") are resolved from the repo itself and
-		// do not require a ~/.cistern/skills/<name>/SKILL.md installation.
+		// Check 2: Skills installed at ~/.cistern/skills/<name>/SKILL.md.
+		// All skills (in-repo and external) are read from this canonical location
+		// via --add-dir ~/.cistern/skills. Both must be present there.
 		for _, step := range wf.Cataractae {
 			for _, skill := range step.Skills {
-				if skill.Path != "" {
-					continue // in-repo skill; no install check needed
-				}
 				if seenSkills[skill.Name] {
 					continue
 				}

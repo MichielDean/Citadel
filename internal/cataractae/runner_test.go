@@ -603,7 +603,7 @@ func TestWriteContextFile_AvailableSkillsBlock(t *testing.T) {
 		"<available_skills>",
 		"<name>my-skill</name>",
 		"<description>Does awesome things.</description>",
-		"<location>.claude/skills/my-skill/SKILL.md</location>",
+		"<location>" + filepath.Join(dir, ".cistern", "skills", "my-skill", "SKILL.md") + "</location>",
 		"</available_skills>",
 	}
 	for _, want := range checks {

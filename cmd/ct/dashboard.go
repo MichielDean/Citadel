@@ -335,14 +335,10 @@ func renderAqueductRow(ch CataractaeInfo) string {
 	var chanBot strings.Builder
 	chanBot.WriteString(indent)
 	chanBot.WriteString(colorDim + "╚" + colorReset)
-	for i := range steps {
+	for range steps {
 		half := (colW - 1) / 2
 		rest := colW - 1 - half
-		if i == 0 {
-			chanBot.WriteString(colorDim + strings.Repeat("═", half) + "╤" + strings.Repeat("═", rest-1) + colorReset)
-		} else {
-			chanBot.WriteString(colorDim + strings.Repeat("═", half) + "╤" + strings.Repeat("═", rest-1) + colorReset)
-		}
+		chanBot.WriteString(colorDim + strings.Repeat("═", half) + "╤" + strings.Repeat("═", rest-1) + colorReset)
 	}
 	chanBot.WriteString(colorDim + "═╝" + colorReset)
 
@@ -359,7 +355,7 @@ func renderAqueductRow(ch CataractaeInfo) string {
 	// ── Line 5: pier tops ╔══╧══╗ ─────────────────────────────────────────
 	var pierTop strings.Builder
 	pierTop.WriteString(indent)
-	for i, step := range steps {
+	for _, step := range steps {
 		half := (colW - 1) / 2
 		pad := half - (pierInW/2 + 1)
 		pierTop.WriteString(strings.Repeat(" ", pad))
@@ -370,7 +366,6 @@ func renderAqueductRow(ch CataractaeInfo) string {
 		} else {
 			pierTop.WriteString(colorDim + box + colorReset)
 		}
-		_ = i
 		pierTop.WriteString(strings.Repeat(" ", colW-pad-pierInW-2))
 	}
 

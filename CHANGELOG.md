@@ -20,6 +20,13 @@
 - `WS /ws/aqueducts/{name}/peek` — WebSocket stream; polls tmux every 500 ms and sends diffs to the client
 - Graceful fallback: panel shows "session not active" when the aqueduct is idle or the tmux session is not found
 
+### Skills — fix: skills unavailable in non-cistern-repo sandboxes
+- **Root cause:** runner.go previously copied skill files into `sandbox/.claude/skills/<name>/SKILL.md` at job start; in-repo `path:` skills resolved relative to the sandbox worktree, so any skill defined as `path: skills/…` would fail with a copy warning in ScaledTest or PortfolioWebsite sandboxes (those paths only exist in the cistern repo).
+- **Fix:** skills are no longer copied. `~/.cistern/skills/` is now the single source of truth. The runner passes `--add-dir ~/.cistern/skills` to the `claude` CLI so Claude reads skill files directly from the installed store.
+- CONTEXT.md skill locations are now written as absolute paths pointing into `~/.cistern/skills/` (via `skills.LocalPath()`), making them valid in any sandbox regardless of which repo it clones.
+- Skills must be installed before running an aqueduct (`ct skills install <name> <url>`); the runner logs a warning and continues if a referenced skill is not installed.
+- `ct doctor` verifies that all skills referenced in aqueduct YAML are present in `~/.cistern/skills/`.
+
 ## v1.0.0 — 2026-03-18
 
 First stable release of Cistern — a Mad Max–themed agentic workflow orchestrator for software development.

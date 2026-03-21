@@ -1,22 +1,25 @@
 # Context
 
-## Item: ci-0vm8f
+## Item: ci-xilu9
 
-**Title:** Cataractae peek: read-only live observer for active aqueduct sessions
+**Title:** Bug: in-repo skills not available in non-cistern repo sandboxes
 **Status:** in_progress
 **Priority:** 2
 
 ### Description
 
-Add ability to observe any active cataractae session in real-time without interacting with it. Requirements:
-- GET /api/aqueducts/{name}/peek returns current tmux pane content as text
-- WebSocket endpoint /ws/aqueducts/{name}/peek streams live pane output (poll tmux every 500ms, send diffs)
-- Web UI: clicking an active aqueduct arch opens a peek panel/modal showing live session output
-- Read-only: no keyboard input forwarded, no interaction possible, purely observational
-- Shows last N lines of pane (configurable, default 100)
-- Auto-scrolls to bottom, toggle to pin scroll position
-- Clear label: 'Observing — read only'
-- Falls back gracefully if aqueduct is idle or tmux session not found
+When aqueducts run against ScaledTest or PortfolioWebsite sandboxes, skills defined as in-repo paths (e.g. path: skills/cistern-droplet-state/SKILL.md) fail to copy because those paths only exist in the cistern repo, not in ScaledTest or PortfolioWebsite.
+
+Root cause: internal/cataractae/runner.go resolves skill.Path relative to w.SandboxDir. For ScaledTest sandboxes, w.SandboxDir is ~/.cistern/sandboxes/ScaledTest/julia — which doesn't contain skills/cistern-droplet-state/.
+
+Fix options:
+1. Treat skills with path: as external skills if the path doesn't exist in the sandbox, falling back to ~/.cistern/skills/<name>/SKILL.md
+2. When ct repo add creates new sandboxes, copy the cistern repo's skills/ directory into each new sandbox
+3. Change aqueduct.yaml to use external skill references (no path:) for universal skills like cistern-droplet-state, and install them to ~/.cistern/skills/ during ct init
+
+Option 1 is the most robust — graceful fallback means it works regardless of how the sandbox was created.
+
+Affected: every ScaledTest and PortfolioWebsite aqueduct run logs 'warning: copy skill cistern-droplet-state' and agents run without their state management skill.
 
 ## Current Step: simplify
 
@@ -26,21 +29,37 @@ Add ability to observe any active cataractae session in real-time without intera
 
 ## Recent Step Notes
 
-### From: manual
-
-Fixed readWSTextFrame case 127: 8-byte extended length now correctly combines all 8 bytes per RFC 6455 §5.2. All 9 packages pass.
-
 ### From: scheduler
 
-Implement pass rejected: HEAD has not advanced since last review (commit: adf8afd900b608cb93db0d1d6b0998ddde882e2d). No new commits were found. You must commit your changes before signaling pass.
+Implement pass rejected: HEAD has not advanced since last review (commit: 49299a429ca39f61358609292752e65b6909b32d). No new commits were found. You must commit your changes before signaling pass.
 
 ### From: manual
 
-Fixed readWSTextFrame case 127: 8-byte extended payload length now correctly combines all 8 bytes per RFC 6455 §5.2 (was silently discarding high 32 bits ext[0]-ext[3]). All 9 packages pass. Committed bdab760.
+Committed existing fixes (os.UserHomeDir error check, shell-quoting skillsDir, buildClaudeCmd extraction + 5 tests in session_test.go). All 9 packages pass. HEAD advanced to d1b3ca6.
 
 ### From: manual
 
-Fixed readWSTextFrame case 127 RFC 6455 §5.2 compliance. All 9 packages pass.
+FINAL APPROACH: symlinks instead of copies.
+
+Replace the file copy in runner.go with symlink creation:
+
+1. internal/cataractae/runner.go — instead of copyFile(src, dest), use os.Symlink(src, dest):
+   - For in-repo skills that don't exist in the sandbox, symlink from ~/.cistern/skills/<name>/SKILL.md
+   - For external skills, symlink from ~/.cistern/skills/<name>/SKILL.md  
+   - Check if symlink/file already exists before creating (idempotent)
+   - If src doesn't exist in sandbox AND doesn't exist in ~/.cistern/skills/, log warning and skip
+
+2. Result: ~/.cistern/skills/ is the single source of truth. Sandboxes contain symlinks pointing there. No copying, always current, deterministic.
+
+3. ct init: seed ~/.cistern/skills/ with all built-in skills.
+4. ct doctor: verify all aqueduct.yaml-referenced skills exist in ~/.cistern/skills/.
+5. ct repo add: no sandbox seeding needed — symlinks are created at job start by the runner.
+
+The <location> in CONTEXT.md stays as .claude/skills/<name>/SKILL.md (relative to sandbox). Claude reads the symlink transparently.
+
+### From: manual
+
+All three review issues resolved and committed (d1b3ca6): (1) os.UserHomeDir() error checked — spawn returns error if HOME unset; (2) skillsDir shell-quoted via shellQuote() helper; (3) buildClaudeCmd() extracted as testable method with 5 tests in session_test.go. All 9 packages pass.
 
 <available_skills>
   <skill>
@@ -60,16 +79,16 @@ Fixed readWSTextFrame case 127 RFC 6455 §5.2 compliance. All 9 packages pass.
 When your work is done, signal your outcome using the `ct` CLI:
 
 **Pass (work complete, move to next step):**
-    ct droplet pass ci-0vm8f
+    ct droplet pass ci-xilu9
 
 **Recirculate (needs rework — send back upstream):**
-    ct droplet recirculate ci-0vm8f
-    ct droplet recirculate ci-0vm8f --to implement
+    ct droplet recirculate ci-xilu9
+    ct droplet recirculate ci-xilu9 --to implement
 
 **Block (genuinely blocked, cannot proceed):**
-    ct droplet block ci-0vm8f
+    ct droplet block ci-xilu9
 
 Add notes before signaling:
-    ct droplet note ci-0vm8f "What you did / found"
+    ct droplet note ci-xilu9 "What you did / found"
 
 The `ct` binary is on your PATH.

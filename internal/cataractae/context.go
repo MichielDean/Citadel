@@ -255,7 +255,7 @@ func writeContextFile(path string, p ContextParams) error {
 			b.WriteString("  <skill>\n")
 			b.WriteString(fmt.Sprintf("    <name>%s</name>\n", xmlEscape(skill.Name)))
 			b.WriteString(fmt.Sprintf("    <description>%s</description>\n", xmlEscape(skillDescription(skill.Name))))
-			b.WriteString(fmt.Sprintf("    <location>.claude/skills/%s/SKILL.md</location>\n", xmlEscape(skill.Name)))
+			b.WriteString(fmt.Sprintf("    <location>%s</location>\n", xmlEscape(skills.LocalPath(skill.Name))))
 			b.WriteString("  </skill>\n")
 		}
 		b.WriteString("</available_skills>\n\n")
