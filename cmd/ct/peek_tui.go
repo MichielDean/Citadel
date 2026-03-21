@@ -73,7 +73,7 @@ func newPeekModel(capturer Capturer, session, header string, lines int) peekMode
 }
 
 func (m peekModel) Init() tea.Cmd {
-	return tea.Batch(m.fetchCmd(), peekTickCmd())
+	return peekTickCmd()
 }
 
 // peekTickCmd schedules the next poll.

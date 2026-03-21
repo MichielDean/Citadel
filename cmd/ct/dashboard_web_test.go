@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -233,4 +235,234 @@ func truncateStr(s string, n int) string {
 		return s
 	}
 	return string(r[:n]) + "…"
+}
+
+// --- peek HTTP/WS tests ---
+
+// TestWsAcceptKey checks the RFC 6455 §4.2.2 accept-key derivation using the
+// standard test vector from the spec.
+func TestWsAcceptKey(t *testing.T) {
+	// RFC 6455 example: client key "dGhlIHNhbXBsZSBub25jZQ==" → accept "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+	got := wsAcceptKey("dGhlIHNhbXBsZSBub25jZQ==")
+	want := "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+	if got != want {
+		t.Errorf("wsAcceptKey() = %q, want %q", got, want)
+	}
+}
+
+// TestWsSendText_SmallPayload verifies frame header for a payload under 126 bytes.
+func TestWsSendText_SmallPayload(t *testing.T) {
+	var buf bytes.Buffer
+	bw := bufio.NewWriter(&buf)
+	if err := wsSendText(bw, "hello"); err != nil {
+		t.Fatalf("wsSendText: %v", err)
+	}
+	b := buf.Bytes()
+	if b[0] != 0x81 {
+		t.Errorf("byte[0] = 0x%02x, want 0x81 (FIN+text)", b[0])
+	}
+	if b[1] != 5 {
+		t.Errorf("byte[1] (len) = %d, want 5", b[1])
+	}
+	if string(b[2:]) != "hello" {
+		t.Errorf("payload = %q, want %q", string(b[2:]), "hello")
+	}
+}
+
+// TestWsSendText_MediumPayload verifies the 2-byte extended length frame (126–65535 bytes).
+func TestWsSendText_MediumPayload(t *testing.T) {
+	payload := strings.Repeat("x", 200)
+	var buf bytes.Buffer
+	bw := bufio.NewWriter(&buf)
+	if err := wsSendText(bw, payload); err != nil {
+		t.Fatalf("wsSendText: %v", err)
+	}
+	b := buf.Bytes()
+	if b[0] != 0x81 {
+		t.Errorf("byte[0] = 0x%02x, want 0x81", b[0])
+	}
+	if b[1] != 0x7E {
+		t.Errorf("byte[1] = 0x%02x, want 0x7E (medium extended len)", b[1])
+	}
+	n := int(b[2])<<8 | int(b[3])
+	if n != 200 {
+		t.Errorf("encoded length = %d, want 200", n)
+	}
+	if string(b[4:]) != payload {
+		t.Error("payload content mismatch")
+	}
+}
+
+// TestLookupAqueductSession_Empty returns false when the DB has no in_progress items.
+func TestLookupAqueductSession_Empty(t *testing.T) {
+	_, ok := lookupAqueductSession(tempDB(t), "virgo")
+	if ok {
+		t.Error("expected false for empty DB")
+	}
+}
+
+// TestLookupAqueductSession_NoMatch returns false when no item is assigned to the named aqueduct.
+func TestLookupAqueductSession_NoMatch(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := c.Add("myrepo", "Some work", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(item.ID, "other-aqueduct", "implement")
+	c.Close()
+
+	_, ok := lookupAqueductSession(db, "virgo")
+	if ok {
+		t.Error("expected false when no item assigned to 'virgo'")
+	}
+}
+
+// TestLookupAqueductSession_Found returns true and correct session info when
+// an in_progress item is assigned to the named aqueduct.
+func TestLookupAqueductSession_Found(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := c.Add("myrepo", "Peek target", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(item.ID, "virgo", "implement")
+	c.Close()
+
+	info, ok := lookupAqueductSession(db, "virgo")
+	if !ok {
+		t.Fatal("expected session to be found")
+	}
+	if info.dropletID != item.ID {
+		t.Errorf("dropletID = %q, want %q", info.dropletID, item.ID)
+	}
+	if !strings.Contains(info.sessionID, "virgo") {
+		t.Errorf("sessionID %q should contain 'virgo'", info.sessionID)
+	}
+	if info.title != "Peek target" {
+		t.Errorf("title = %q, want %q", info.title, "Peek target")
+	}
+}
+
+// TestPeekHTTP_MethodNotAllowed ensures POST /api/aqueducts/{name}/peek returns 405.
+func TestPeekHTTP_MethodNotAllowed(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodPost, "/api/aqueducts/virgo/peek", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", w.Code)
+	}
+}
+
+// TestPeekHTTP_IdleAqueduct returns "session not active" when aqueduct is idle.
+func TestPeekHTTP_IdleAqueduct(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/aqueducts/virgo/peek", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "session not active") {
+		t.Errorf("body = %q, want 'session not active'", w.Body.String())
+	}
+}
+
+// TestPeekHTTP_ActiveWithMockCapturer seeds an in_progress droplet, overrides
+// defaultCapturer with a mock, and verifies the pane content is returned.
+func TestPeekHTTP_ActiveWithMockCapturer(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := c.Add("myrepo", "Peek work", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(item.ID, "virgo", "implement")
+	c.Close()
+
+	orig := defaultCapturer
+	t.Cleanup(func() { defaultCapturer = orig })
+	defaultCapturer = mockCapturer{hasSession: true, content: "pane output line"}
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/aqueducts/virgo/peek", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "pane output line") {
+		t.Errorf("body = %q, want 'pane output line'", w.Body.String())
+	}
+}
+
+// TestPeekHTTP_ActiveButSessionGone returns "session not active" when the
+// aqueduct has an in_progress droplet but tmux session no longer exists.
+func TestPeekHTTP_ActiveButSessionGone(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := c.Add("myrepo", "Gone session", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(item.ID, "virgo", "implement")
+	c.Close()
+
+	orig := defaultCapturer
+	t.Cleanup(func() { defaultCapturer = orig })
+	defaultCapturer = mockCapturer{hasSession: false}
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/aqueducts/virgo/peek", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "session not active") {
+		t.Errorf("body = %q, want 'session not active'", w.Body.String())
+	}
+}
+
+// TestPeekHTTP_LinesQueryParam verifies ?lines= is accepted without error.
+func TestPeekHTTP_LinesQueryParam(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/aqueducts/virgo/peek?lines=50", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	// Idle aqueduct — just verify no server error.
+	if w.Code >= 500 {
+		t.Errorf("status = %d, want < 500", w.Code)
+	}
+}
+
+// TestWsPeek_NonWebSocketRejected verifies that a plain GET to the WS endpoint
+// returns 426 Upgrade Required.
+func TestWsPeek_NonWebSocketRejected(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/ws/aqueducts/virgo/peek", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUpgradeRequired {
+		t.Errorf("status = %d, want 426", w.Code)
+	}
+}
+
+// TestWsPeek_MissingKeyRejected verifies that a WS upgrade without
+// Sec-WebSocket-Key returns 400.
+func TestWsPeek_MissingKeyRejected(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/ws/aqueducts/virgo/peek", nil)
+	req.Header.Set("Upgrade", "websocket")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
 }
