@@ -15,7 +15,7 @@
 - TUI dashboard (`ct dashboard` without `--web`) continues to work unchanged
 
 ### Peek overlay (TUI dashboard)
-- Press `p` or `Enter` on an active aqueduct in the TUI dashboard to open a read-only live peek overlay showing the agent's tmux session output
+- Press `p` or `Enter` in the TUI dashboard to open a read-only live peek overlay showing the first active aqueduct's agent tmux session output
 - Overlay is clearly labelled **Observing — read only**; no keyboard input is forwarded to the session
 - Press `q` or `Esc` to close the overlay and return to the dashboard
 - Footer hint updated to include `p peek`

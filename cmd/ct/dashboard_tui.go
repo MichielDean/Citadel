@@ -103,6 +103,14 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated, cmd := m.peek.Update(msg)
 			m.peek = updated.(peekModel)
 			return m, cmd
+		case tuiTickMsg:
+			return m, tea.Batch(m.fetchDataCmd(), tuiTick())
+		case tuiAnimMsg:
+			m.frame++
+			return m, tuiAnimTick()
+		case tuiDataMsg:
+			m.data = (*DashboardData)(msg)
+			return m, nil
 		}
 		return m, nil
 	}
