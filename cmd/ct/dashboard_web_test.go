@@ -182,6 +182,50 @@ func TestDashboardWebMux_NoteFieldsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDashboardWebMux_NoteFieldsSnakeCaseJSON(t *testing.T) {
+	cfgPath := tempCfg(t)
+	dbPath := tempDB(t)
+
+	c, err := cistern.New(dbPath, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	droplet, _ := c.Add("myrepo", "Snake Case Test", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(droplet.ID, "virgo", "implement")
+	if err := c.AddNote(droplet.ID, "implementer", "snake test"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	mux := newDashboardMux(cfgPath, dbPath)
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Unmarshal into a generic map to verify raw JSON key names (not Go field names).
+	var raw map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal raw JSON: %v", err)
+	}
+	activities, _ := raw["flow_activities"].([]interface{})
+	if len(activities) == 0 {
+		t.Fatal("expected at least one flow_activity in raw JSON")
+	}
+	act, _ := activities[0].(map[string]interface{})
+	notes, _ := act["recent_notes"].([]interface{})
+	if len(notes) == 0 {
+		t.Fatal("expected at least one recent_note in raw JSON")
+	}
+	note, _ := notes[0].(map[string]interface{})
+	if _, ok := note["cataractae_name"]; !ok {
+		t.Errorf("raw JSON note missing key %q (got %v)", "cataractae_name", note)
+	}
+	if _, ok := note["content"]; !ok {
+		t.Errorf("raw JSON note missing key %q (got %v)", "content", note)
+	}
+}
+
 // truncateStr returns at most n runes of s for safe display in test messages.
 func truncateStr(s string, n int) string {
 	r := []rune(s)
