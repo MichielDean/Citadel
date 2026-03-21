@@ -300,7 +300,7 @@ function render(d){
       var item=recent[i];
       var t=item.updated_at?new Date(item.updated_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
       h+='<tr><td class="t-id">'+esc(item.id)+'</td><td class="t-title">'+esc(item.title)+'</td>';
-      h+='<td class="s-'+item.status+'">'+esc(item.status)+'</td><td style="color:var(--dim)">'+t+'</td></tr>';
+      h+='<td class="s-'+esc(item.status)+'">'+esc(item.status)+'</td><td style="color:var(--dim)">'+t+'</td></tr>';
     }
     h+='</table>';
   }

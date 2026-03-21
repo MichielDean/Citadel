@@ -142,6 +142,46 @@ func TestDashboardWebMux_APIReturnsCorrectCounts(t *testing.T) {
 	}
 }
 
+func TestDashboardWebMux_NoteFieldsRoundTrip(t *testing.T) {
+	cfgPath := tempCfg(t)
+	dbPath := tempDB(t)
+
+	c, err := cistern.New(dbPath, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	droplet, _ := c.Add("myrepo", "Note Test", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Assign(droplet.ID, "virgo", "implement")
+	if err := c.AddNote(droplet.ID, "implementer", "hello world"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	mux := newDashboardMux(cfgPath, dbPath)
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	var data DashboardData
+	if err := json.NewDecoder(w.Body).Decode(&data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(data.FlowActivities) == 0 {
+		t.Fatal("expected at least one flow activity")
+	}
+	notes := data.FlowActivities[0].RecentNotes
+	if len(notes) == 0 {
+		t.Fatal("expected at least one recent note")
+	}
+	if notes[0].CataractaeName != "implementer" {
+		t.Errorf("CataractaeName = %q, want %q", notes[0].CataractaeName, "implementer")
+	}
+	if notes[0].Content != "hello world" {
+		t.Errorf("Content = %q, want %q", notes[0].Content, "hello world")
+	}
+}
+
 // truncateStr returns at most n runes of s for safe display in test messages.
 func truncateStr(s string, n int) string {
 	r := []rune(s)
