@@ -461,6 +461,16 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		step := currentCataracta(item, wf)
 		assignee := item.Assignee
 
+		// cleanupBranch detaches HEAD and deletes feat/<id> in the assignee's sandbox.
+		// Called at terminal states and no-route escalation — non-terminal routes keep
+		// the branch so the next dispatch cycle can resume incrementally.
+		cleanupBranch := func() {
+			if assignee != "" && s.sandboxRoot != "" {
+				sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, assignee)
+				cleanupBranchInSandbox(sandboxDir, "feat/"+item.ID)
+			}
+		}
+
 		// Release the aqueduct worker unconditionally — it is free for other droplets
 		// regardless of where this one routes next.
 		if assignee != "" {
@@ -526,10 +536,7 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		if next == "" {
 			reason := fmt.Sprintf("no route from step %q for outcome %q", step.Name, item.Outcome)
 			s.logger.Warn("observe: no route", "droplet", item.ID)
-			if assignee != "" && s.sandboxRoot != "" {
-				sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, assignee)
-				cleanupBranchInSandbox(sandboxDir, "feat/"+item.ID)
-			}
+			cleanupBranch()
 			if err := client.Escalate(item.ID, reason); err != nil {
 				s.logger.Error("observe: escalate failed", "droplet", item.ID, "error", err)
 			}
@@ -546,13 +553,7 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		}
 
 		if isTerminal(next) {
-			// Clean up the feature branch only at terminal states. Non-terminal routes
-			// (recirculate, pass-to-next-step) keep the branch so the next dispatch
-			// cycle can resume incrementally on the same aqueduct.
-			if assignee != "" && s.sandboxRoot != "" {
-				sandboxDir := filepath.Join(s.sandboxRoot, repo.Name, assignee)
-				cleanupBranchInSandbox(sandboxDir, "feat/"+item.ID)
-			}
+			cleanupBranch()
 			s.handleTerminal(client, item.ID, next, step.Name)
 			continue
 		}

@@ -65,27 +65,19 @@ This is backward compatible — worktree directories have the same paths as curr
 
 ### From: manual
 
-Added tests for the three previously uncovered functions:
-
-1. EnsureWorktree (internal/cataractae/sandbox_test.go): 4 tests covering creation, idempotency, legacy clone replacement, and stale-registration pruning. Each test uses a real git repo.
-
-2. prepareBranchInSandbox (internal/castellarius/branch_lifecycle_test.go): 3 tests covering new branch creation from origin/main, git identity configuration, and branch resumption (verifies existing commits are preserved).
-
-3. cleanupBranchInSandbox (internal/castellarius/branch_lifecycle_test.go): 2 tests covering branch deletion + HEAD detach, and best-effort no-op when branch is missing.
-
-All 9 test packages pass.
-
-### From: manual
-
-Added tests for all three previously uncovered functions. All 9 packages pass.
-
-### From: scheduler
-
-Implement pass rejected: HEAD has not advanced since last review (commit: 6eb2462665f0c1219f6f5948b9575f18dad6d47e). No new commits were found. You must commit your changes before signaling pass.
-
-### From: manual
-
 Committed the 9 test files (sandbox_test.go, branch_lifecycle_test.go) that were written but untracked. All 9 packages pass. HEAD now at 90a5ff8.
+
+### From: manual
+
+Simplified: inlined ensureClone into EnsurePrimaryClone — removed a single-caller indirection layer with a misleading 'shared implementation' comment. Tests: all 9 packages pass.
+
+### From: manual
+
+scheduler.go:369 — cleanupBranchInSandbox runs every time an aqueduct is released (observeRepo, 'if item.Assignee \!= ""' block). It unconditionally deletes feat/<item.ID> from the worktree after each step completes, recirculates, or blocks. prepareBranchInSandbox (scheduler.go:441-448) has a resume path that checks whether the branch already exists and checks it out to preserve prior commits — but that path can never execute in production: the branch is always deleted by cleanup before the next dispatch cycle. TestPrepareBranchInSandbox_ResumeBranch (branch_lifecycle_test.go:279-316) tests a code path that is dead in normal operation. Consequence: multi-revision cycles (recirculate → implement again) always start fresh from origin/main, discarding all prior agent commits. Fix: cleanupBranchInSandbox should only run when the droplet reaches a truly terminal state (final pass through the pipeline), not on every aqueduct release. Or: remove the resume logic and the test, and document that each revision cycle always starts from origin/main (but then the git identity configure + branch-exists check is wasted work on every dispatch).
+
+### From: manual
+
+Fixed cleanupBranchInSandbox to only run at terminal states. Separated pool worker release (always unconditional) from branch cleanup (terminal-only: isTerminal routes + no-route escalation). Non-terminal routes (recirculate, pass-to-next-step) now preserve the feature branch so the same aqueduct can resume incrementally. The resume path in prepareBranchInSandbox is now reachable in production. All 9 packages pass. HEAD: 509aee7.
 
 <available_skills>
   <skill>
