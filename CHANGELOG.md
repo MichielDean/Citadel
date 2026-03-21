@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Web dashboard
+- `ct dashboard --web` starts a Go HTTP server on port 5737 (no ttyd, no terminal emulator required)
+- `GET /api/dashboard` returns `DashboardData` as JSON
+- Server-sent events (SSE) at `/api/dashboard/stream` push live updates every 2 seconds
+- Responsive HTML/CSS UI: aqueduct arch diagram, CURRENT FLOW section, CISTERN queue, footer
+- Dark/light theme following OS preference; readable at 375px width (mobile-friendly)
+- `--addr` flag sets listen address (default `:5737`)
+- `cistern-web.service` systemd user service starts the web dashboard automatically
+- TUI dashboard (`ct dashboard` without `--web`) continues to work unchanged
+
 ## v1.0.0 — 2026-03-18
 
 First stable release of Cistern — a Mad Max–themed agentic workflow orchestrator for software development.
@@ -29,7 +41,7 @@ First stable release of Cistern — a Mad Max–themed agentic workflow orchestr
 - Active cataractae glows green; semicircle intrados via adaptive formula
 - CISTERN section: queued droplets with priority, age, and blocked-by status
 - RECENT FLOW: last 10 delivered droplets
-- Served via ttyd WebSocket at port 5737 (systemd user service, auto-restart)
+- Originally served via ttyd WebSocket at port 5737; replaced by Go HTTP server in unreleased (see above)
 - Cascadia Code font embedded in page for consistent rendering
 
 ### Cataractae

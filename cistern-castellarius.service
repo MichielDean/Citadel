@@ -1,8 +1,8 @@
 [Unit]
 Description=Cistern Castellarius — aqueduct scheduler
 After=network.target
-# Restart after ttyd so the dashboard is ready when agents come online.
-After=cistern-ttyd.service
+# Restart after the web dashboard so it is ready when agents come online.
+After=cistern-web.service
 
 [Service]
 Type=simple

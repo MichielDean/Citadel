@@ -35,40 +35,40 @@ const (
 
 // CataractaeInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataractae chain that droplet is.
 type CataractaeInfo struct {
-	Name            string
-	RepoName        string   // repository this aqueduct belongs to
-	DropletID       string
-	Step            string
-	Steps           []string // workflow step names in order
-	Elapsed         time.Duration
-	CataractaeIndex  int // 1-based index of current cataractae; 0 if unknown
-	TotalCataractae int
-	NoteCount       int // number of reviewer/QA notes; >0 means the droplet has been revised
+	Name            string        `json:"name"`
+	RepoName        string        `json:"repo_name"`   // repository this aqueduct belongs to
+	DropletID       string        `json:"droplet_id"`
+	Step            string        `json:"step"`
+	Steps           []string      `json:"steps"`       // workflow step names in order
+	Elapsed         time.Duration `json:"elapsed"`     // nanoseconds; use elapsed/1e9 for seconds
+	CataractaeIndex  int          `json:"cataractae_index"` // 1-based index; 0 if unknown
+	TotalCataractae int           `json:"total_cataractae"`
+	NoteCount       int           `json:"note_count"`  // >0 means the droplet has been revised
 }
 
 // FlowActivity holds the live narrative for one in-progress droplet —
 // its current stage and the most recent notes exchanged between cataractae.
 type FlowActivity struct {
-	DropletID   string
-	Title       string
-	Step        string
-	NoteCount   int
-	RecentNotes []cistern.CataractaeNote // last 3, newest last
+	DropletID   string                   `json:"droplet_id"`
+	Title       string                   `json:"title"`
+	Step        string                   `json:"step"`
+	NoteCount   int                      `json:"note_count"`
+	RecentNotes []cistern.CataractaeNote `json:"recent_notes"` // last 3, newest last
 }
 
 // DashboardData holds all data required to render the dashboard.
 type DashboardData struct {
-	CataractaeCount int
-	FlowingCount   int
-	QueuedCount    int
-	DoneCount      int
-	Cataractae     []CataractaeInfo
-	CisternItems   []*cistern.Droplet // flowing + queued
-	RecentItems    []*cistern.Droplet // recently closed/escalated
-	BlockedByMap   map[string]string  // droplet ID -> first blocking dep ID
-	FlowActivities []FlowActivity     // live narrative for in-progress droplets
-	FarmRunning    bool
-	FetchedAt      time.Time
+	CataractaeCount int                `json:"cataractae_count"`
+	FlowingCount    int                `json:"flowing_count"`
+	QueuedCount     int                `json:"queued_count"`
+	DoneCount       int                `json:"done_count"`
+	Cataractae      []CataractaeInfo   `json:"cataractae"`
+	CisternItems    []*cistern.Droplet `json:"cistern_items"`  // flowing + queued
+	RecentItems     []*cistern.Droplet `json:"recent_items"`   // recently closed/escalated
+	BlockedByMap    map[string]string  `json:"blocked_by_map"` // droplet ID -> first blocking dep ID
+	FlowActivities  []FlowActivity     `json:"flow_activities"` // live narrative for in-progress droplets
+	FarmRunning     bool               `json:"farm_running"`
+	FetchedAt       time.Time          `json:"fetched_at"`
 }
 
 // fetchDashboardData loads config and queue state into a DashboardData.
@@ -660,6 +660,11 @@ func startKeyboardReader() <-chan byte {
 
 // --- commands ---
 
+var (
+	dashboardWebFlag  bool
+	dashboardAddrFlag string
+)
+
 var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
 	Short: "Live dashboard showing cataractae, cistern, and flow events",
@@ -676,10 +681,16 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 	cfgPath := resolveConfigPath()
 	dbPath := resolveDBPath()
 
+	if dashboardWebFlag {
+		return RunDashboardWeb(cfgPath, dbPath, dashboardAddrFlag)
+	}
 	return RunDashboardTUI(cfgPath, dbPath)
 }
 
 func init() {
 	rootCmd.AddCommand(dashboardCmd)
 	rootCmd.AddCommand(feedCmd)
+
+	dashboardCmd.Flags().BoolVar(&dashboardWebFlag, "web", false, "Start HTTP web dashboard instead of TUI")
+	dashboardCmd.Flags().StringVar(&dashboardAddrFlag, "addr", ":5737", "Address for web dashboard (default :5737)")
 }

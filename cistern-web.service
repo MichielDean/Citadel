@@ -1,0 +1,28 @@
+[Unit]
+Description=Cistern Web Dashboard — HTTP server on port 5737
+After=network.target
+
+[Service]
+Type=simple
+User=lobsterdog
+ExecStart=/home/lobsterdog/go/bin/ct dashboard --web --addr :5737
+
+Restart=always
+RestartSec=5
+
+StartLimitIntervalSec=120
+StartLimitBurst=10
+StartLimitAction=none
+
+TimeoutStopSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+
+StandardOutput=append:/home/lobsterdog/.cistern/web.log
+StandardError=append:/home/lobsterdog/.cistern/web.log
+
+Environment=HOME=/home/lobsterdog
+Environment=PATH=/home/lobsterdog/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

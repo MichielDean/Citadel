@@ -253,8 +253,10 @@ The `/root/.cistern` volume persists config, skills, the SQLite database, and gh
 ct castellarius start          Wake the Castellarius (start processing)
 ct castellarius status         Show aqueduct flow — which are flowing, which are idle
 
-# Dashboard — live TUI (Bubble Tea, alternate screen)
-ct dashboard                   Live aqueduct arch diagram with cistern and recent flow
+# Dashboard
+ct dashboard                   Live TUI aqueduct arch diagram with cistern and recent flow
+ct dashboard --web             HTTP web dashboard (responsive, SSE live updates, port 5737)
+ct dashboard --web --addr :8080  Custom listen address for web dashboard
 ct feed                        Alias for dashboard
 
 # Status — observe the system
