@@ -262,31 +262,28 @@ func TestValidateFarmConfig_MissingRepoName(t *testing.T) {
 	}
 }
 
-func TestValidateEmptyModel(t *testing.T) {
-	emptyModel := ""
-	w := &Workflow{
-		Name: "test",
-		Cataractae: []WorkflowCataractae{
-			{Name: "step", Type: CataractaeTypeAgent, Model: &emptyModel, OnPass: "done"},
-		},
+func TestValidateModelMustBeNonEmpty(t *testing.T) {
+	cases := []struct {
+		name  string
+		model string
+	}{
+		{"empty", ""},
+		{"whitespace only", "   "},
 	}
-	err := Validate(w)
-	if err == nil || !strings.Contains(err.Error(), "non-empty string") {
-		t.Errorf("expected non-empty model error, got %v", err)
-	}
-}
-
-func TestValidateWhitespaceOnlyModel(t *testing.T) {
-	whitespaceModel := "   "
-	w := &Workflow{
-		Name: "test",
-		Cataractae: []WorkflowCataractae{
-			{Name: "step", Type: CataractaeTypeAgent, Model: &whitespaceModel, OnPass: "done"},
-		},
-	}
-	err := Validate(w)
-	if err == nil || !strings.Contains(err.Error(), "non-empty string") {
-		t.Errorf("expected non-empty model error, got %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := tc.model
+			w := &Workflow{
+				Name: "test",
+				Cataractae: []WorkflowCataractae{
+					{Name: "step", Type: CataractaeTypeAgent, Model: &m, OnPass: "done"},
+				},
+			}
+			err := Validate(w)
+			if err == nil || !strings.Contains(err.Error(), "non-empty string") {
+				t.Errorf("expected non-empty model error, got %v", err)
+			}
+		})
 	}
 }
 
