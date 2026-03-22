@@ -354,7 +354,6 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		brickW    = 4   // brick face width before ▌ joint
 		nameW     = 10
 	)
-	// pierW = archTopW - taperRows*2 = 1
 	pierW := archTopW - taperRows*2
 
 	g   := tuiStyleGreen
@@ -490,7 +489,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	// Option C: Spill & curtain — water exits flush against the abutment edge,
 	// hugs the structure for the first couple of rows, then falls nearly vertical.
 	// Stays close → feels connected to the arch. Wide pool forms at the base.
-	wfRows := [10]string{
+	wfRows := [2 * (taperRows + pierRows)]string{
 		// sub 0: exits flush — ▓ right against the abutment edge
 		sp(0) + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
 		// sub 1: still hugging the structure
