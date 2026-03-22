@@ -297,7 +297,15 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 			return
 		}
 		cmd := exec.Command(exe, "dashboard", "--db", dbPath)
-		cmd.Env = append(os.Environ(), "CT_CISTERN_CONFIG="+cfgPath)
+		// Force true-color environment so Bubble Tea renders with full ANSI colors.
+		// The web server inherits TERM=dumb from systemd; without these overrides
+		// lipgloss strips all colors and the TUI renders black and white.
+		env := append(os.Environ(),
+			"CT_CISTERN_CONFIG="+cfgPath,
+			"TERM=xterm-256color",
+			"COLORTERM=truecolor",
+		)
+		cmd.Env = env
 
 		ptmx, err := pty.Start(cmd)
 		if err != nil {
@@ -464,13 +472,16 @@ const dashboardHTML = `<!DOCTYPE html>
 <title>Cistern</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;touch-action:none}
+html,body{width:100%;height:100%;background:#0d1117;overflow:hidden}
 #terminal{width:100%;height:100%;position:absolute;inset:0}
-/* Scrollbar styling */
-.xterm-viewport::-webkit-scrollbar{width:6px}
+/* Vertical scrollbar inside xterm.js viewport */
+.xterm-viewport::-webkit-scrollbar{width:8px}
 .xterm-viewport::-webkit-scrollbar-track{background:#0d1117}
-.xterm-viewport::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+.xterm-viewport::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px}
+.xterm-viewport::-webkit-scrollbar-thumb:hover{background:#484f58}
 .xterm-viewport{scrollbar-color:#30363d #0d1117;scrollbar-width:thin}
+/* Allow horizontal scroll on the terminal screen element */
+.xterm-screen{overflow-x:auto}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 </head>
@@ -500,7 +511,8 @@ var term = new Terminal({
   lineHeight: 1.2,
   letterSpacing: 0,
   cursorBlink: false,
-  scrollback: 500,
+  scrollback: 1000,
+  scrollOnUserInput: false,
   /* Allow Bubble Tea to use the full palette */
   allowProposedApi: true
 });
