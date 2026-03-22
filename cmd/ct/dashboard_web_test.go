@@ -604,8 +604,7 @@ func TestDashboardHTML_ArchIsCSSBased(t *testing.T) {
 		desc string
 	}{
 		{`id="arch-section"`, "arch-section element"},
-		{"wave-scroll", "wave-scroll CSS animation"},
-		{"wf-fall", "wf-fall CSS animation"},
+		{"aq-wave", "aq-wave CSS class"},
 		{"aq-pier", "aq-pier CSS class"},
 		{"aq-channel", "aq-channel CSS class"},
 		{"aq-labels", "aq-labels CSS class"},
