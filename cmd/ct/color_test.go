@@ -142,6 +142,15 @@ func TestSkillDesc(t *testing.T) {
 			t.Errorf("expected empty string for empty file, got %q", got)
 		}
 	})
+
+	t.Run("yaml block scalar", func(t *testing.T) {
+		// documents source bug: skillDesc returns ">" verbatim for YAML block scalar indicator
+		p := writeSkillMD(t, "---\ndescription: >\n  Multi-line description.\n---\n")
+		got := skillDesc(p)
+		if got != ">" {
+			t.Errorf("got %q, want %q", got, ">")
+		}
+	})
 }
 
 func TestParseDuration(t *testing.T) {
@@ -188,6 +197,7 @@ func TestInferPrefix(t *testing.T) {
 		{"github.com/Org/ABCTool", "ab"},
 		{"NoSlash", "no"},
 		{"ab", "ab"},   // len == 2 → returned as-is
+		{"AB", "AB"},   // len == 2 → returned as-is (NOT lowercased, unlike >2-char names)
 		{"a", "a"},     // len == 1 → returned as-is
 		{"", "ct"},     // empty → default "ct"
 		{"github.com/Org/", "ct"}, // trailing slash → empty last segment
@@ -247,7 +257,7 @@ func TestPrintDropletListTerminal(t *testing.T) {
 	})
 
 	t.Run("empty cataractae shows em-dash", func(t *testing.T) {
-		d := newDroplet("ts-xyz99", "No Gate Yet", "open", "")
+		d := newDroplet("ts-xyz99", "No Gate Yet", "in_progress", "")
 		out := captureStdout(t, func() {
 			printDropletListTerminal([]*cistern.Droplet{d}, nil, false, 30)
 		})
