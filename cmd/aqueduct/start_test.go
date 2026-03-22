@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/MichielDean/cistern/internal/cistern"
@@ -21,6 +23,38 @@ func (s *spyCisternClient) Add(repo, title, description string, priority, comple
 	s.gotPriority = priority
 	s.gotComplexity = complexity
 	return &cistern.Droplet{ID: "ct-test"}, nil
+}
+
+// TestResolveDeliveryDBPath_EnvSet verifies that CT_DB overrides the default path.
+func TestResolveDeliveryDBPath_EnvSet(t *testing.T) {
+	t.Setenv("CT_DB", "/custom/path/cistern.db")
+	got := resolveDeliveryDBPath()
+	if got != "/custom/path/cistern.db" {
+		t.Errorf("got %q, want %q", got, "/custom/path/cistern.db")
+	}
+}
+
+// TestResolveDeliveryDBPath_Default verifies that the default path is used when CT_DB is unset.
+func TestResolveDeliveryDBPath_Default(t *testing.T) {
+	prev, exists := os.LookupEnv("CT_DB")
+	os.Unsetenv("CT_DB")
+	t.Cleanup(func() {
+		if exists {
+			os.Setenv("CT_DB", prev)
+		} else {
+			os.Unsetenv("CT_DB")
+		}
+	})
+
+	got := resolveDeliveryDBPath()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir")
+	}
+	want := filepath.Join(home, ".cistern", "cistern.db")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 }
 
 // TestCisternAdder_ParameterMapping verifies that cisternAdder.Add correctly
