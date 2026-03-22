@@ -106,7 +106,7 @@ func wsSendBinary(w *bufio.Writer, data []byte) error {
 func wsSendFrame(w *bufio.Writer, opcode byte, payload []byte) error {
 	n := len(payload)
 	var header [10]byte
-	header[0] = opcode // FIN=1
+	header[0] = opcode // FIN bit and opcode are both encoded in this byte by the caller
 	var hLen int
 	switch {
 	case n < 126:
@@ -157,6 +157,8 @@ func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byt
 			return 0, nil, buf, err
 		}
 		extLen := binary.BigEndian.Uint64(ext[:])
+		// Guard before int conversion: a value > wsMaxClientPayload but < math.MaxInt
+		// would pass the int-typed check below, so reject it here first.
 		if extLen > uint64(wsMaxClientPayload) {
 			return 0, nil, buf, fmt.Errorf("client frame payload %d exceeds max %d", extLen, wsMaxClientPayload)
 		}
@@ -406,10 +408,11 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		}()
 
 		// Goroutine C: shutdown watchdog — unblocks the peer goroutine on ctx cancel.
+		// Closes ptmx so goroutine A (ptmx.Read) unblocks. conn is owned exclusively
+		// by defer conn.Close() above; closing it here would race with that defer.
 		go func() {
 			<-ctx.Done()
 			ptmx.Close()
-			conn.Close()
 		}()
 
 		// Default size — will be overridden by the client's first resize message.

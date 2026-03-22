@@ -623,7 +623,7 @@ func TestDashboardHTML_UsesXterm(t *testing.T) {
 func TestWsTui_WSReaderExitsOnConnClose(t *testing.T) {
 	// in-process pipe connection — simulates the hijacked net.Conn
 	server, client := net.Pipe()
-	defer client.Close()
+	defer server.Close()
 
 	br := bufio.NewReader(server)
 
