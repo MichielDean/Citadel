@@ -632,8 +632,8 @@ func TestWsTui_WSReaderExitsOnConnClose(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		defer cancel()
 		defer close(done)
+		defer cancel()
 		buf := make([]byte, 4096)
 		for {
 			_, _, nb, err := wsReadClientFrame(br, buf)

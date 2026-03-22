@@ -401,7 +401,6 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer func() {
 			cancel()
-			ptmx.Close()
 			cmd.Process.Kill() //nolint:errcheck
 		}()
 
