@@ -29,6 +29,12 @@ import (
 // inside bufio.Writer.Flush.
 const wsWriteTimeout = 10 * time.Second
 
+// wsMaxClientPayload is the maximum payload size accepted from a client frame.
+// Client→server frames carry only resize JSON (~40 bytes) or close frames,
+// so 4 KiB is generous. This prevents a malicious client from triggering
+// unbounded memory allocation via a forged frame length header.
+const wsMaxClientPayload = 4096
+
 // aqueductSessionInfo holds the tmux session name and droplet context for an
 // active aqueduct worker.
 type aqueductSessionInfo struct {
@@ -149,6 +155,10 @@ func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byt
 		payloadLen = int(binary.BigEndian.Uint64(ext))
 	default:
 		payloadLen = rawLen
+	}
+
+	if payloadLen > wsMaxClientPayload {
+		return 0, nil, buf, fmt.Errorf("client frame payload %d exceeds max %d", payloadLen, wsMaxClientPayload)
 	}
 
 	var mask [4]byte
