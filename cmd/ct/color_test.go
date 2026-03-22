@@ -42,15 +42,15 @@ func TestStatusCell(t *testing.T) {
 		want   string
 	}{
 		// icon(1) + space(1) + padRight(status, 10)
-		{"flowing", 12, "● " + padRight("flowing", 10)},
-		{"queued", 12, "○ " + padRight("queued", 10)},
-		{"awaiting", 12, "⏸ " + padRight("awaiting", 10)},
-		{"stagnant", 12, "✗ " + padRight("stagnant", 10)},
-		{"delivered", 12, "✓ " + padRight("delivered", 10)},
+		{"flowing", 12, "● flowing   "},
+		{"queued", 12, "○ queued    "},
+		{"awaiting", 12, "⏸ awaiting  "},
+		{"stagnant", 12, "✗ stagnant  "},
+		{"delivered", 12, "✓ delivered "},
 		// unknown status: icon is " ", no color code
-		{"unknown", 12, "  " + padRight("unknown", 10)},
-		// tiny width: textWidth clamped to 1
-		{"flowing", 2, "● " + padRight("flowing", 1)},
+		{"unknown", 12, "  unknown   "},
+		// tiny width: textWidth clamped to 1 → truncates to first rune
+		{"flowing", 2, "● f"},
 	}
 	for _, tt := range tests {
 		got := statusCell(tt.status, tt.width)
@@ -106,7 +106,7 @@ func TestSkillDesc(t *testing.T) {
 		long := strings.Repeat("x", 60)
 		p := writeSkillMD(t, "---\ndescription: "+long+"\n---\n")
 		got := skillDesc(p)
-		want := truncate(long, 50)
+		want := strings.Repeat("x", 49) + "…"
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
