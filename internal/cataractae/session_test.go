@@ -101,9 +101,9 @@ func TestBuildPrompt_WithIdentity_FileMissing(t *testing.T) {
 	s := &Session{ID: "test", WorkDir: dir, Identity: "implementer"}
 	prompt := s.buildPrompt()
 
-	// Fallback: prompt contains a pointer to the missing path.
-	if !strings.Contains(prompt, "Read") {
-		t.Error("prompt missing 'Read' fallback pointer when identity file is missing")
+	// Fallback: prompt contains the actual missing path, not just any occurrence of "Read".
+	if !strings.Contains(prompt, "cataractae/implementer/CLAUDE.md") {
+		t.Error("prompt missing fallback path 'cataractae/implementer/CLAUDE.md' when identity file is missing")
 	}
 	if !strings.Contains(prompt, "implementer") {
 		t.Error("prompt missing identity name in fallback")
