@@ -218,6 +218,45 @@ func TestValidateWorkflowSkills_DeduplicatesAcrossSteps(t *testing.T) {
 	}
 }
 
+func TestValidateWorkflowSkills_DeduplicatesAcrossRepos(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	// same skill referenced in two different repos — should appear once in the error
+	workflows := map[string]*aqueduct.Workflow{
+		"repo-a": {
+			Name:       "feature",
+			Cataractae: []aqueduct.WorkflowCataractae{{Name: "implement", Skills: []aqueduct.SkillRef{{Name: "shared-skill"}}}},
+		},
+		"repo-b": {
+			Name:       "feature",
+			Cataractae: []aqueduct.WorkflowCataractae{{Name: "review", Skills: []aqueduct.SkillRef{{Name: "shared-skill"}}}},
+		},
+	}
+	err := validateWorkflowSkills(workflows)
+	if err == nil {
+		t.Fatal("expected error for missing skill, got nil")
+	}
+	if count := strings.Count(err.Error(), "shared-skill"); count != 1 {
+		t.Errorf("expected shared-skill to appear exactly once in error, got %d; error: %v", count, err)
+	}
+}
+
+func TestValidateWorkflowSkills_SkipsEmptySkillName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	workflows := map[string]*aqueduct.Workflow{
+		"repo": {
+			Name: "feature",
+			Cataractae: []aqueduct.WorkflowCataractae{
+				{Name: "implement", Skills: []aqueduct.SkillRef{{Name: ""}}},
+			},
+		},
+	}
+	if err := validateWorkflowSkills(workflows); err != nil {
+		t.Errorf("expected no error for empty skill name (should be skipped), got: %v", err)
+	}
+}
+
 func TestValidateWorkflowSkills_ErrorMentionsInstallCommand(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -235,5 +274,8 @@ func TestValidateWorkflowSkills_ErrorMentionsInstallCommand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ct skills install") {
 		t.Errorf("error should mention ct skills install command; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "git_sync") {
+		t.Errorf("error should mention git_sync as primary recovery path; got: %v", err)
 	}
 }

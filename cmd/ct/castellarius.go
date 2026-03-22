@@ -452,7 +452,7 @@ func validateWorkflowSkills(workflows map[string]*aqueduct.Workflow) error {
 	for _, w := range workflows {
 		for _, step := range w.Cataractae {
 			for _, skill := range step.Skills {
-				if seen[skill.Name] {
+				if skill.Name == "" || seen[skill.Name] {
 					continue
 				}
 				seen[skill.Name] = true
@@ -466,9 +466,13 @@ func validateWorkflowSkills(workflows map[string]*aqueduct.Workflow) error {
 		return nil
 	}
 	sort.Strings(missing)
-	return fmt.Errorf("castellarius cannot start: %d required skill(s) not installed"+
-		" — install with `ct skills install <name> <url>`:\n  %s",
-		len(missing), strings.Join(missing, "\n  "))
+	noun := "skill"
+	if len(missing) != 1 {
+		noun = "skills"
+	}
+	return fmt.Errorf("castellarius cannot start: %d required %s not installed"+
+		" — run git_sync or: ct skills install <name> <url>:\n  %s",
+		len(missing), noun, strings.Join(missing, "\n  "))
 }
 
 func init() {
