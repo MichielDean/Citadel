@@ -81,7 +81,7 @@ func runCataractaeAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generate: %w", err)
 	}
 	for _, p := range written {
-		if strings.HasSuffix(filepath.Dir(p), name) {
+		if filepath.Base(filepath.Dir(p)) == name {
 			fmt.Printf("Generated: %s\n", p)
 		}
 	}
