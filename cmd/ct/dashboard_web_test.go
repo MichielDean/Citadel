@@ -289,7 +289,7 @@ func TestWsSendText_MediumPayload(t *testing.T) {
 	if b[1] != 0x7E {
 		t.Errorf("byte[1] = 0x%02x, want 0x7E (medium extended len)", b[1])
 	}
-	n := int(b[2])<<8 | int(b[3])
+	n := int(binary.BigEndian.Uint16(b[2:4]))
 	if n != 200 {
 		t.Errorf("encoded length = %d, want 200", n)
 	}
@@ -625,7 +625,7 @@ func TestWsTui_WSReaderExitsOnConnClose(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close()
 
-	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
+	br := bufio.NewReader(server)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -636,7 +636,7 @@ func TestWsTui_WSReaderExitsOnConnClose(t *testing.T) {
 		defer close(done)
 		buf := make([]byte, 4096)
 		for {
-			_, _, nb, err := wsReadClientFrame(brw.Reader, buf)
+			_, _, nb, err := wsReadClientFrame(br, buf)
 			buf = nb
 			if err != nil {
 				return
