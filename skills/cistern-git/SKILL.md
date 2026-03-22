@@ -1,6 +1,6 @@
 ---
 name: cistern-git
-description: Git conventions for Cistern aqueduct cataractae. Use for all git operations in sandboxes: staging, committing, diffing, branching, and pushing. Covers rules specific to per-droplet worktrees, CONTEXT.md exclusion, two-dot diff, and no-stash policy.
+description: Git conventions for Cistern aqueduct cataractae. Use for all git operations in sandboxes: staging, committing, diffing, branching, and pushing. Covers rules specific to per-droplet worktrees, CONTEXT.md exclusion, merge-base diff, and no-stash policy.
 ---
 
 # Cistern Git Conventions
@@ -33,20 +33,19 @@ if [ "$BEFORE" = "$AFTER" ]; then
 fi
 ```
 
-## Diffing — always two dots, not three
+## Diffing — always use merge-base
 
 ```bash
-# Correct — shows actual changes on this branch
-git diff origin/main..HEAD
-git diff origin/main..HEAD --name-only
-
-# WRONG — three dots computes merge base diff, appears empty on rebased branches
-# git diff origin/main...HEAD   ← never use this
+# Correct — shows only this branch's own changes, regardless of rebase state
+git diff $(git merge-base HEAD origin/main)..HEAD
+git diff $(git merge-base HEAD origin/main)..HEAD --name-only
 ```
+
+Two-dot (`git diff origin/main..HEAD`) is wrong for unrebased branches: it includes all commits since the branch diverged, meaning other PRs that merged to main after branching appear in the diff. Merge-base is always correct.
 
 To list commits on the branch:
 ```bash
-git log origin/main..HEAD --oneline
+git log $(git merge-base HEAD origin/main)..HEAD --oneline
 ```
 
 ## No stash
