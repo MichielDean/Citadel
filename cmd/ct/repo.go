@@ -25,11 +25,6 @@ var repoListCmd = &cobra.Command{
 	Short: "List configured repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
-		var err error
-		_ = err
-		if err != nil {
-			return err
-		}
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
@@ -79,11 +74,6 @@ Examples:
 		}
 
 		cfgPath := resolveConfigPath()
-		var err error
-		_ = err
-		if err != nil {
-			return err
-		}
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
@@ -201,11 +191,6 @@ var repoCloneCmd = &cobra.Command{
 	Long:  "Pre-clones git sandboxes so agents can start immediately without waiting for initial clone.\nIf no repo name is given, clones all configured repos.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
-		var err error
-		_ = err
-		if err != nil {
-			return err
-		}
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
