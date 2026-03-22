@@ -338,6 +338,61 @@ func TestHeartbeatRepo_DeadTmuxSession_ResetsItem(t *testing.T) {
 	}
 }
 
+func TestHeartbeatRepo_PoolIdleSkipsReset(t *testing.T) {
+	// When pool says idle (aqueduct known but not flowing), heartbeat should
+	// skip the item even though tmux is dead. This covers the window where the
+	// observe goroutine has called pool.Release but the DB status has not yet
+	// been updated from in_progress — a premature reset here would race with
+	// the observe phase.
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "hb-idle-skip",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+		Outcome:           "",
+	}
+	client.items["hb-idle-skip"] = item
+
+	sched := testScheduler(client, newMockRunner(client))
+	// Do NOT mark the pool aqueduct as flowing — it stays idle.
+
+	sched.heartbeatRepo(context.Background(), sched.config.Repos[0])
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	// Pool=idle → heartbeat should skip, so no reset occurs.
+	if client.steps["hb-idle-skip"] != "" {
+		t.Errorf("pool-idle item should not be reset, got step=%q", client.steps["hb-idle-skip"])
+	}
+}
+
+func TestHeartbeatRepo_UnknownAssigneeStillResets(t *testing.T) {
+	// If an aqueduct is removed from config while an item is in_progress,
+	// pool.FindByName returns nil. The heartbeat must NOT skip these items —
+	// they should fall through to the tmux check and get reset.
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "hb-unknown",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "removed-aqueduct", // not in pool
+		Outcome:           "",
+	}
+	client.items["hb-unknown"] = item
+
+	sched := testScheduler(client, newMockRunner(client))
+	// Pool only knows "alpha" — "removed-aqueduct" is unknown.
+
+	sched.heartbeatRepo(context.Background(), sched.config.Repos[0])
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.steps["hb-unknown"] != "implement" {
+		t.Errorf("unknown-assignee item should be reset, got step=%q", client.steps["hb-unknown"])
+	}
+}
+
 func TestHeartbeatInProgress_CallsHeartbeatForAllRepos(t *testing.T) {
 	// Basic smoke test: heartbeatInProgress should iterate all repos without panic.
 	client := newMockClient()
