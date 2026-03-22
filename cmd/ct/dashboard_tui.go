@@ -465,15 +465,8 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	var water string
 	if ch.DropletID != "" {
 		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
-		if ch.NoteCount > 0 {
-			// Droplet has been revised: show ♻ indicator + amber coloring.
-			// The ♻ before the ID signals this is not the first pass.
-			infoStr := fmt.Sprintf("  ♻ %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-			water    = buildChanWater(infoStr, tuiStyleYellow)
-		} else {
-			infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-			water    = buildChanWater(infoStr, wfMid)
-		}
+		infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
+		water    = buildChanWater(infoStr, wfMid)
 	} else {
 		water = buildChanWater("  — idle —  ", wfDim)
 	}
@@ -723,19 +716,12 @@ func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaeInfo) (graphLine, infoLi
 	graphLine = g.String()
 	if activeVisualCol >= 0 {
 		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
-		revisedMark := ""
-		revisedStyle := tuiStyleGreen
-		if ch.NoteCount > 0 {
-			revisedMark = tuiStyleYellow.Render(" ♻") // visible recirculation indicator
-			revisedStyle = tuiStyleYellow
-		}
 		infoLine = strings.Repeat(" ", activeVisualCol) +
 			tuiStyleDim.Render("↑ ") +
-			revisedStyle.Render(ch.Name) +
+			tuiStyleGreen.Render(ch.Name) +
 			tuiStyleDim.Render(" · "+ch.DropletID) +
-			revisedMark +
 			"  " + formatElapsed(ch.Elapsed) +
-			"  " + revisedStyle.Render(bar)
+			"  " + tuiStyleGreen.Render(bar)
 	}
 	return
 }
@@ -772,17 +758,11 @@ func (m dashboardTUIModel) viewCurrentFlow() []string {
 
 	var lines []string
 	for _, fa := range d.FlowActivities {
-		// Header: droplet ID + step + note count + title.
-		revisedTag := ""
-		headerStyle := tuiStyleGreen
-		if fa.NoteCount > 0 {
-			revisedTag = tuiStyleYellow.Render(fmt.Sprintf(" ♻ %d", fa.NoteCount))
-			headerStyle = tuiStyleYellow
-		}
-		stepStr := headerStyle.Render(fa.Step)
+		// Header: droplet ID + step + title.
+		stepStr := tuiStyleGreen.Render(fa.Step)
 		idStr   := tuiStyleHeader.Render(fa.DropletID)
 		title   := tuiStyleDim.Render("  " + truncate(fa.Title, maxW-30))
-		lines = append(lines, fmt.Sprintf("  %s  %s%s%s", idStr, stepStr, revisedTag, title))
+		lines = append(lines, fmt.Sprintf("  %s  %s%s", idStr, stepStr, title))
 
 		if len(fa.RecentNotes) == 0 {
 			lines = append(lines, tuiStyleDim.Render("    (no notes yet — first pass)"))

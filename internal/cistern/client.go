@@ -447,14 +447,6 @@ func (c *Client) GetNotes(id string) ([]CataractaeNote, error) {
 	return notes, rows.Err()
 }
 
-// GetNoteCount returns the number of notes attached to a droplet.
-// Used by the dashboard to indicate revision cycles.
-func (c *Client) GetNoteCount(id string) int {
-	var n int
-	c.db.QueryRow(`SELECT count(*) FROM cataractae_notes WHERE droplet_id = ?`, id).Scan(&n)
-	return n
-}
-
 // Escalate marks a droplet as needing human attention and records the reason.
 func (c *Client) Escalate(id, reason string) error {
 	res, err := c.db.Exec(

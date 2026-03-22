@@ -43,7 +43,6 @@ type CataractaeInfo struct {
 	Elapsed         time.Duration `json:"elapsed"`     // nanoseconds; use elapsed/1e9 for seconds
 	CataractaeIndex  int          `json:"cataractae_index"` // 1-based index; 0 if unknown
 	TotalCataractae int           `json:"total_cataractae"`
-	NoteCount       int           `json:"note_count"`  // >0 means the droplet has been revised
 }
 
 // FlowActivity holds the live narrative for one in-progress droplet —
@@ -52,7 +51,6 @@ type FlowActivity struct {
 	DropletID   string                   `json:"droplet_id"`
 	Title       string                   `json:"title"`
 	Step        string                   `json:"step"`
-	NoteCount   int                      `json:"note_count"`
 	RecentNotes []cistern.CataractaeNote `json:"recent_notes"` // last 3, newest last
 }
 
@@ -167,7 +165,6 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 			wfCataractae := allSteps[ch.repo]
 			ci.TotalCataractae = len(wfCataractae)
 			ci.CataractaeIndex = cataractaeIndexInWorkflow(item.CurrentCataractae, wfCataractae)
-			ci.NoteCount = c.GetNoteCount(item.ID)
 		}
 		cataractae[i] = ci
 	}
@@ -219,7 +216,6 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 			DropletID:   item.ID,
 			Title:       item.Title,
 			Step:        item.CurrentCataractae,
-			NoteCount:   len(notes),
 			RecentNotes: recent,
 		})
 	}
