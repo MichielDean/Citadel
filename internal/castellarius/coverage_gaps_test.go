@@ -631,7 +631,11 @@ func makeSimpleGitRepo(t *testing.T) string {
 
 func TestDirtyNonContextFiles_CleanRepo_Empty(t *testing.T) {
 	dir := makeSimpleGitRepo(t)
-	if dirty := dirtyNonContextFiles(dir); len(dirty) != 0 {
+	dirty, err := dirtyNonContextFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirty) != 0 {
 		t.Errorf("clean repo should have no dirty files, got %v", dirty)
 	}
 }
@@ -642,7 +646,11 @@ func TestDirtyNonContextFiles_UntrackedFile_Ignored(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "untracked.go"), []byte("// new\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if dirty := dirtyNonContextFiles(dir); len(dirty) != 0 {
+	dirty, err := dirtyNonContextFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirty) != 0 {
 		t.Errorf("untracked files should be ignored, got %v", dirty)
 	}
 }
@@ -653,7 +661,11 @@ func TestDirtyNonContextFiles_ModifiedNonContext_Reported(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if dirty := dirtyNonContextFiles(dir); len(dirty) == 0 {
+	dirty, err := dirtyNonContextFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirty) == 0 {
 		t.Error("modified tracked file should appear in dirty list, got empty")
 	}
 }
@@ -670,7 +682,10 @@ func TestDirtyNonContextFiles_OnlyContextMd_Empty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "CONTEXT.md"), []byte("updated context\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dirty := dirtyNonContextFiles(dir)
+	dirty, err := dirtyNonContextFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, f := range dirty {
 		if strings.Contains(f, "CONTEXT.md") {
 			t.Errorf("CONTEXT.md should be excluded from dirty list, got %v", dirty)
@@ -680,7 +695,8 @@ func TestDirtyNonContextFiles_OnlyContextMd_Empty(t *testing.T) {
 
 func TestDirtyNonContextFiles_NonGitDir_ReturnsNil(t *testing.T) {
 	dir := t.TempDir() // not a git repo
-	if dirty := dirtyNonContextFiles(dir); dirty != nil {
+	dirty, _ := dirtyNonContextFiles(dir)
+	if dirty != nil {
 		t.Errorf("non-git dir should return nil, got %v", dirty)
 	}
 }
