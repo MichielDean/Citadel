@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,33 +113,30 @@ func TestAqueductPool_AvailableAqueductExcluding(t *testing.T) {
 	// alpha is now flowing — available excluding {} returns beta (first idle).
 	w3 := pool.AvailableAqueductExcluding(map[string]bool{})
 	if w3 == nil {
-		t.Error("AvailableAqueductExcluding with empty exclude should return an idle aqueduct")
+		t.Fatal("AvailableAqueductExcluding with empty exclude should return an idle aqueduct")
 	}
-	if w3 != nil && w3.Name == "alpha" {
+	if w3.Name == "alpha" {
 		t.Error("AvailableAqueductExcluding should not return a flowing aqueduct")
 	}
 }
 
 // --- isSupervisedProcess tests ---
 
-func TestIsSupervisedProcess_CT_SUPERVISED(t *testing.T) {
-	t.Setenv("CT_SUPERVISED", "1")
-	if !isSupervisedProcess() {
-		t.Error("CT_SUPERVISED=1 should be detected as supervised")
+func TestIsSupervisedProcess_EnvVars(t *testing.T) {
+	tests := []struct {
+		envVar, value string
+	}{
+		{"CT_SUPERVISED", "1"},
+		{"INVOCATION_ID", "some-systemd-id"},
+		{"SUPERVISOR_ENABLED", "1"},
 	}
-}
-
-func TestIsSupervisedProcess_INVOCATION_ID(t *testing.T) {
-	t.Setenv("INVOCATION_ID", "some-systemd-id")
-	if !isSupervisedProcess() {
-		t.Error("INVOCATION_ID set should be detected as supervised (systemd)")
-	}
-}
-
-func TestIsSupervisedProcess_SUPERVISOR_ENABLED(t *testing.T) {
-	t.Setenv("SUPERVISOR_ENABLED", "1")
-	if !isSupervisedProcess() {
-		t.Error("SUPERVISOR_ENABLED=1 should be detected as supervised")
+	for _, tc := range tests {
+		t.Run(tc.envVar, func(t *testing.T) {
+			t.Setenv(tc.envVar, tc.value)
+			if !isSupervisedProcess() {
+				t.Errorf("%s=%s should be detected as supervised", tc.envVar, tc.value)
+			}
+		})
 	}
 }
 
@@ -617,35 +613,19 @@ func TestDoReloadWorkflows_InvalidFile_KeepsOldWorkflow(t *testing.T) {
 // --- dirtyNonContextFiles tests ---
 
 // makeSimpleGitRepo creates a git repo at a temp dir with one initial commit.
+// Uses branchGitCmd/branchMustRun helpers from branch_lifecycle_test.go.
 func makeSimpleGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	cmds := [][]string{
-		{"git", "init"},
-		{"git", "config", "user.email", "test@test.com"},
-		{"git", "config", "user.name", "Test"},
-		{"git", "config", "commit.gpgsign", "false"},
-	}
-	for _, args := range cmds {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v: %v\n%s", args, err, out)
-		}
-	}
+	branchMustRun(t, branchGitCmd(dir, "init"))
+	branchMustRun(t, branchGitCmd(dir, "config", "user.email", "test@test.com"))
+	branchMustRun(t, branchGitCmd(dir, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(dir, "config", "commit.gpgsign", "false"))
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("init\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"git", "add", "."},
-		{"git", "commit", "-m", "initial"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v: %v\n%s", args, err, out)
-		}
-	}
+	branchMustRun(t, branchGitCmd(dir, "add", "."))
+	branchMustRun(t, branchGitCmd(dir, "commit", "-m", "initial"))
 	return dir
 }
 
@@ -684,16 +664,8 @@ func TestDirtyNonContextFiles_OnlyContextMd_Empty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "CONTEXT.md"), []byte("context\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"git", "add", "CONTEXT.md"},
-		{"git", "commit", "-m", "add context"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v: %v\n%s", args, err, out)
-		}
-	}
+	branchMustRun(t, branchGitCmd(dir, "add", "CONTEXT.md"))
+	branchMustRun(t, branchGitCmd(dir, "commit", "-m", "add context"))
 	// Now modify CONTEXT.md — it should be excluded from the dirty list.
 	if err := os.WriteFile(filepath.Join(dir, "CONTEXT.md"), []byte("updated context\n"), 0o644); err != nil {
 		t.Fatal(err)
