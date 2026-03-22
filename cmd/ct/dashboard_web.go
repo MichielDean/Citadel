@@ -363,16 +363,43 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		if err != nil {
 			return
 		}
+
+		// Shutdown sequence — three goroutines:
+		//
+		// (A) PTY reader (this goroutine): reads ptmx, writes binary WS frames.
+		//     Exits when: wsSendBinary fails (wsWriteTimeout / dead conn), or
+		//     ptmx.Read returns an error (PTY EOF / closed by watchdog C).
+		//     Calls cancel() via defer on any exit.
+		//
+		// (B) WS frame reader (goroutine below): reads resize/close frames from client.
+		//     Exits when: wsReadClientFrame returns error (conn closed / EOF), or
+		//     a close frame (opcode 0x8) is received.
+		//     Calls cancel() via defer on any exit.
+		//
+		// (C) Shutdown watchdog (goroutine below): waits for ctx cancellation.
+		//     Triggered when A or B exits; closes ptmx and conn so the other
+		//     goroutine unblocks from its blocked I/O call regardless of cause
+		//     (network partition, close frame, write timeout, PTY EOF).
+		ctx, cancel := context.WithCancel(context.Background())
 		defer func() {
+			cancel()
 			ptmx.Close()
 			cmd.Process.Kill() //nolint:errcheck
+		}()
+
+		// Goroutine C: shutdown watchdog — unblocks the peer goroutine on ctx cancel.
+		go func() {
+			<-ctx.Done()
+			ptmx.Close()
+			conn.Close()
 		}()
 
 		// Default size — will be overridden by the client's first resize message.
 		_ = pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
-		// Read incoming WebSocket frames from the client.
+		// Goroutine B: read incoming WebSocket frames from the client.
 		go func() {
+			defer cancel() // arm watchdog (C) on any exit
 			buf := make([]byte, 4096)
 			for {
 				opcode, payload, nb, err := wsReadClientFrame(brw.Reader, buf)
@@ -400,7 +427,7 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 			}
 		}()
 
-		// Forward PTY output → WebSocket as binary frames.
+		// Goroutine A: forward PTY output → WebSocket as binary frames.
 		out := make([]byte, 4096)
 		for {
 			n, err := ptmx.Read(out)

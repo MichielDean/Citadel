@@ -615,6 +615,52 @@ func TestDashboardHTML_UsesXterm(t *testing.T) {
 	}
 }
 
+// TestWsTui_WSReaderExitsOnConnClose verifies the shutdown propagation in the
+// /ws/tui handler: goroutine B (WS frame reader) must exit and call cancel()
+// when the underlying connection is closed without a WebSocket close frame.
+// This is the trigger for shutdown watchdog goroutine C, which closes ptmx
+// and unblocks the PTY reader goroutine A from ptmx.Read.
+func TestWsTui_WSReaderExitsOnConnClose(t *testing.T) {
+	// in-process pipe connection — simulates the hijacked net.Conn
+	server, client := net.Pipe()
+	defer client.Close()
+
+	brw := bufio.NewReadWriter(bufio.NewReader(server), bufio.NewWriter(server))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer cancel()
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			_, _, nb, err := wsReadClientFrame(brw.Reader, buf)
+			buf = nb
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// Simulate abrupt client disconnect — no WebSocket close frame.
+	client.Close()
+
+	select {
+	case <-done:
+		// goroutine exited as expected
+	case <-time.After(1 * time.Second):
+		t.Fatal("WS reader goroutine did not exit after connection close")
+	}
+	select {
+	case <-ctx.Done():
+		// cancel() was called by goroutine's defer — watchdog would fire
+	default:
+		t.Error("cancel() was not called by WS reader goroutine on connection close")
+	}
+}
+
 // readWSTextFrame reads one unmasked WebSocket text frame from br and returns the payload.
 func readWSTextFrame(br *bufio.Reader) (string, error) {
 	header := make([]byte, 2)
