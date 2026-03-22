@@ -19,34 +19,26 @@ const (
 	dispatchMaxSelfFix    = 3
 )
 
-type dispatchFailure struct {
-	at     time.Time
-	errMsg string
-}
-
 // dispatchLoopTracker tracks dispatch failures per droplet to detect and recover
 // from tight dispatch loops where a droplet repeatedly fails without spawning an agent.
 type dispatchLoopTracker struct {
 	mu       sync.Mutex
-	failures map[string][]dispatchFailure // dropletID → recent failure timestamps
-	fixes    map[string]int               // dropletID → number of self-fix attempts
+	failures map[string][]time.Time // dropletID → recent failure timestamps
+	fixes    map[string]int         // dropletID → number of self-fix attempts
 }
 
 func newDispatchLoopTracker() *dispatchLoopTracker {
 	return &dispatchLoopTracker{
-		failures: make(map[string][]dispatchFailure),
+		failures: make(map[string][]time.Time),
 		fixes:    make(map[string]int),
 	}
 }
 
 // recordFailure records a dispatch failure for the given droplet.
-func (t *dispatchLoopTracker) recordFailure(dropletID, errMsg string) {
+func (t *dispatchLoopTracker) recordFailure(dropletID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.failures[dropletID] = append(t.failures[dropletID], dispatchFailure{
-		at:     time.Now(),
-		errMsg: errMsg,
-	})
+	t.failures[dropletID] = append(t.failures[dropletID], time.Now())
 }
 
 // reset clears all tracking state for a droplet. Called on successful agent spawn.
@@ -71,8 +63,8 @@ func (t *dispatchLoopTracker) recentFailureCount(dropletID string) int {
 	defer t.mu.Unlock()
 	cutoff := time.Now().Add(-dispatchLoopWindow)
 	var n int
-	for _, f := range t.failures[dropletID] {
-		if f.at.After(cutoff) {
+	for _, ts := range t.failures[dropletID] {
+		if ts.After(cutoff) {
 			n++
 		}
 	}
@@ -116,12 +108,18 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 		return
 	}
 
+	// After any non-escalation recovery path, clear the failure window so the
+	// loop can be re-detected if recovery did not help.
+	defer s.dispatchLoop.resetFailures(item.ID)
+
+	attempt := fmt.Sprintf("%d/%d", fixAttempt, dispatchMaxSelfFix)
+
 	// Recovery 1: dirty worktree — reset and clean.
 	if _, err := os.Stat(worktreePath); err == nil {
 		if dirtyFiles := dirtyNonContextFiles(worktreePath); len(dirtyFiles) > 0 {
 			s.logger.Info("dispatch-loop recovery: dirty worktree — resetting",
 				"droplet", item.ID,
-				"attempt", fmt.Sprintf("%d/%d", fixAttempt, dispatchMaxSelfFix),
+				"attempt", attempt,
 			)
 			reset := exec.Command("git", "reset", "--hard", "HEAD")
 			reset.Dir = worktreePath
@@ -130,9 +128,8 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 			clean.Dir = worktreePath
 			_ = clean.Run()
 			_ = client.AddNote(item.ID, "dispatch-loop",
-				fmt.Sprintf("dispatch-loop recovery: %s — dirty worktree reset (attempt %d/%d)",
-					item.ID, fixAttempt, dispatchMaxSelfFix))
-			s.dispatchLoop.resetFailures(item.ID)
+				fmt.Sprintf("dispatch-loop recovery: %s — dirty worktree reset (attempt %s)",
+					item.ID, attempt))
 			return
 		}
 	}
@@ -141,7 +138,7 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 	if !worktreeRegistered(primaryDir, worktreePath) {
 		s.logger.Info("dispatch-loop recovery: worktree missing/corrupt — recreating",
 			"droplet", item.ID,
-			"attempt", fmt.Sprintf("%d/%d", fixAttempt, dispatchMaxSelfFix),
+			"attempt", attempt,
 		)
 		removeDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID)
 		if _, err := prepareDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID); err != nil {
@@ -149,22 +146,20 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 				"droplet", item.ID, "error", err)
 		}
 		_ = client.AddNote(item.ID, "dispatch-loop",
-			fmt.Sprintf("dispatch-loop recovery: %s — worktree recreated (attempt %d/%d)",
-				item.ID, fixAttempt, dispatchMaxSelfFix))
-		s.dispatchLoop.resetFailures(item.ID)
+			fmt.Sprintf("dispatch-loop recovery: %s — worktree recreated (attempt %s)",
+				item.ID, attempt))
 		return
 	}
 
-	// No applicable recovery — reset failures and let the counter rebuild.
-	// If the loop persists, fixAttempt will eventually exceed dispatchMaxSelfFix and escalate.
+	// No applicable recovery — if the loop persists, fixAttempt will eventually
+	// exceed dispatchMaxSelfFix and escalate.
 	s.logger.Warn("dispatch-loop recovery: no applicable recovery found",
 		"droplet", item.ID,
-		"attempt", fmt.Sprintf("%d/%d", fixAttempt, dispatchMaxSelfFix),
+		"attempt", attempt,
 	)
 	_ = client.AddNote(item.ID, "dispatch-loop",
-		fmt.Sprintf("dispatch-loop recovery: %s — no applicable recovery (attempt %d/%d), will retry",
-			item.ID, fixAttempt, dispatchMaxSelfFix))
-	s.dispatchLoop.resetFailures(item.ID)
+		fmt.Sprintf("dispatch-loop recovery: %s — no applicable recovery (attempt %s), will retry",
+			item.ID, attempt))
 }
 
 // worktreeRegistered returns true if worktreePath is listed in git worktree list for primaryDir.

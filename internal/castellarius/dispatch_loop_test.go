@@ -14,16 +14,15 @@ func TestDispatchLoopTracker_RecentFailureCount(t *testing.T) {
 	}
 
 	// Record failures below threshold.
-	for i := range 4 {
-		tracker.recordFailure("drop1", "err")
-		_ = i
+	for range 4 {
+		tracker.recordFailure("drop1")
 	}
 	if n := tracker.recentFailureCount("drop1"); n != 4 {
 		t.Fatalf("expected 4, got %d", n)
 	}
 
 	// Record one more — now at threshold.
-	tracker.recordFailure("drop1", "err")
+	tracker.recordFailure("drop1")
 	if n := tracker.recentFailureCount("drop1"); n != 5 {
 		t.Fatalf("expected 5, got %d", n)
 	}
@@ -32,8 +31,8 @@ func TestDispatchLoopTracker_RecentFailureCount(t *testing.T) {
 func TestDispatchLoopTracker_Reset(t *testing.T) {
 	tracker := newDispatchLoopTracker()
 
-	tracker.recordFailure("drop1", "err")
-	tracker.recordFailure("drop1", "err")
+	tracker.recordFailure("drop1")
+	tracker.recordFailure("drop1")
 	tracker.incrementFix("drop1")
 
 	tracker.reset("drop1")
@@ -50,7 +49,7 @@ func TestDispatchLoopTracker_Reset(t *testing.T) {
 func TestDispatchLoopTracker_ResetFailuresKeepsFixCount(t *testing.T) {
 	tracker := newDispatchLoopTracker()
 
-	tracker.recordFailure("drop1", "err")
+	tracker.recordFailure("drop1")
 	tracker.incrementFix("drop1") // fix count = 1
 
 	tracker.resetFailures("drop1")
@@ -70,8 +69,8 @@ func TestDispatchLoopTracker_StaleFailuresIgnored(t *testing.T) {
 
 	// Inject a stale failure by directly appending to the map.
 	tracker.mu.Lock()
-	tracker.failures["drop1"] = []dispatchFailure{
-		{at: time.Now().Add(-3 * time.Minute), errMsg: "old error"},
+	tracker.failures["drop1"] = []time.Time{
+		time.Now().Add(-3 * time.Minute),
 	}
 	tracker.mu.Unlock()
 
@@ -99,9 +98,9 @@ func TestDispatchLoopTracker_IndependentDroplets(t *testing.T) {
 	tracker := newDispatchLoopTracker()
 
 	for range 5 {
-		tracker.recordFailure("drop1", "err")
+		tracker.recordFailure("drop1")
 	}
-	tracker.recordFailure("drop2", "err")
+	tracker.recordFailure("drop2")
 
 	if n := tracker.recentFailureCount("drop1"); n != 5 {
 		t.Fatalf("drop1: expected 5, got %d", n)

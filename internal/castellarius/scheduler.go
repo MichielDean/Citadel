@@ -717,7 +717,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 						"droplet", req.Item.ID,
 						"error", err,
 					)
-					s.dispatchLoop.recordFailure(req.Item.ID, err.Error())
+					s.dispatchLoop.recordFailure(req.Item.ID)
 					if err2 := client.Assign(req.Item.ID, "", req.Step.Name); err2 != nil {
 						s.logger.Error("reset after worktree failure", "droplet", req.Item.ID, "error", err2)
 					}
@@ -737,7 +737,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 						"droplet", req.Item.ID,
 						"files", dirtyFiles,
 					)
-					s.dispatchLoop.recordFailure(req.Item.ID, "dirty files: "+strings.Join(dirtyFiles, ", "))
+					s.dispatchLoop.recordFailure(req.Item.ID)
 					_ = client.AddNote(req.Item.ID, "scheduler", note)
 					if err2 := client.Assign(req.Item.ID, "", req.Step.Name); err2 != nil {
 						s.logger.Error("reset after dirty check", "droplet", req.Item.ID, "error", err2)
@@ -756,7 +756,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 					"cataractae", req.Step.Name,
 					"error", err,
 				)
-				s.dispatchLoop.recordFailure(req.Item.ID, err.Error())
+				s.dispatchLoop.recordFailure(req.Item.ID)
 				// Reset to open so the item can be re-dispatched to same aqueduct.
 				if err2 := client.Assign(req.Item.ID, "", req.Step.Name); err2 != nil {
 					s.logger.Error("reset after spawn failure",
