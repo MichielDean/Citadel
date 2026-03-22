@@ -346,14 +346,20 @@ func revisionCycleNotes(notes []cistern.CataractaeNote) []cistern.CataractaeNote
 		lower := strings.ToLower(strings.TrimSpace(n.Content))
 		isPassSignal := strings.HasPrefix(lower, "no issues") ||
 			strings.HasPrefix(lower, "fix already in place") ||
-			strings.HasPrefix(lower, "all") ||
+			strings.HasPrefix(lower, "all good") ||
+			strings.HasPrefix(lower, "all clear") ||
+			strings.HasPrefix(lower, "all tests pass") ||
+			strings.HasPrefix(lower, "all checks pass") ||
 			strings.HasPrefix(lower, "implemented") ||
 			strings.HasPrefix(lower, "manually verified")
 		if isPassSignal {
 			break
 		}
-		// Prepend so order is oldest-first within the cycle.
-		cycle = append([]cistern.CataractaeNote{n}, cycle...)
+		cycle = append(cycle, n)
+	}
+	// Reverse to oldest-first order (notes arrive newest-first).
+	for i, j := 0, len(cycle)-1; i < j; i, j = i+1, j-1 {
+		cycle[i], cycle[j] = cycle[j], cycle[i]
 	}
 	// Only return notes from reviewer/security/qa cataractae — not implementer self-notes.
 	var filtered []cistern.CataractaeNote

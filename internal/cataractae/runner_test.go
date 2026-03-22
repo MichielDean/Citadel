@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -12,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 )
 
 func testQueueClient(t *testing.T) *cistern.Client {
@@ -40,8 +41,8 @@ func testWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
 		Cataractae: []aqueduct.WorkflowCataractae{
-			{Name: "implement", Type: "agent", Identity: "implementer", Context: "full_codebase"},
-			{Name: "review", Type: "agent", Identity: "reviewer", Context: "diff_only"},
+			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, Identity: "implementer", Context: aqueduct.ContextFullCodebase},
+			{Name: "review", Type: aqueduct.CataractaeTypeAgent, Identity: "reviewer", Context: aqueduct.ContextDiffOnly},
 		},
 	}
 }
@@ -271,9 +272,9 @@ func TestWriteContextFile(t *testing.T) {
 
 	step := &aqueduct.WorkflowCataractae{
 		Name:    "implement",
-		Type:    "agent",
+		Type:    aqueduct.CataractaeTypeAgent,
 		Identity: "implementer",
-		Context: "full_codebase",
+		Context: aqueduct.ContextFullCodebase,
 	}
 
 	notes := []cistern.CataractaeNote{
@@ -281,7 +282,7 @@ func TestWriteContextFile(t *testing.T) {
 	}
 
 	err := writeContextFile(path, ContextParams{
-		Level:      "full_codebase",
+		Level:      aqueduct.ContextFullCodebase,
 		SandboxDir: dir,
 		Item:       item,
 		Step:       step,
@@ -307,7 +308,7 @@ func TestWriteContextFile(t *testing.T) {
 		"ct droplet pass",
 	}
 	for _, want := range checks {
-		if !contains(content, want) {
+		if !strings.Contains(content, want) {
 			t.Errorf("CONTEXT.md missing %q", want)
 		}
 	}
@@ -316,7 +317,7 @@ func TestWriteContextFile(t *testing.T) {
 func TestPrepareContext_FullCodebase(t *testing.T) {
 	dir := t.TempDir()
 	item := &cistern.Droplet{ID: "bf-1", Title: "Test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent", Context: "full_codebase"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextFullCodebase}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextFullCodebase,
@@ -346,7 +347,7 @@ func TestPrepareContext_SpecOnly(t *testing.T) {
 		Priority:    2,
 		Description: "Build the widget",
 	}
-	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: "agent", Context: "spec_only"}
+	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextSpecOnly}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextSpecOnly,
@@ -364,7 +365,7 @@ func TestPrepareContext_SpecOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal("expected spec.md")
 	}
-	if !contains(string(specData), "Spec test") {
+	if !strings.Contains(string(specData), "Spec test") {
 		t.Error("spec.md missing item title")
 	}
 
@@ -497,7 +498,7 @@ func TestPrepareContext_DiffOnly_Isolation(t *testing.T) {
 	mustRun(t, gitCmd(sandbox, "commit", "-m", "add smoke test comment"))
 
 	item := &cistern.Droplet{ID: "bf-smoke", Title: "Smoke", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "review", Type: "agent", Context: "diff_only"}
+	step := &aqueduct.WorkflowCataractae{Name: "review", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextDiffOnly}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextDiffOnly,
@@ -546,7 +547,7 @@ func TestPrepareContext_DiffOnly_Isolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read diff.patch: %v", err)
 	}
-	if !contains(string(diff), "smoke test comment") {
+	if !strings.Contains(string(diff), "smoke test comment") {
 		t.Error("diff.patch should contain the change ('smoke test comment')")
 	}
 
@@ -579,16 +580,16 @@ func TestWriteContextFile_AvailableSkillsBlock(t *testing.T) {
 	item := &cistern.Droplet{ID: "sk-1", Title: "Skill test", Status: "open", Priority: 1}
 	step := &aqueduct.WorkflowCataractae{
 		Name:     "implement",
-		Type:     "agent",
+		Type:     aqueduct.CataractaeTypeAgent,
 		Identity: "implementer",
-		Context:  "full_codebase",
+		Context:  aqueduct.ContextFullCodebase,
 		Skills: []aqueduct.SkillRef{
 			{Name: "my-skill"},
 		},
 	}
 
 	err := writeContextFile(path, ContextParams{
-		Level:      "full_codebase",
+		Level:      aqueduct.ContextFullCodebase,
 		SandboxDir: dir,
 		Item:       item,
 		Step:       step,
@@ -611,7 +612,7 @@ func TestWriteContextFile_AvailableSkillsBlock(t *testing.T) {
 		"</available_skills>",
 	}
 	for _, want := range checks {
-		if !contains(content, want) {
+		if !strings.Contains(content, want) {
 			t.Errorf("CONTEXT.md missing %q\nfull content:\n%s", want, content)
 		}
 	}
@@ -636,15 +637,15 @@ func TestWriteContextFile_XMLEscapedDescription(t *testing.T) {
 	item := &cistern.Droplet{ID: "xss-1", Title: "XSS test", Status: "open", Priority: 1}
 	step := &aqueduct.WorkflowCataractae{
 		Name:    "implement",
-		Type:    "agent",
-		Context: "full_codebase",
+		Type:    aqueduct.CataractaeTypeAgent,
+		Context: aqueduct.ContextFullCodebase,
 		Skills: []aqueduct.SkillRef{
 			{Name: "evil-skill"},
 		},
 	}
 
 	err := writeContextFile(path, ContextParams{
-		Level:      "full_codebase",
+		Level:      aqueduct.ContextFullCodebase,
 		SandboxDir: dir,
 		Item:       item,
 		Step:       step,
@@ -660,11 +661,11 @@ func TestWriteContextFile_XMLEscapedDescription(t *testing.T) {
 
 	content := string(data)
 	// Raw script tag must NOT appear — that would be a prompt injection.
-	if contains(content, "<script>") {
+	if strings.Contains(content, "<script>") {
 		t.Error("CONTEXT.md contains raw <script> tag — prompt injection not escaped")
 	}
 	// XML-escaped version must be present.
-	if !contains(content, "&lt;script&gt;") {
+	if !strings.Contains(content, "&lt;script&gt;") {
 		t.Error("CONTEXT.md missing XML-escaped description (&lt;script&gt;)")
 	}
 }
@@ -676,13 +677,13 @@ func TestWriteContextFile_NoSkillsBlock_WhenEmpty(t *testing.T) {
 	item := &cistern.Droplet{ID: "no-skill", Title: "No skills", Status: "open", Priority: 1}
 	step := &aqueduct.WorkflowCataractae{
 		Name:    "implement",
-		Type:    "agent",
-		Context: "full_codebase",
+		Type:    aqueduct.CataractaeTypeAgent,
+		Context: aqueduct.ContextFullCodebase,
 		// Skills intentionally empty
 	}
 
 	err := writeContextFile(path, ContextParams{
-		Level:      "full_codebase",
+		Level:      aqueduct.ContextFullCodebase,
 		SandboxDir: dir,
 		Item:       item,
 		Step:       step,
@@ -696,7 +697,7 @@ func TestWriteContextFile_NoSkillsBlock_WhenEmpty(t *testing.T) {
 		t.Fatalf("read CONTEXT.md: %v", err)
 	}
 
-	if contains(string(data), "<available_skills>") {
+	if strings.Contains(string(data), "<available_skills>") {
 		t.Error("CONTEXT.md should not contain <available_skills> when step has no skills")
 	}
 }
@@ -883,5 +884,444 @@ func TestPrepareDiffOnly_SetLastReviewedCommitError_LogsWarn(t *testing.T) {
 	// A WARN must have been logged for the SetLastReviewedCommit failure.
 	if !h.hasWarn() {
 		t.Error("expected WARN log for SetLastReviewedCommit failure, got none")
+	}
+}
+
+// TestWriteContextFile_ReviewerWithOpenIssues verifies the two-phase review
+// protocol is written when there are DB-tracked open issues.
+func TestWriteContextFile_ReviewerWithOpenIssues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CONTEXT.md")
+
+	item := &cistern.Droplet{
+		ID:     "rr-1",
+		Title:  "Review item",
+		Status: "in_progress",
+		Priority: 1,
+	}
+	step := &aqueduct.WorkflowCataractae{
+		Name:     "review",
+		Type:     aqueduct.CataractaeTypeAgent,
+		Identity: "reviewer",
+		Context:  aqueduct.ContextDiffOnly,
+	}
+	issues := []cistern.DropletIssue{
+		{
+			ID:          "rr-1-abc12",
+			DropletID:   "rr-1",
+			FlaggedBy:   "reviewer",
+			Description: "Missing input validation on the endpoint",
+		},
+	}
+
+	err := writeContextFile(path, ContextParams{
+		Level:      aqueduct.ContextDiffOnly,
+		SandboxDir: dir,
+		Item:       item,
+		Step:       step,
+		OpenIssues: issues,
+	})
+	if err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+
+	content := string(data)
+	checks := []string{
+		"TWO-PHASE REVIEW",
+		"Phase 1",
+		"Phase 2",
+		"rr-1-abc12",
+		"Missing input validation",
+		"ct droplet issue resolve",
+		"ct droplet issue reject",
+	}
+	for _, want := range checks {
+		if !strings.Contains(content, want) {
+			t.Errorf("CONTEXT.md missing %q", want)
+		}
+	}
+}
+
+// TestWriteContextFile_ReviewerWithRevisionNotes verifies the legacy two-phase
+// review protocol is written when a reviewer step has free-text notes but no
+// DB-tracked open issues.
+func TestWriteContextFile_ReviewerWithRevisionNotes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CONTEXT.md")
+
+	item := &cistern.Droplet{
+		ID:     "rr-2",
+		Title:  "Review with notes",
+		Status: "in_progress",
+		Priority: 1,
+	}
+	step := &aqueduct.WorkflowCataractae{
+		Name:     "review",
+		Type:     aqueduct.CataractaeTypeAgent,
+		Identity: "reviewer",
+		Context:  aqueduct.ContextDiffOnly,
+	}
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "reviewer", Content: "Error handling missing in auth module"},
+	}
+
+	err := writeContextFile(path, ContextParams{
+		Level:      aqueduct.ContextDiffOnly,
+		SandboxDir: dir,
+		Item:       item,
+		Step:       step,
+		Notes:      notes,
+		// OpenIssues intentionally empty — triggers legacy fallback path
+	})
+	if err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+
+	content := string(data)
+	checks := []string{
+		"TWO-PHASE REVIEW",
+		"Phase 1",
+		"Phase 2",
+		"Prior Issue 1",
+		"Error handling missing in auth module",
+		"RESOLVED:",
+		"UNRESOLVED:",
+	}
+	for _, want := range checks {
+		if !strings.Contains(content, want) {
+			t.Errorf("CONTEXT.md missing %q", want)
+		}
+	}
+}
+
+// TestWriteContextFile_NotesTruncated verifies that Recent Step Notes are
+// capped at 4 to prevent anchoring hallucination.
+func TestWriteContextFile_NotesTruncated(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CONTEXT.md")
+
+	item := &cistern.Droplet{ID: "trunc-1", Title: "Truncation test", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: aqueduct.CataractaeTypeAgent}
+
+	// 6 notes from "implementer" — they appear in Recent Step Notes only,
+	// not in revision cycle notes (which filters for review/qa/security names).
+	var notes []cistern.CataractaeNote
+	for i := 1; i <= 6; i++ {
+		notes = append(notes, cistern.CataractaeNote{
+			CataractaeName: "implementer",
+			Content:        fmt.Sprintf("Note number %d", i),
+		})
+	}
+
+	err := writeContextFile(path, ContextParams{
+		Level:      aqueduct.ContextFullCodebase,
+		SandboxDir: dir,
+		Item:       item,
+		Step:       step,
+		Notes:      notes,
+	})
+	if err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+
+	content := string(data)
+	for i := 1; i <= 4; i++ {
+		want := fmt.Sprintf("Note number %d", i)
+		if !strings.Contains(content, want) {
+			t.Errorf("CONTEXT.md missing note %d (should be within cap)", i)
+		}
+	}
+	for i := 5; i <= 6; i++ {
+		notWant := fmt.Sprintf("Note number %d", i)
+		if strings.Contains(content, notWant) {
+			t.Errorf("CONTEXT.md contains note %d — should be truncated (cap is 4)", i)
+		}
+	}
+}
+
+// TestWriteContextFile_AssigneeField verifies the Assignee line is written
+// when the droplet has an assignee.
+func TestWriteContextFile_AssigneeField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CONTEXT.md")
+
+	item := &cistern.Droplet{
+		ID:       "asn-1",
+		Title:    "Assigned item",
+		Status:   "in_progress",
+		Priority: 2,
+		Assignee: "alice",
+	}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: aqueduct.CataractaeTypeAgent}
+
+	err := writeContextFile(path, ContextParams{
+		Level:      aqueduct.ContextFullCodebase,
+		SandboxDir: dir,
+		Item:       item,
+		Step:       step,
+	})
+	if err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+
+	if !strings.Contains(string(data), "**Assignee:** alice") {
+		t.Error("CONTEXT.md missing Assignee field")
+	}
+}
+
+// TestPrepareContext_UnknownLevel verifies that an unrecognised context level
+// returns an error rather than silently using a default.
+func TestPrepareContext_UnknownLevel(t *testing.T) {
+	item := &cistern.Droplet{ID: "x-1", Title: "Test", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: aqueduct.CataractaeTypeAgent}
+
+	_, _, err := PrepareContext(ContextParams{
+		Level:      "nonexistent_level",
+		SandboxDir: t.TempDir(),
+		Item:       item,
+		Step:       step,
+	})
+	if err == nil {
+		t.Error("expected error for unknown context level")
+	}
+	if !strings.Contains(err.Error(), "unknown context level") {
+		t.Errorf("error message = %q, expected 'unknown context level'", err.Error())
+	}
+}
+
+// TestIsReviewerCataractae_Nil verifies nil step returns false without panic.
+func TestIsReviewerCataractae_Nil(t *testing.T) {
+	if isReviewerCataractae(nil) {
+		t.Error("isReviewerCataractae(nil) = true, want false")
+	}
+}
+
+// TestRevisionCycleNotes_StopsAtPassSignal verifies that notes after a pass
+// signal are excluded from the current revision cycle.
+func TestRevisionCycleNotes_StopsAtPassSignal(t *testing.T) {
+	// Notes are newest-first. The pass signal in position [1] should stop
+	// the walk, so only notes[0] (the newest) enters the cycle.
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "reviewer", Content: "Found a bug in auth"},
+		{CataractaeName: "reviewer", Content: "No issues found — all tests pass"},
+		{CataractaeName: "reviewer", Content: "Old issue from before the pass signal"},
+	}
+
+	got := revisionCycleNotes(notes)
+	if len(got) != 1 {
+		t.Fatalf("revisionCycleNotes returned %d notes, want 1", len(got))
+	}
+	if got[0].Content != "Found a bug in auth" {
+		t.Errorf("unexpected note: %q", got[0].Content)
+	}
+}
+
+// TestWriteContextFile_SkillDescriptionFallback verifies that when a SKILL.md
+// file is absent the skill name is used as the description.
+func TestWriteContextFile_SkillDescriptionFallback(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir) // no SKILL.md installed
+
+	path := filepath.Join(dir, "CONTEXT.md")
+	item := &cistern.Droplet{ID: "sk-2", Title: "Skill fallback", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataractae{
+		Name:    "implement",
+		Type:    aqueduct.CataractaeTypeAgent,
+		Context: aqueduct.ContextFullCodebase,
+		Skills:  []aqueduct.SkillRef{{Name: "missing-skill"}},
+	}
+
+	err := writeContextFile(path, ContextParams{
+		Level:      aqueduct.ContextFullCodebase,
+		SandboxDir: dir,
+		Item:       item,
+		Step:       step,
+	})
+	if err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+
+	if !strings.Contains(string(data), "<description>missing-skill</description>") {
+		t.Error("expected skill name as fallback description when SKILL.md is missing")
+	}
+}
+
+// TestPrepareDiffOnly_InvalidRepo verifies that PrepareContext with diff_only
+// returns an error when the sandbox is not a git repository.
+func TestPrepareDiffOnly_InvalidRepo(t *testing.T) {
+	item := &cistern.Droplet{ID: "x-2", Title: "Test", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataractae{Name: "review", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextDiffOnly}
+
+	_, _, err := PrepareContext(ContextParams{
+		Level:      aqueduct.ContextDiffOnly,
+		SandboxDir: t.TempDir(), // not a git repo — generateDiff will fail
+		Item:       item,
+		Step:       step,
+	})
+	if err == nil {
+		t.Error("expected error for diff_only context on a non-git directory")
+	}
+}
+
+// TestSkillDescription_AllHeadings verifies that when SKILL.md contains only
+// headings and blank lines (no description), the skill name is used as fallback.
+func TestSkillDescription_AllHeadings(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	skillCacheDir := filepath.Join(dir, ".cistern", "skills", "headings-only")
+	if err := os.MkdirAll(skillCacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillCacheDir, "SKILL.md"),
+		[]byte("# Heading One\n\n## Heading Two\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := skillDescription("headings-only")
+	if got != "headings-only" {
+		t.Errorf("skillDescription for all-headings SKILL.md = %q, want %q", got, "headings-only")
+	}
+}
+
+// TestSpawnStep_SandboxDirOverride verifies that when sandboxDirOverride is
+// non-empty, SpawnStep writes CONTEXT.md to the override dir, not w.SandboxDir.
+func TestSpawnStep_SandboxDirOverride(t *testing.T) {
+	cfg := Config{
+		SkipInitialClone: true,
+		Repo:             testRepoConfig(),
+		Workflow:         testWorkflow(),
+		CisternClient:    testQueueClient(t),
+		SandboxRoot:      t.TempDir(),
+	}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	w := r.Claim()
+	if w == nil {
+		t.Fatal("no worker available")
+	}
+	t.Cleanup(func() {
+		exec.Command("tmux", "kill-session", "-t", w.SessionID).Run()
+		r.Release(w)
+	})
+
+	overrideDir := t.TempDir()
+	item := &cistern.Droplet{ID: "ov-1", Title: "Override test", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataractae{
+		Name:    "implement",
+		Type:    aqueduct.CataractaeTypeAgent,
+		Context: aqueduct.ContextFullCodebase,
+	}
+
+	spawnErr := r.SpawnStep(w, item, step, overrideDir)
+	// tmux may or may not be available; a session-spawn error is expected and fine.
+	// What must NOT happen: a context-preparation error before the spawn attempt.
+	if spawnErr != nil && !strings.HasPrefix(spawnErr.Error(), "session spawn:") {
+		t.Errorf("expected nil or session spawn error, got: %v", spawnErr)
+	}
+
+	// CONTEXT.md must be written to the override dir.
+	if _, err := os.Stat(filepath.Join(overrideDir, "CONTEXT.md")); err != nil {
+		t.Error("CONTEXT.md not found in override dir")
+	}
+	// CONTEXT.md must NOT be written to w.SandboxDir.
+	if _, err := os.Stat(filepath.Join(w.SandboxDir, "CONTEXT.md")); err == nil {
+		t.Error("CONTEXT.md written to w.SandboxDir when override was set")
+	}
+}
+
+// TestSpawnStep_UsesWorkerSandboxDir verifies that without a sandboxDirOverride,
+// SpawnStep writes CONTEXT.md to w.SandboxDir.
+func TestSpawnStep_UsesWorkerSandboxDir(t *testing.T) {
+	cfg := Config{
+		SkipInitialClone: true,
+		Repo:             testRepoConfig(),
+		Workflow:         testWorkflow(),
+		CisternClient:    testQueueClient(t),
+		SandboxRoot:      t.TempDir(),
+	}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	w := r.Claim()
+	if w == nil {
+		t.Fatal("no worker available")
+	}
+	t.Cleanup(func() {
+		exec.Command("tmux", "kill-session", "-t", w.SessionID).Run()
+		r.Release(w)
+	})
+
+	// Ensure the worker sandbox dir exists so CONTEXT.md can be written there.
+	if err := os.MkdirAll(w.SandboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	item := &cistern.Droplet{ID: "noov-1", Title: "No override test", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataractae{
+		Name:    "implement",
+		Type:    aqueduct.CataractaeTypeAgent,
+		Context: aqueduct.ContextFullCodebase,
+	}
+
+	spawnErr := r.SpawnStep(w, item, step, "") // no override
+	if spawnErr != nil && !strings.HasPrefix(spawnErr.Error(), "session spawn:") {
+		t.Errorf("expected nil or session spawn error, got: %v", spawnErr)
+	}
+
+	// CONTEXT.md must be written to w.SandboxDir when no override is set.
+	if _, err := os.Stat(filepath.Join(w.SandboxDir, "CONTEXT.md")); err != nil {
+		t.Error("CONTEXT.md not found in w.SandboxDir when no override was set")
+	}
+}
+
+// TestRevisionCycleNotes_AllPrefixNotPassSignal verifies that a note beginning
+// with "all" but not a recognised pass-signal phrase does NOT stop the cycle.
+// Regression test for the bug where strings.HasPrefix(lower, "all") caused any
+// note starting with "all" (e.g. "All tests are still failing") to silently
+// truncate the revision cycle.
+func TestRevisionCycleNotes_AllPrefixNotPassSignal(t *testing.T) {
+	// "All tests are still failing" starts with "all" but is NOT a pass signal.
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "reviewer", Content: "Found a new bug"},
+		{CataractaeName: "reviewer", Content: "All tests are still failing"},
+		{CataractaeName: "reviewer", Content: "Older issue"},
+	}
+
+	got := revisionCycleNotes(notes)
+	// All three notes are from a reviewer and none is a pass signal, so all
+	// three should be in the cycle (oldest-first order).
+	if len(got) != 3 {
+		t.Fatalf("revisionCycleNotes returned %d notes, want 3; got: %v", len(got), got)
 	}
 }

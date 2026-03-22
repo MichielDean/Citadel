@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -77,5 +78,316 @@ func TestSpawnAutomated_AddNoteError_LogsWarn(t *testing.T) {
 	// A WARN must have been logged for the AddNote failure.
 	if !h.hasWarn() {
 		t.Error("expected WARN log for AddNote failure, got none")
+	}
+}
+
+// newTestAdapter creates an Adapter directly (bypassing NewAdapter which clones
+// repos) so spawnAutomated can be tested without network access.
+func newTestAdapter(t *testing.T, repoName string, client *cistern.Client) *Adapter {
+	t.Helper()
+	return &Adapter{
+		runners:      map[string]*Runner{},
+		executor:     gates.New(),
+		queueClients: map[string]*cistern.Client{repoName: client},
+	}
+}
+
+// TestSpawnAutomated_SetsOutcome verifies that spawnAutomated writes the step
+// outcome to the DB so the Castellarius observe phase can route the item.
+func TestSpawnAutomated_SetsOutcome(t *testing.T) {
+	client := testQueueClient(t)
+	a := newTestAdapter(t, "testrepo", client)
+
+	item, err := client.Add("testrepo", "Automated test", "", 1, 1)
+	if err != nil {
+		t.Fatalf("Create droplet: %v", err)
+	}
+
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "noop",
+			Type: aqueduct.CataractaeTypeAutomated,
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
+		AqueductName: "alice",
+		SandboxDir:   t.TempDir(),
+	}
+
+	if err := a.spawnAutomated(context.Background(), req); err != nil {
+		t.Fatalf("spawnAutomated: %v", err)
+	}
+
+	updated, err := client.Get(item.ID)
+	if err != nil {
+		t.Fatalf("Get droplet: %v", err)
+	}
+	if updated.Outcome != "pass" {
+		t.Errorf("outcome = %q, want %q", updated.Outcome, "pass")
+	}
+}
+
+// TestSpawnAutomated_SandboxDirFallback verifies that when SandboxDir is empty,
+// spawnAutomated falls back to the home-based path and builds the DropletContext
+// with ID = AqueductName+"-"+ItemID. The noop gate emits a note containing that
+// ID, which is stored to the DB — proving the fallback path was used.
+func TestSpawnAutomated_SandboxDirFallback(t *testing.T) {
+	client := testQueueClient(t)
+	a := newTestAdapter(t, "testrepo", client)
+
+	item, err := client.Add("testrepo", "Fallback test", "", 1, 1)
+	if err != nil {
+		t.Fatalf("Create droplet: %v", err)
+	}
+
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "noop",
+			Type: aqueduct.CataractaeTypeAutomated,
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
+		AqueductName: "alice",
+		SandboxDir:   "", // empty — triggers home-based fallback
+	}
+
+	if err := a.spawnAutomated(context.Background(), req); err != nil {
+		t.Fatalf("spawnAutomated with empty SandboxDir: %v", err)
+	}
+
+	updated, err := client.Get(item.ID)
+	if err != nil {
+		t.Fatalf("Get droplet: %v", err)
+	}
+	if updated.Outcome != "pass" {
+		t.Errorf("outcome = %q, want %q", updated.Outcome, "pass")
+	}
+
+	// The noop gate emits "noop: item <bc.ID> passed through" where bc.ID is
+	// AqueductName+"-"+item.ID. Verify this note was written to the DB, which
+	// proves the fallback DropletContext was constructed with the correct ID.
+	wantID := "alice-" + item.ID
+	notes, err := client.GetNotes(item.ID)
+	if err != nil {
+		t.Fatalf("GetNotes: %v", err)
+	}
+	found := false
+	for _, n := range notes {
+		if strings.Contains(n.Content, wantID) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no note containing %q; notes: %v", wantID, notes)
+	}
+}
+
+// TestSpawnAutomated_WithMetaNotes verifies that spawnAutomated succeeds and
+// writes the outcome even when notes include "meta:key=value" prefixed entries
+// (metadata parsing is internal to spawnAutomated and not observable here).
+func TestSpawnAutomated_WithMetaNotes(t *testing.T) {
+	client := testQueueClient(t)
+	a := newTestAdapter(t, "testrepo", client)
+
+	item, err := client.Add("testrepo", "Meta test", "", 1, 1)
+	if err != nil {
+		t.Fatalf("Create droplet: %v", err)
+	}
+
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "noop",
+			Type: aqueduct.CataractaeTypeAutomated,
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
+		AqueductName: "alice",
+		SandboxDir:   t.TempDir(),
+		Notes: []cistern.CataractaeNote{
+			{CataractaeName: "pr-create", Content: "meta:pr_url=https://github.com/example/pr/42"},
+			{CataractaeName: "pr-create", Content: "meta:pr_number=42"},
+			{CataractaeName: "implementer", Content: "Implemented the feature"},
+		},
+	}
+
+	if err := a.spawnAutomated(context.Background(), req); err != nil {
+		t.Fatalf("spawnAutomated: %v", err)
+	}
+
+	// After successful run, outcome must be set.
+	updated, err := client.Get(item.ID)
+	if err != nil {
+		t.Fatalf("Get droplet: %v", err)
+	}
+	if updated.Outcome != "pass" {
+		t.Errorf("outcome = %q, want %q", updated.Outcome, "pass")
+	}
+}
+
+// TestSpawnAutomated_UnknownRepo verifies that spawnAutomated returns an error
+// when the repo name has no corresponding queue client.
+func TestSpawnAutomated_UnknownRepo(t *testing.T) {
+	client := testQueueClient(t)
+	a := newTestAdapter(t, "testrepo", client)
+
+	item := &cistern.Droplet{ID: "auto-5", Title: "Unknown repo", Status: "open", Priority: 1}
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "noop",
+			Type: aqueduct.CataractaeTypeAutomated,
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "no-such-repo"},
+		AqueductName: "alice",
+		SandboxDir:   t.TempDir(),
+	}
+
+	err := a.spawnAutomated(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for unknown repo")
+	}
+	if !strings.Contains(err.Error(), "no queue client") {
+		t.Errorf("error = %q, want 'no queue client'", err.Error())
+	}
+}
+
+// TestAdapterSpawn_DispatchesToSpawnAutomated verifies that Adapter.Spawn routes
+// automated-type steps through spawnAutomated (not the agent tmux path).
+func TestAdapterSpawn_DispatchesToSpawnAutomated(t *testing.T) {
+	client := testQueueClient(t)
+	a := newTestAdapter(t, "testrepo", client)
+
+	item, err := client.Add("testrepo", "Dispatch test", "", 1, 1)
+	if err != nil {
+		t.Fatalf("Create droplet: %v", err)
+	}
+
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "noop",
+			Type: aqueduct.CataractaeTypeAutomated, // automated → spawnAutomated path
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
+		AqueductName: "alice",
+		SandboxDir:   t.TempDir(),
+	}
+
+	if err := a.Spawn(context.Background(), req); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	updated, err := client.Get(item.ID)
+	if err != nil {
+		t.Fatalf("Get droplet: %v", err)
+	}
+	if updated.Outcome != "pass" {
+		t.Errorf("outcome = %q, want %q", updated.Outcome, "pass")
+	}
+}
+
+// TestAdapterSpawn_AgentNoRunner verifies that Spawn returns an error for an
+// agent-type step when no runner is registered for the repo.
+func TestAdapterSpawn_AgentNoRunner(t *testing.T) {
+	client := testQueueClient(t)
+	a := newTestAdapter(t, "testrepo", client)
+
+	item := &cistern.Droplet{ID: "auto-7", Title: "Agent no runner", Status: "open", Priority: 1}
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "implement",
+			Type: aqueduct.CataractaeTypeAgent, // not automated — goes through runner path
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "no-runner-repo"},
+		AqueductName: "alice",
+	}
+
+	err := a.Spawn(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error when no runner for repo")
+	}
+	if !strings.Contains(err.Error(), "no runner") {
+		t.Errorf("error = %q, want 'no runner'", err.Error())
+	}
+}
+
+// TestAdapterSpawn_AgentNoWorker verifies that Spawn returns an error for an
+// agent-type step when the named worker does not exist in the runner.
+func TestAdapterSpawn_AgentNoWorker(t *testing.T) {
+	client := testQueueClient(t)
+
+	cfg := Config{
+		SkipInitialClone: true,
+		Repo:             testRepoConfig(),
+		Workflow:         testWorkflow(),
+		CisternClient:    client,
+		SandboxRoot:      t.TempDir(),
+	}
+	runner, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	a := &Adapter{
+		runners:      map[string]*Runner{"testrepo": runner},
+		executor:     gates.New(),
+		queueClients: map[string]*cistern.Client{"testrepo": client},
+	}
+
+	item := &cistern.Droplet{ID: "auto-8", Title: "Agent no worker", Status: "open", Priority: 1}
+	req := castellarius.CataractaeRequest{
+		Item: item,
+		Step: aqueduct.WorkflowCataractae{
+			Name: "implement",
+			Type: aqueduct.CataractaeTypeAgent,
+		},
+		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
+		AqueductName: "nonexistent-worker", // no such worker
+	}
+
+	spawnErr := a.Spawn(context.Background(), req)
+	if spawnErr == nil {
+		t.Fatal("expected error for nonexistent worker")
+	}
+	if !strings.Contains(spawnErr.Error(), "worker") {
+		t.Errorf("error = %q, want 'worker' in message", spawnErr.Error())
+	}
+}
+
+// TestNewAdapter_NoWorkflow verifies that NewAdapter returns an error when a
+// repo has no workflow configured.
+func TestNewAdapter_NoWorkflow(t *testing.T) {
+	client := testQueueClient(t)
+	repos := []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}}
+	workflows := map[string]*aqueduct.Workflow{} // missing "myrepo"
+	clients := map[string]*cistern.Client{"myrepo": client}
+
+	_, err := NewAdapter(repos, workflows, clients)
+	if err == nil {
+		t.Fatal("expected error when workflow missing")
+	}
+	if !strings.Contains(err.Error(), "no workflow") {
+		t.Errorf("error = %q, want 'no workflow'", err.Error())
+	}
+}
+
+// TestNewAdapter_NoQueueClient verifies that NewAdapter returns an error when a
+// repo has no queue client configured.
+func TestNewAdapter_NoQueueClient(t *testing.T) {
+	wf := &aqueduct.Workflow{Name: "feature", Cataractae: []aqueduct.WorkflowCataractae{
+		{Name: "implement", Type: aqueduct.CataractaeTypeAgent},
+	}}
+	repos := []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}}
+	workflows := map[string]*aqueduct.Workflow{"myrepo": wf}
+	clients := map[string]*cistern.Client{} // missing "myrepo"
+
+	_, err := NewAdapter(repos, workflows, clients)
+	if err == nil {
+		t.Fatal("expected error when queue client missing")
+	}
+	if !strings.Contains(err.Error(), "no queue client") {
+		t.Errorf("error = %q, want 'no queue client'", err.Error())
 	}
 }
