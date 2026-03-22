@@ -351,16 +351,6 @@ func TestShellHook_EmptyCommandErrors(t *testing.T) {
 
 // --- hookGitSync skills deployment tests ---
 
-// mustRunGit is a test helper that runs a git command and fatals on error.
-func mustRunGit(t *testing.T, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
 // setupGitOriginWithSkills creates a bare origin repo with a skills/<name>/SKILL.md
 // committed to main. Returns the origin dir path.
 func setupGitOriginWithSkills(t *testing.T, tmpDir string, skillName, skillContent string) string {
@@ -372,13 +362,13 @@ func setupGitOriginWithSkills(t *testing.T, tmpDir string, skillName, skillConte
 
 	// Create bare origin.
 	originDir := filepath.Join(tmpDir, "origin.git")
-	mustRunGit(t, "init", "--bare", originDir)
+	mustGit(t, "", "init", "--bare", originDir)
 
 	// Clone origin, add skill, commit and push to main.
 	workDir := filepath.Join(tmpDir, "work")
-	mustRunGit(t, "clone", originDir, workDir)
-	mustRunGit(t, "-C", workDir, "config", "user.email", "test@example.com")
-	mustRunGit(t, "-C", workDir, "config", "user.name", "Test")
+	mustGit(t, "", "clone", originDir, workDir)
+	mustGit(t, workDir, "config", "user.email", "test@example.com")
+	mustGit(t, workDir, "config", "user.name", "Test")
 
 	skillPath := filepath.Join(workDir, "skills", skillName, "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
@@ -387,9 +377,9 @@ func setupGitOriginWithSkills(t *testing.T, tmpDir string, skillName, skillConte
 	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mustRunGit(t, "-C", workDir, "add", "-A")
-	mustRunGit(t, "-C", workDir, "commit", "-m", "add skill")
-	mustRunGit(t, "-C", workDir, "push", "origin", "HEAD:main")
+	mustGit(t, workDir, "add", "-A")
+	mustGit(t, workDir, "commit", "-m", "add skill")
+	mustGit(t, workDir, "push", "origin", "HEAD:main")
 
 	return originDir
 }
@@ -406,7 +396,7 @@ func TestHookGitSync_DeploysSkillsToSkillsDir(t *testing.T) {
 	// Create a sandbox clone for hookGitSync to find.
 	sandboxRoot := filepath.Join(tmpDir, "sandboxes")
 	sandboxClone := filepath.Join(sandboxRoot, "myrepo", "worker1")
-	mustRunGit(t, "clone", originDir, sandboxClone)
+	mustGit(t, "", "clone", originDir, sandboxClone)
 
 	cfg := &aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -442,7 +432,7 @@ func TestHookGitSync_SkillsDeployIsIdempotent(t *testing.T) {
 
 	sandboxRoot := filepath.Join(tmpDir, "sandboxes")
 	sandboxClone := filepath.Join(sandboxRoot, "repo", "worker1")
-	mustRunGit(t, "clone", originDir, sandboxClone)
+	mustGit(t, "", "clone", originDir, sandboxClone)
 
 	cfg := &aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -482,23 +472,23 @@ func TestHookGitSync_SkillsSyncGracefulWhenNoSkillsDir(t *testing.T) {
 
 	// Create origin with just an empty commit (no skills/).
 	originDir := filepath.Join(tmpDir, "origin.git")
-	mustRunGit(t, "init", "--bare", originDir)
+	mustGit(t, "", "init", "--bare", originDir)
 	workDir := filepath.Join(tmpDir, "work")
-	mustRunGit(t, "clone", originDir, workDir)
-	mustRunGit(t, "-C", workDir, "config", "user.email", "test@example.com")
-	mustRunGit(t, "-C", workDir, "config", "user.name", "Test")
+	mustGit(t, "", "clone", originDir, workDir)
+	mustGit(t, workDir, "config", "user.email", "test@example.com")
+	mustGit(t, workDir, "config", "user.name", "Test")
 
 	// Add a README so we have something to commit.
 	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mustRunGit(t, "-C", workDir, "add", "-A")
-	mustRunGit(t, "-C", workDir, "commit", "-m", "init")
-	mustRunGit(t, "-C", workDir, "push", "origin", "HEAD:main")
+	mustGit(t, workDir, "add", "-A")
+	mustGit(t, workDir, "commit", "-m", "init")
+	mustGit(t, workDir, "push", "origin", "HEAD:main")
 
 	sandboxRoot := filepath.Join(tmpDir, "sandboxes")
 	sandboxClone := filepath.Join(sandboxRoot, "noskills-repo", "worker1")
-	mustRunGit(t, "clone", originDir, sandboxClone)
+	mustGit(t, "", "clone", originDir, sandboxClone)
 
 	cfg := &aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -530,12 +520,15 @@ func TestHookGitSync_SkillsSyncGracefulWhenNoSkillsDir(t *testing.T) {
 
 // --- git_sync cataractae file deployment tests ---
 
-// mustGit runs git with args in dir, failing the test if it errors.
+// mustGit runs git with args, optionally in dir (pass "" to run without -C).
 func mustGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	if dir != "" {
+		args = append([]string{"-C", dir}, args...)
+	}
+	cmd := exec.Command("git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git -C %s %v: %v\n%s", dir, args, err, out)
+		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
 
