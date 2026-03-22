@@ -42,9 +42,10 @@ Summary:
 1. `git diff --name-only --diff-filter=U` — identify conflicted files
 2. For each file: keep what HEAD added AND keep what this branch adds
 3. `go build ./...` — verify the merge compiles
-4. `git rebase --continue`
-5. `go build ./... && go test ./...` — verify after full rebase
-6. `git push --force-with-lease origin $BRANCH`
+4. `git add $(git diff --name-only --diff-filter=U)` — stage resolved files
+5. `git rebase --continue`
+6. `go build ./... && go test ./...` — verify after full rebase
+7. `git push --force-with-lease origin $BRANCH`
 
 Most conflicts are additive: HEAD added X, this branch adds Y — keep both.
 Never discard branch additions.
