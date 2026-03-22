@@ -1012,24 +1012,29 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 		}
 
 		if item.Assignee != "" {
-			// Pool-first check: if the pool says idle, dispatch already
-			// released this aqueduct (or hasn't assigned it yet). Skipping
-			// here avoids racing with the window between pool.Assign and
-			// sess.Spawn where isTmuxAlive would return false prematurely.
-			if !pool.IsFlowing(item.Assignee) {
+			// NOTE: pool flowing state is never cleared by a tmux crash —
+			// do not use pool state as the sole crash-detection signal.
+			// Always combine it with isTmuxAlive below.
+			//
+			// If the aqueduct is known and idle, the observe goroutine
+			// already released it (or dispatch hasn't assigned it yet).
+			// Skip to avoid racing with the pool.Assign→sess.Spawn window
+			// where isTmuxAlive would return false prematurely.
+			// Unknown assignees (removed aqueducts) fall through so stale
+			// items still get recovered.
+			if pool.FindByName(item.Assignee) != nil && !pool.IsFlowing(item.Assignee) {
 				continue
 			}
 
-			// Pool says flowing — check whether the tmux session is alive.
-			// If alive, the agent is running normally.
+			// Pool says flowing (or aqueduct unknown) — check tmux session.
 			sessionID := repo.Name + "-" + item.Assignee
 			if isTmuxAlive(sessionID) {
 				continue
 			}
 		}
 
-		// Either no assignee, or pool=flowing + tmux=dead (genuine stall).
-		// Reset to open for re-dispatch.
+		// Either no assignee, or pool=flowing + tmux=dead, or unknown
+		// aqueduct + tmux=dead. Reset to open for re-dispatch.
 		s.logger.Info("heartbeat: resetting stalled droplet",
 			"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
 
