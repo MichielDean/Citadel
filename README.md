@@ -185,7 +185,28 @@ ct cataractae generate              # Regenerate all CLAUDE.md files from source
 ct cataractae status                # Show which cataractae are actively processing droplets
 ```
 
-The `aqueduct.yaml` holds routing configuration (which cataractae run at each step, skill references, timeouts). Persona and instruction content lives in the directory files, not inline in YAML.
+The `aqueduct.yaml` holds routing configuration (which cataractae run at each step, skill references, timeouts, model selection). Persona and instruction content lives in the directory files, not inline in YAML.
+
+### Per-step model selection
+
+Each cataractae step can specify an LLM model with the optional `model:` field:
+
+```yaml
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    model: sonnet       # passed to claude CLI as --model sonnet
+    context: full_codebase
+
+  - name: simplify
+    type: agent
+    identity: simplifier
+    model: opus         # stronger model for deep refactoring
+    context: full_codebase
+```
+
+Valid values are any string accepted by the `claude` CLI (e.g. `sonnet`, `opus`, `haiku`, `claude-opus-4-6`). If `model:` is omitted, the agent uses its default. `ct doctor` validates that the value is a non-empty string when present.
 
 ## Skills
 

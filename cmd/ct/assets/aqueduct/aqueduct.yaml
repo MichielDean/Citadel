@@ -55,7 +55,7 @@ cataractae:
   - name: adversarial-review
     type: agent
     identity: reviewer
-    model: sonnet
+    model: opus
     context: full_codebase
     skills:
       - name: cistern-droplet-state

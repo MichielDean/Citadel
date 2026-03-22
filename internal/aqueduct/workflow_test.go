@@ -33,8 +33,8 @@ func TestParseValidWorkflow(t *testing.T) {
 	if impl.Identity != "implementer" {
 		t.Errorf("step[0].Role = %q, want %q", impl.Identity, "implementer")
 	}
-	if impl.Model != "sonnet" {
-		t.Errorf("step[0].Model = %q, want %q", impl.Model, "sonnet")
+	if impl.Model == nil || *impl.Model != "sonnet" {
+		t.Errorf("step[0].Model = %v, want %q", impl.Model, "sonnet")
 	}
 	if impl.Context != ContextFullCodebase {
 		t.Errorf("step[0].Context = %q, want %q", impl.Context, ContextFullCodebase)
@@ -259,6 +259,34 @@ func TestValidateFarmConfig_MissingRepoName(t *testing.T) {
 	err := ValidateAqueductConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "name is required") {
 		t.Errorf("expected name required error, got %v", err)
+	}
+}
+
+func TestValidateEmptyModel(t *testing.T) {
+	emptyModel := ""
+	w := &Workflow{
+		Name: "test",
+		Cataractae: []WorkflowCataractae{
+			{Name: "step", Type: CataractaeTypeAgent, Model: &emptyModel, OnPass: "done"},
+		},
+	}
+	err := Validate(w)
+	if err == nil || !strings.Contains(err.Error(), "non-empty string") {
+		t.Errorf("expected non-empty model error, got %v", err)
+	}
+}
+
+func TestValidateWhitespaceOnlyModel(t *testing.T) {
+	whitespaceModel := "   "
+	w := &Workflow{
+		Name: "test",
+		Cataractae: []WorkflowCataractae{
+			{Name: "step", Type: CataractaeTypeAgent, Model: &whitespaceModel, OnPass: "done"},
+		},
+	}
+	err := Validate(w)
+	if err == nil || !strings.Contains(err.Error(), "non-empty string") {
+		t.Errorf("expected non-empty model error, got %v", err)
 	}
 }
 
