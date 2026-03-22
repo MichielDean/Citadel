@@ -194,6 +194,11 @@ func hookGitSync(cfg *aqueduct.AqueductConfig, sandboxRoot string, logger *slog.
 			}
 		}
 
+		// Deploy cataractae source files for each role defined in the workflow.
+		if newContent != nil {
+			syncCataractaeFiles(cloneDir, home, repo.Name, newContent, logger)
+		}
+
 		// Sync skills from the skills/ tree in origin/main into ~/.cistern/skills/.
 		// This runs independently of the workflow sync — skills are deployed even if
 		// the workflow YAML is missing or unchanged.
@@ -227,6 +232,49 @@ func syncSkillsFromRepo(cloneDir, repoName string, logger *slog.Logger) {
 		}
 		if changed {
 			logger.Info("git_sync: skill deployed", "repo", repoName, "skill", name)
+		}
+	}
+}
+
+// syncCataractaeFiles deploys PERSONA.md and INSTRUCTIONS.md for each role
+// defined in wfContent from origin/main (via cloneDir) to ~/.cistern/cataractae/<roleKey>/.
+// Missing files and parse errors are logged but do not halt the sync.
+func syncCataractaeFiles(cloneDir, home, repoName string, wfContent []byte, logger *slog.Logger) {
+	w, parseErr := aqueduct.ParseWorkflowBytes(wfContent)
+	if parseErr != nil {
+		logger.Warn("git_sync: cannot parse workflow for cataractae extraction", "repo", repoName, "error", parseErr)
+		return
+	}
+
+	cataractaeDeployDir := filepath.Join(home, ".cistern", "cataractae")
+	seen := map[string]bool{}
+	for _, step := range w.Cataractae {
+		roleKey := step.Identity
+		if roleKey == "" || seen[roleKey] {
+			continue
+		}
+		seen[roleKey] = true
+		for _, fname := range []string{"PERSONA.md", "INSTRUCTIONS.md"} {
+			relPath := "cataractae/" + roleKey + "/" + fname
+			content, gitErr := exec.Command("git", "-C", cloneDir, "show", "origin/main:"+relPath).Output()
+			if gitErr != nil {
+				logger.Info("git_sync: cataractae file not in origin/main", "repo", repoName, "path", relPath)
+				continue
+			}
+			destPath := filepath.Join(cataractaeDeployDir, roleKey, fname)
+			old, _ := os.ReadFile(destPath)
+			if bytes.Equal(old, content) {
+				continue
+			}
+			if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
+				logger.Warn("git_sync: mkdir failed", "path", destPath, "error", mkErr)
+				continue
+			}
+			if wErr := os.WriteFile(destPath, content, 0o644); wErr != nil {
+				logger.Warn("git_sync: write failed", "path", destPath, "error", wErr)
+				continue
+			}
+			logger.Info("git_sync: cataractae file updated", "repo", repoName, "path", destPath)
 		}
 	}
 }
