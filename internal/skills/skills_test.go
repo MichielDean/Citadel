@@ -391,13 +391,8 @@ func TestRemoveManifestEntry_RemovesEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListInstalled: %v", err)
 	}
-	for _, e := range entries {
-		if e.Name == "to-remove" {
-			t.Error("entry still present after removeManifestEntry")
-		}
-	}
 	if len(entries) != 1 || entries[0].Name != "keep" {
-		t.Errorf("unexpected entries after remove: %v", entries)
+		t.Errorf("expected [keep], got %v", entries)
 	}
 }
 
