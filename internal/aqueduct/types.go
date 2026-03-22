@@ -46,13 +46,6 @@ type WorkflowCataractae struct {
 	OnEscalate     string     `yaml:"on_escalate,omitempty"`
 }
 
-// CataractaeDefinition defines an agent role in YAML.
-type CataractaeDefinition struct {
-	Name         string `yaml:"name"`
-	Description  string `yaml:"description"`
-	Instructions string `yaml:"instructions"`
-}
-
 // ComplexityLevel defines skip rules for a single complexity tier.
 type ComplexityLevel struct {
 	Level        int      `yaml:"level"`

@@ -39,7 +39,7 @@ func runCataractaeAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Derive cataractae dir from the workflow location (same as generate).
-	cataractaeDir := filepath.Clean(filepath.Join(filepath.Dir(wfPath), "..", "cataractae"))
+	cataractaeDir := cisternCataractaeDir(wfPath)
 
 	// Scaffold PERSONA.md and INSTRUCTIONS.md.
 	personaPath, instrPath, err := aqueduct.ScaffoldCataractaeDir(cataractaeDir, name)
@@ -76,7 +76,7 @@ func runCataractaeGenerate(cmd *cobra.Command, args []string) error {
 
 	// Derive cataractae dir from the workflow location: <repo>/cataractae/ sits one level
 	// above the aqueduct dir that contains the workflow file.
-	cataractaeDir := filepath.Clean(filepath.Join(filepath.Dir(wfPath), "..", "cataractae"))
+	cataractaeDir := cisternCataractaeDir(wfPath)
 	written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir)
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func runCataractaeList(cmd *cobra.Command, args []string) error {
 	// Sort keys for stable output.
 	sort.Strings(identities)
 
-	cataractaeDir := filepath.Clean(filepath.Join(filepath.Dir(wfPath), "..", "cataractae"))
+	cataractaeDir := cisternCataractaeDir(wfPath)
 	for _, id := range identities {
 		displayName := readPersonaName(filepath.Join(cataractaeDir, id, "PERSONA.md"), id)
 		fmt.Printf("  %-20s %-40s → ct cataractae edit %s\n", id, displayName, id)
@@ -203,7 +203,7 @@ func runCataractaeEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	selectedKey := identities[idx-1]
-	cataractaeDir := filepath.Clean(filepath.Join(filepath.Dir(wfPath), "..", "cataractae"))
+	cataractaeDir := cisternCataractaeDir(wfPath)
 	instrPath := filepath.Join(cataractaeDir, selectedKey, "INSTRUCTIONS.md")
 
 	// Open in $EDITOR.
@@ -252,7 +252,6 @@ func resolveWorkflowPath() (string, error) {
 	}
 	return wfPath, nil
 }
-
 
 // --- cataractae status ---
 

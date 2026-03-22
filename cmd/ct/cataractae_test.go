@@ -360,4 +360,3 @@ func TestReadPersonaName_FallbackToTitleCaseWhenNoRoleHeader(t *testing.T) {
 		t.Errorf("readPersonaName = %q, want %q", got, "Docs Writer")
 	}
 }
-
