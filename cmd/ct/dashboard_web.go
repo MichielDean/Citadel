@@ -530,7 +530,7 @@ term.loadAddon(fitAddon);
 term.open(document.getElementById('terminal'));
 
 var ws = null;
-var scale = 1.0;
+var scale = 0.75; /* default: render ~133% more content, scaled down to fit */
 var minScale = 0.3;
 var maxScale = 3.0;
 var wrap = document.getElementById('wrap');
@@ -543,12 +543,15 @@ term.onResize(function(e) {
   }
 });
 
-/* Fit terminal to fill the viewport, then update wrap dimensions for scroll */
+/* Fit terminal to the virtual (unscaled) area.
+   By sizing the terminal element to viewport/scale before fitting, FitAddon
+   calculates cols/rows for a larger area than the screen. Bubble Tea renders
+   more content at higher detail; CSS scale then shrinks it to fit physically.
+   At scale=0.6 (60%): terminal sees 167% of viewport → ~1.7x more content. */
 function fitTerminal() {
-  /* Temporarily size terminal to full viewport so FitAddon gets correct cols/rows */
   var termEl = document.getElementById('terminal');
-  termEl.style.width  = scroll.clientWidth  + 'px';
-  termEl.style.height = scroll.clientHeight + 'px';
+  termEl.style.width  = Math.round(scroll.clientWidth  / scale) + 'px';
+  termEl.style.height = Math.round(scroll.clientHeight / scale) + 'px';
   fitAddon.fit();
 }
 
@@ -582,7 +585,8 @@ var pinchStartScale = 1;
 
 function setScale(s) {
   scale = Math.max(minScale, Math.min(maxScale, s));
-  applyScale();
+  fitTerminal();  /* recalculate cols/rows for new virtual area */
+  applyScale();   /* update CSS transform and wrap dimensions */
 }
 
 /* Pinch-to-zoom (mobile touch) */
