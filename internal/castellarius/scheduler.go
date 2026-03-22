@@ -1066,6 +1066,11 @@ func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string)
 		if out, err := checkout.CombinedOutput(); err != nil {
 			return "", fmt.Errorf("git checkout %s in %s: %w: %s", branch, worktreePath, err, out)
 		}
+		// Discard any Castellarius-managed files left modified from prior dispatch.
+		// CONTEXT.md is written fresh on every dispatch — never block on it.
+		discard := exec.Command("git", "checkout", "--", "CONTEXT.md")
+		discard.Dir = worktreePath
+		_ = discard.Run()
 		return worktreePath, nil
 	}
 
