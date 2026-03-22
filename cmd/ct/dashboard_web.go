@@ -119,6 +119,58 @@ func wsSendFrame(w *bufio.Writer, opcode byte, payload []byte) error {
 	return w.Flush()
 }
 
+// wsReadClientFrame reads one WebSocket frame from a client (potentially masked).
+// It returns the opcode, payload, and any read error. buf is reused across calls
+// to avoid per-frame allocation; if the payload exceeds len(buf), a new slice is
+// allocated and returned as the buf going forward.
+func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byte, newBuf []byte, err error) {
+	header := make([]byte, 2)
+	if _, err = io.ReadFull(br, header); err != nil {
+		return 0, nil, buf, err
+	}
+	opcode = header[0] & 0x0F
+	masked := header[1]&0x80 != 0
+	rawLen := int(header[1] & 0x7F)
+
+	var payloadLen int
+	switch rawLen {
+	case 126:
+		ext := make([]byte, 2)
+		if _, err = io.ReadFull(br, ext); err != nil {
+			return 0, nil, buf, err
+		}
+		payloadLen = int(ext[0])<<8 | int(ext[1])
+	case 127:
+		ext := make([]byte, 8)
+		if _, err = io.ReadFull(br, ext); err != nil {
+			return 0, nil, buf, err
+		}
+		payloadLen = int(ext[4])<<24 | int(ext[5])<<16 | int(ext[6])<<8 | int(ext[7])
+	default:
+		payloadLen = rawLen
+	}
+
+	var mask [4]byte
+	if masked {
+		if _, err = io.ReadFull(br, mask[:]); err != nil {
+			return 0, nil, buf, err
+		}
+	}
+
+	if payloadLen > len(buf) {
+		buf = make([]byte, payloadLen)
+	}
+	if _, err = io.ReadFull(br, buf[:payloadLen]); err != nil {
+		return 0, nil, buf, err
+	}
+	if masked {
+		for i := range buf[:payloadLen] {
+			buf[i] ^= mask[i%4]
+		}
+	}
+	return opcode, buf[:payloadLen], buf, nil
+}
+
 // wsUpgrade performs the RFC 6455 handshake. On success it returns the hijacked
 // connection and its buffered read-writer. On failure it writes an HTTP error
 // and returns a non-nil error.
@@ -320,59 +372,14 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		_ = pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
 		// Read incoming WebSocket frames from the client.
-		// Frames are read via the raw connection; we handle text (control) and
-		// binary (keyboard input) frames.
 		go func() {
 			buf := make([]byte, 4096)
 			for {
-				// Read a WebSocket frame header.
-				header := make([]byte, 2)
-				if _, err := io.ReadFull(brw.Reader, header); err != nil {
+				opcode, payload, nb, err := wsReadClientFrame(brw.Reader, buf)
+				buf = nb
+				if err != nil {
 					return
 				}
-				opcode := header[0] & 0x0F
-				masked := header[1]&0x80 != 0
-				rawLen := int(header[1] & 0x7F)
-
-				var payloadLen int
-				switch rawLen {
-				case 126:
-					ext := make([]byte, 2)
-					if _, err := io.ReadFull(brw.Reader, ext); err != nil {
-						return
-					}
-					payloadLen = int(ext[0])<<8 | int(ext[1])
-				case 127:
-					ext := make([]byte, 8)
-					if _, err := io.ReadFull(brw.Reader, ext); err != nil {
-						return
-					}
-					payloadLen = int(ext[4])<<24 | int(ext[5])<<16 | int(ext[6])<<8 | int(ext[7])
-				default:
-					payloadLen = rawLen
-				}
-
-				var mask [4]byte
-				if masked {
-					if _, err := io.ReadFull(brw.Reader, mask[:]); err != nil {
-						return
-					}
-				}
-
-				if payloadLen > len(buf) {
-					buf = make([]byte, payloadLen)
-				}
-				if _, err := io.ReadFull(brw.Reader, buf[:payloadLen]); err != nil {
-					return
-				}
-				if masked {
-					for i := range buf[:payloadLen] {
-						buf[i] ^= mask[i%4]
-					}
-				}
-
-				payload := buf[:payloadLen]
-
 				switch opcode {
 				case 0x1: // text frame — control message (resize)
 					var msg struct {
@@ -410,20 +417,6 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 	})
 
 	return mux
-}
-
-// stripClearWriter wraps an io.Writer and strips ANSI clear-screen sequences
-// (\033[2J\033[H) from the stream. xterm.js renders incrementally — clear
-// codes cause visible flashing and can corrupt multi-frame renders.
-type stripClearWriter struct{ w io.Writer }
-
-func (s *stripClearWriter) Write(p []byte) (int, error) {
-	clean := strings.ReplaceAll(string(p), "\033[2J\033[H", "")
-	n, err := s.w.Write([]byte(clean))
-	if err != nil {
-		return n, err
-	}
-	return len(p), nil // report original len to avoid short-write errors
 }
 
 // RunDashboardWeb starts the HTTP web dashboard on addr and blocks until
