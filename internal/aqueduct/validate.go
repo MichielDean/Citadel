@@ -65,6 +65,10 @@ func validateCataractae(w *Workflow, s WorkflowCataractae, cataractaeNames map[s
 		return fmt.Errorf("workflow %q cataractae %q: unknown context %q", w.Name, s.Name, s.Context)
 	}
 
+	if s.Model != nil && strings.TrimSpace(*s.Model) == "" {
+		return fmt.Errorf("workflow %q cataractae %q: model must be a non-empty string when set", w.Name, s.Name)
+	}
+
 	// Validate cataractae references in routing fields.
 	for _, ref := range cataractaeRefs(s) {
 		if ref.target == "" {

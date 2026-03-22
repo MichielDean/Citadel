@@ -36,7 +36,7 @@ type WorkflowCataractae struct {
 	Name    string       `yaml:"name"`
 	Type    CataractaeType     `yaml:"type"`
 	Identity string       `yaml:"identity,omitempty"`
-	Model   string       `yaml:"model,omitempty"`
+	Model   *string      `yaml:"model,omitempty"`
 	Context ContextLevel `yaml:"context,omitempty"`
 
 	TimeoutMinutes int        `yaml:"timeout_minutes,omitempty"`

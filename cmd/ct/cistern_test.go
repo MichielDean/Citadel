@@ -11,6 +11,31 @@ import (
 	"github.com/MichielDean/cistern/internal/cistern"
 )
 
+// captureStdout redirects os.Stdout to a pipe for the duration of fn, then
+// returns everything written to it.  The write-end of the pipe is closed and
+// os.Stdout is restored via defer, so both resources are cleaned up even if fn
+// panics.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		w.Close() // no-op if already closed; unblocks reader on panic
+		os.Stdout = old
+	}()
+	fn()
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	r.Close()
+	return buf.String()
+}
+
 func TestCisternListOutputFlag(t *testing.T) {
 	// Set up a temp DB.
 	dir := t.TempDir()
@@ -432,19 +457,6 @@ func TestDropletSearch(t *testing.T) {
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
 
-	captureStdout := func(t *testing.T, fn func()) string {
-		t.Helper()
-		old := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-		fn()
-		w.Close()
-		os.Stdout = old
-		var buf bytes.Buffer
-		buf.ReadFrom(r)
-		return buf.String()
-	}
-
 	// Seed data.
 	c, err := cistern.New(db, "ts")
 	if err != nil {
@@ -576,19 +588,6 @@ func TestDropletExport(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
-
-	captureStdout := func(t *testing.T, fn func()) string {
-		t.Helper()
-		old := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-		fn()
-		w.Close()
-		os.Stdout = old
-		var buf bytes.Buffer
-		buf.ReadFrom(r)
-		return buf.String()
-	}
 
 	// Seed data.
 	c, err := cistern.New(db, "ts")

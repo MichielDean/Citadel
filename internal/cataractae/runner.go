@@ -228,10 +228,14 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 	}
 
 	// 3. Spawn Claude Code session in tmux. Returns immediately.
+	var modelVal string
+	if step.Model != nil {
+		modelVal = *step.Model
+	}
 	sess := &Session{
 		ID:             w.SessionID,
 		WorkDir:        ctxDir,
-		Model:          step.Model,
+		Model:          modelVal,
 		Identity:       step.Identity,
 		TimeoutMinutes: step.TimeoutMinutes,
 	}

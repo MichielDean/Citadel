@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Per-step model selection via model: field in aqueduct.yaml (ci-4ed0h)
+- Each cataractae step now accepts an optional `model:` field specifying which LLM to use (e.g. `sonnet`, `opus`, `haiku`, `claude-opus-4-6`)
+- If `model:` is absent, the agent uses its default — no behavior change for existing configs
+- `WorkflowCataractae.Model` is `*string` so absent vs. empty-string are distinguishable
+- `ct doctor` validates that `model:` values are non-empty strings when present
+- `simplify` and `adversarial-review` steps in the default `aqueduct.yaml` now set `model: opus` — deep refactoring and adversarial review benefit from the stronger model
+
 ### Remove embedded defaults and `ct cataractae reset` (ci-kda7q)
 - Removed `internal/aqueduct/defaults/` — embedded role content (`implementer.md`, `qa.md`, `reviewer.md`, `security.md`) is superseded by the `cataractae/` directories introduced in #102.
 - Removed `ct cataractae reset` command — there are no more built-in defaults to reset to. Edit `PERSONA.md` / `INSTRUCTIONS.md` directly and use `ct cataractae generate` to regenerate.
