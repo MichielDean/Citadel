@@ -1011,19 +1011,22 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			continue
 		}
 
-		// Check if the tmux session is still alive — this is the authoritative
-		// liveness signal. Do NOT rely on pool.IsWorkerBusy: the in-memory busy
-		// state is never cleared when a tmux server crash kills the session, so
-		// an item can stay "busy" in memory indefinitely while the agent is dead.
 		if item.Assignee != "" {
-			sessionID := repo.Name + "-" + item.Assignee
-			if isTmuxAlive(sessionID) {
-				// Agent is still running; leave it alone.
+			// Pool alone is not a reliable crash signal — tmux crash never
+			// clears the flowing bit. Use both signals:
+			//   known + idle    → skip (observe released, or not yet assigned)
+			//   known + flowing → fall through to tmux check
+			//   unknown         → fall through to tmux check (stale recovery)
+			if pool.FindByName(item.Assignee) != nil && !pool.IsFlowing(item.Assignee) {
+				continue
+			}
+			if isTmuxAlive(repo.Name + "-" + item.Assignee) {
 				continue
 			}
 		}
 
-		// Dead/missing session, no outcome — reset to open for re-dispatch.
+		// No assignee, pool=flowing + tmux=dead, or unknown aqueduct +
+		// tmux=dead. Reset to open for re-dispatch.
 		s.logger.Info("heartbeat: resetting stalled droplet",
 			"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
 
@@ -1207,13 +1210,19 @@ func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string)
 	return worktreePath, nil
 }
 
-// removeDropletWorktree removes the per-droplet worktree directory and
-// unregisters it from git. Errors are ignored — best-effort cleanup.
+// removeDropletWorktree removes the per-droplet worktree directory,
+// unregisters it from git, and deletes the feature branch ref.
+// Errors are ignored — best-effort cleanup.
 func removeDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string) {
 	worktreePath := filepath.Join(sandboxRoot, repoName, dropletID)
 	rm := exec.Command("git", "worktree", "remove", "--force", worktreePath)
 	rm.Dir = primaryDir
 	_ = rm.Run()
+
+	// git worktree remove leaves the branch ref — delete it too.
+	del := exec.Command("git", "branch", "-D", "feat/"+dropletID)
+	del.Dir = primaryDir
+	_ = del.Run()
 }
 
 // dirtyNonContextFiles returns uncommitted non-CONTEXT.md files in dir.
