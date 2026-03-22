@@ -707,6 +707,91 @@ cataractae:
 	}
 }
 
+// --- cistern.yaml mtime detection tests ---
+
+func TestRunDroughtHooks_CfgMtimeZero_NoDetection(t *testing.T) {
+	// When startupCfgMtime is zero, the detection is disabled regardless of cfgPath.
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
+	os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644)
+
+	reloadCalled := false
+	RunDroughtHooks(nil, &aqueduct.AqueductConfig{}, "", tmpDir, discardLogger(),
+		time.Time{}, cfgPath, time.Time{}, false, func() { reloadCalled = true })
+	if reloadCalled {
+		t.Error("onReload should not be called when startupCfgMtime is zero")
+	}
+}
+
+func TestRunDroughtHooks_CfgFileUpdated_Unsupervised_LogsWarnOnly(t *testing.T) {
+	// When cistern.yaml is newer than startupCfgMtime and running unsupervised,
+	// onReload must NOT be called (config is not hot-reloadable — it warns and keeps running).
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
+	os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644)
+
+	// startupCfgMtime in the past → file is newer than recorded startup time.
+	startupMtime := time.Now().Add(-time.Hour)
+
+	reloadCalled := false
+	// Must not panic; unsupervised path only logs a warning, never calls onReload.
+	RunDroughtHooks(nil, &aqueduct.AqueductConfig{}, "", tmpDir, discardLogger(),
+		time.Time{}, cfgPath, startupMtime, false, func() { reloadCalled = true })
+	if reloadCalled {
+		t.Error("onReload should not be called for a cistern.yaml update (not a workflow change)")
+	}
+}
+
+func TestRunDroughtHooks_CfgFileNotUpdated_NoRestart(t *testing.T) {
+	// When cistern.yaml mtime has not advanced past startupCfgMtime, no restart is triggered.
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
+	os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644)
+
+	// startupCfgMtime in the future → file is older than recorded startup time → no update.
+	startupMtime := time.Now().Add(time.Hour)
+
+	reloadCalled := false
+	RunDroughtHooks(nil, &aqueduct.AqueductConfig{}, "", tmpDir, discardLogger(),
+		time.Time{}, cfgPath, startupMtime, false, func() { reloadCalled = true })
+	if reloadCalled {
+		t.Error("onReload should not be called when cistern.yaml has not been updated")
+	}
+}
+
+func TestRunDroughtHooks_CfgFileMissing_NoRestart(t *testing.T) {
+	// When cfgPath points to a non-existent file, the detection is silently skipped.
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "does-not-exist.yaml")
+	startupMtime := time.Now().Add(-time.Hour) // in the past, so update would trigger
+
+	reloadCalled := false
+	RunDroughtHooks(nil, &aqueduct.AqueductConfig{}, "", tmpDir, discardLogger(),
+		time.Time{}, cfgPath, startupMtime, false, func() { reloadCalled = true })
+	if reloadCalled {
+		t.Error("onReload should not be called when cfgPath does not exist")
+	}
+}
+
+func TestRunDroughtHooks_WorkflowAndCfgBothUpdated_NoReload(t *testing.T) {
+	// When both a workflow change and cistern.yaml update occur simultaneously,
+	// the cfg update takes precedence over workflow hot-reload (neither is hot-reloadable).
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
+	os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644)
+
+	startupMtime := time.Now().Add(-time.Hour) // cfg is newer → cfgUpdated=true
+
+	reloadCalled := false
+	// git_sync hook that reports workflowChanged is not practical to fake here, so we
+	// drive needsRestart via the cfg mtime path and verify onReload is NOT called.
+	RunDroughtHooks(nil, &aqueduct.AqueductConfig{}, "", tmpDir, discardLogger(),
+		time.Time{}, cfgPath, startupMtime, false, func() { reloadCalled = true })
+	if reloadCalled {
+		t.Error("onReload should not be called when cfgUpdated is true")
+	}
+}
+
 func TestGitSync_SkipsMissingCataractaeFiles_Gracefully(t *testing.T) {
 	tmpDir := t.TempDir()
 

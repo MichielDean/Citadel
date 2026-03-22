@@ -82,6 +82,8 @@ type Castellarius struct {
 	dbPath              string
 	wasDrought          bool
 	startupBinaryMtime  time.Time // mtime of the binary at startup; used to detect updates
+	cfgPath             string    // path to cistern.yaml; used to detect config-file updates
+	startupCfgMtime     time.Time // mtime of cistern.yaml at startup; used to detect updates
 	supervised          bool      // true if managed by systemd/supervisord/etc.
 	reloadCh            chan struct{} // signals Tick() to hot-reload workflows from disk
 
@@ -135,6 +137,17 @@ func WithPollInterval(d time.Duration) Option {
 // WithSandboxRoot sets the root directory for worker sandboxes.
 func WithSandboxRoot(root string) Option {
 	return func(s *Castellarius) { s.sandboxRoot = root }
+}
+
+// WithConfigPath records the path to cistern.yaml so the scheduler can detect
+// when the config file has been updated on disk and trigger a clean restart.
+func WithConfigPath(path string) Option {
+	return func(s *Castellarius) {
+		s.cfgPath = path
+		if info, err := os.Stat(path); err == nil {
+			s.startupCfgMtime = info.ModTime()
+		}
+	}
 }
 
 // New creates a Castellarius from an AqueductConfig.
@@ -487,7 +500,7 @@ func (s *Castellarius) tick(ctx context.Context) {
 				default: // already pending
 				}
 			}
-			go RunDroughtHooks(s.config.DroughtHooks, &s.config, s.dbPath, s.sandboxRoot, s.logger, s.startupBinaryMtime, s.supervised, reloadFn)
+			go RunDroughtHooks(s.config.DroughtHooks, &s.config, s.dbPath, s.sandboxRoot, s.logger, s.startupBinaryMtime, s.cfgPath, s.startupCfgMtime, s.supervised, reloadFn)
 		}
 	}
 	s.wasDrought = isDrought

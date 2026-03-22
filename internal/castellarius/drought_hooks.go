@@ -25,10 +25,11 @@ import (
 // Restart behaviour depends on whether the process is supervised:
 //   - supervised (systemd/supervisord/etc.): os.Exit(0) — supervisor restarts cleanly.
 //   - unsupervised (manual run): workflow changes trigger an in-process hot-reload via
-//     onReload(); binary updates log a warning but do NOT exit (Castellarius stays alive).
+//     onReload(); binary or cistern.yaml updates log a warning but do NOT exit
+//     (Castellarius stays alive).
 //
 // This ensures the Castellarius never dies without something to bring it back.
-func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig, dbPath string, sandboxRoot string, logger *slog.Logger, startupBinaryMtime time.Time, supervised bool, onReload func()) {
+func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig, dbPath string, sandboxRoot string, logger *slog.Logger, startupBinaryMtime time.Time, cfgPath string, startupCfgMtime time.Time, supervised bool, onReload func()) {
 	needsRestart := false
 	workflowChanged := false
 	restartReason := ""
@@ -90,6 +91,19 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 		}
 	}
 
+	// Config-update detection: if cistern.yaml is newer than when we started,
+	// a restart is needed to pick up the new config.
+	cfgUpdated := false
+	if cfgPath != "" && !startupCfgMtime.IsZero() {
+		if info, err := os.Stat(cfgPath); err == nil {
+			if info.ModTime().After(startupCfgMtime) {
+				cfgUpdated = true
+				needsRestart = true
+				restartReason = "cistern.yaml updated on disk"
+			}
+		}
+	}
+
 	if !needsRestart {
 		return
 	}
@@ -101,7 +115,7 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 	}
 
 	// Unsupervised — never exit on our own. Apply what we can in-process.
-	if workflowChanged && !binaryUpdated && onReload != nil {
+	if workflowChanged && !binaryUpdated && !cfgUpdated && onReload != nil {
 		// Workflow change: hot-reload the parsed YAML in the main goroutine.
 		logger.Info("Workflow updated — applying hot-reload (no supervisor)",
 			"hint", "For automatic restarts, run under systemd: systemctl --user start cistern-castellarius")
@@ -109,6 +123,10 @@ func RunDroughtHooks(hooks []aqueduct.DroughtHook, cfg *aqueduct.AqueductConfig,
 	} else if binaryUpdated {
 		// Binary change: in-process reload is impossible. Warn and keep running.
 		logger.Warn("Binary updated on disk — manual restart required to apply new code",
+			"hint", "Run: systemctl --user restart cistern-castellarius  (or Ctrl-C and restart manually)")
+	} else if cfgUpdated {
+		// Config change: in-process reload is impossible. Warn and keep running.
+		logger.Warn("cistern.yaml updated on disk — manual restart required to apply new config",
 			"hint", "Run: systemctl --user restart cistern-castellarius  (or Ctrl-C and restart manually)")
 	} else {
 		logger.Warn("Restart requested but no supervisor detected — skipping",
