@@ -461,18 +461,11 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 			} else {
 				lbl = lbl[:w]
 			}
-			infoStr = string(lbl)
 		}
-		info    := infoStyle.Render(infoStr)
+		info    := infoStyle.Render(string(lbl))
 		infoViz := len(lbl)
 		sideW   := (w - infoViz) / 2
-		if sideW < 0 {
-			sideW = 0
-		}
-		rightW := w - infoViz - sideW
-		if rightW < 0 {
-			rightW = 0
-		}
+		rightW  := w - infoViz - sideW
 		return renderWave(sideW) + info + renderWave(rightW)
 	}
 
