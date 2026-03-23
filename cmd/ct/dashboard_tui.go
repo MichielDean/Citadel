@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -314,47 +313,24 @@ func (m dashboardTUIModel) viewIdleAqueductRow(ch CataractaeInfo) string {
 	)
 }
 
-// tuiAqueductRow renders a single aqueduct as an 8-line arch diagram:
+// tuiAqueductRow renders a single aqueduct as a durdraw pillar diagram.
+// The aqueduct channel sits at the top; below it, a static pillar template
+// (14 rows × 28 cols, fg=color3/olive on bg=black) is tiled once per
+// cataractae step. The active step's pillar uses bright green for ▒ chars.
 //
-//	  virgo       ╔══════════════════════════════════════════════════════╗
-//	              ║  ≈ ≈  ci-pqz1q  implement  2m 14s  ████░░░░  ≈ ≈   ║
-//	              ╚═══════╤══════════════╤══════════════╤════════════════╝
-//	                      │              │              │              │
-//	                   ╔══╧══╗       ╔══╧══╗        ╔══╧══╗       ╔══╧══╗
-//	                   ║  ●  ║       ║  ○  ║        ║  ○  ║       ║  ○  ║
-//	                   ╚═════╝       ╚═════╝        ╚═════╝       ╚═════╝
-//	                 implement    adv-review           qa          delivery
-// tuiAqueductRow renders a single aqueduct as a V1 Roman arch diagram:
-// tapered brick piers with solid arch-crown material filling the span at the
-// top, creating a proper arch opening that widens as the piers narrow.
+// Pillar row layout (28 chars wide):
 //
-// Each logical row → 2 rendered sub-rows (▀ mortar cap + █▌ brick face).
-// Arch crown material fills the inter-pier span in the top (taper) rows,
-// using a semicircle formula to curve the arch intrados from closed at the
-// keystone to fully open at the impost.
-//
-//	  virgo   ╔══════════════════════════════════════════════════════╗
-//	          ║  ≈ ≈  ci-abc  implement  2m 14s  ████░░░░  ≈ ≈ ≈   ║
-//	          ╚══════════════════════════════════════════════════════╝
-//	          ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-//	          ████▌████████▀▀▀▀▀▀▀▀▀▀▀▀████▌████████▀▀▀▀▀▀▀▀▀▀▀▀████▌████████
-//	           ▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-//	           ████▌█████████  ████████████▌████  █████████▌████  █████████
-//	            ▀▀▀▀▀▀▀▀▀▀▀▀▀        ▀▀▀▀▀▀▀▀▀▀▀▀▀        ▀▀▀▀▀▀▀▀▀▀▀▀▀
-//	            ████▌██████████        █████████████▌        ██████████
-//	              ▀▀▀▀▀▀▀▀▀             ▀▀▀▀▀▀▀▀▀             ▀▀▀▀▀▀▀▀▀
-//	              █████████             █████████             █████████
-//	           implement        adv-review              qa              delivery
+//	rows 0–4: void/sky (28 spaces)
+//	row  5:   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  (arch crown / road)
+//	row  6:         ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒       (arch opening widens)
+//	row  7:            ░▒▒▒▒▒▒▒▒▒            (arch narrowing)
+//	row  8:             ░▒▒▒▒▒▒▒             (arch narrowing)
+//	rows 9–13:            ░▒▒▒▒              (pier body)
 func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string {
 	const (
-		colW      = 19  // column width
-		archTopW  = 10  // pier top width — span = 9 chars at keystone
-		taperRows = 3   // pier narrows by 2 per row
-		pierRows  = 4   // constant-width pier body rows
-		brickW    = 2   // brick face width before ▌ joint
-		nameW     = 10
+		pillarW = 28 // pillar width per step (14 rows × 28 cols)
+		nameW   = 10
 	)
-	pierW := archTopW - taperRows*2
 
 	g   := tuiStyleGreen
 	dim := tuiStyleDim
@@ -365,81 +341,38 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	}
 	n := len(steps)
 
-	prefix  := "  " + padRight(ch.Name, nameW) + "  "
-	// Channel row gets repo name in the same-width prefix column, stacked under aqueduct name.
-	// Truncate repo to nameW chars to preserve alignment.
+	prefix    := "  " + padRight(ch.Name, nameW) + "  "
 	repoLabel := ch.RepoName
 	if len([]rune(repoLabel)) > nameW {
 		repoLabel = string([]rune(repoLabel)[:nameW-1]) + "…"
 	}
 	prefixRepo := "  " + tuiStyleDim.Render(padRight(repoLabel, nameW)) + "  "
-	indent  := strings.Repeat(" ", len([]rune(prefix)))
-	// chanW spans the full n*colW so channel walls align with label row edges.
-	// chanPadL is 0 — channel starts immediately after the name prefix.
-	// The arch piers sit inside the channel with rowPadL spacing on each side.
-	chanPadL := 0
-	chanW    := n * colW
-	chanPad  := strings.Repeat(" ", chanPadL)
+	indent     := strings.Repeat(" ", len([]rune(prefix)))
+	chanW      := n * pillarW
 
 	isActive := func(step string) bool {
 		return step == ch.Step && ch.DropletID != ""
 	}
 
-	// archCrownAtT computes arch-crown fill at an arbitrary t in [0,1].
-	// t=0: keystone (fully closed). t=1: impost (fully open).
-	// Evaluating mortar and brick sub-rows at different t gives 2× curve resolution
-	// without adding logical rows.
-	archCrownAtT := func(t float64, gapWidth int) (lf, og, rf int) {
-		if gapWidth <= 0 {
-			return 0, 0, 0
-		}
-		r  := float64(gapWidth) / 2.0
-		oh := r * math.Sin(math.Pi / 2.0 * t)
-		fe := r - oh
-		full := int(fe)
-		frac := fe - float64(full)
-		haunch := frac > 0.25 && gapWidth > 2
-		lf = full
-		if haunch {
-			lf++
-		}
-		rf = lf
-		og = gapWidth - lf - rf
-		if og < 0 {
-			og = 0
-			lf = gapWidth / 2
-			rf = gapWidth - lf
-		}
-		return lf, og, rf
-	}
-
-	// Channel rows — brick masonry style.
-	// l1: ▀ mortar cap, exactly chanW wide — matches arch mortar row 0 perfectly.
-	// l2: solid █ walls + water content (chanW-2 body = chanW total incl. walls).
-	// No l3: arch mortar row 0 is the channel floor — seamless connection.
-	// Channel — full-width so it connects flush to both sides of the arch.
-	// chanW = n*colW → channel walls align exactly with label row edges.
-	// The arch piers sit inside the channel; rowPadL (grows each row) forms
-	// solid masonry abutments that widen toward the base — architecturally correct.
 	// Waterfall / channel-water styles — three brightness levels.
-	// Used for both the falling waterfall and the water flowing inside the channel.
 	wfBright := lipgloss.NewStyle().Foreground(lipgloss.Color("#a8eeff"))
 	wfMid    := lipgloss.NewStyle().Foreground(lipgloss.Color("#3ec8e8"))
 	wfDim    := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7a96"))
 
 	cStyle := dim
-	l1     := prefix + chanPad + cStyle.Render(strings.Repeat("▀", chanW))
-	// Wave pattern: 6-char repeating unit. Each char has a style.
-	// Animated by offsetting the start position each frame — water flows left→right.
-	type waveCell struct { ch string; sty lipgloss.Style }
+	l1     := prefix + cStyle.Render(strings.Repeat("▀", chanW))
+
+	// Wave pattern: 6-char repeating unit animated each frame — water flows right.
+	type waveCell struct {
+		ch  string
+		sty lipgloss.Style
+	}
 	waveCells := []waveCell{
 		{"░", wfDim}, {"▒", wfMid}, {"▓", wfBright},
 		{"≈", wfMid}, {"▒", wfMid}, {"░", wfDim},
 	}
 	const waveViz = 6
 
-	// renderWave renders `n` chars of the scrolling wave at the current frame offset.
-	// offset>0 = pattern scrolls left (water flows right through the channel).
 	renderWave := func(n int) string {
 		var wb strings.Builder
 		for i := 0; i < n; i++ {
@@ -449,224 +382,122 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		return wb.String()
 	}
 
-	// buildChanWater centers `infoStr` with animated wave filling each side.
 	buildChanWater := func(infoStr string, infoStyle lipgloss.Style) string {
-		info     := infoStyle.Render(infoStr)
-		infoViz  := len([]rune(infoStr))
-		sideW    := (chanW - 2 - infoViz) / 2
-		if sideW < 0 { sideW = 0 }
-		// Right side may be 1 wider to fill odd remainder.
+		info    := infoStyle.Render(infoStr)
+		infoViz := len([]rune(infoStr))
+		sideW   := (chanW - 2 - infoViz) / 2
+		if sideW < 0 {
+			sideW = 0
+		}
 		rightW := chanW - 2 - infoViz - sideW
-		if rightW < 0 { rightW = 0 }
+		if rightW < 0 {
+			rightW = 0
+		}
 		return renderWave(sideW) + info + renderWave(rightW)
 	}
 
 	var water string
 	if ch.DropletID != "" {
-		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
+		bar     := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
 		water    = buildChanWater(infoStr, wfMid)
 	} else {
 		water = buildChanWater("  — idle —  ", wfDim)
 	}
 
-	// Waterfall: parabolic arc, animated by cycling the brightness pattern downward
-	// each frame — creates the illusion of water accelerating as it falls.
-	// There are 3 brightness frames; the ▓ core shifts one position down per cycle.
-	// wfRow(subRow) returns the rendered waterfall string for that sub-row.
-	sp := func(n int) string { return strings.Repeat(" ", n) }
-
-	// Brightness pattern rotates with frame so ▓ appears to fall through the curtain.
-	// f0=bright, f1=mid, f2=dim — a 3-position cycle.
+	// Waterfall brightness rotates with frame so ▓ appears to fall.
 	wfA := func(sub int) lipgloss.Style {
 		switch (sub + frame) % 3 {
-		case 0: return wfBright
-		case 1: return wfMid
-		default: return wfDim
+		case 0:
+			return wfBright
+		case 1:
+			return wfMid
+		default:
+			return wfDim
 		}
 	}
 
-	// Option C: Spill & curtain — water exits flush against the abutment edge,
-	// hugs the structure for the first couple of rows, then falls nearly vertical.
-	// Stays close → feels connected to the arch. Wide pool forms at the base.
-	wfRows := [2 * (taperRows + pierRows)]string{
-		// sub 0: exits flush — ▓ right against the abutment edge
-		sp(0) + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		// sub 1: still hugging the structure
-		sp(0) + wfDim.Render("░") + wfA(1).Render("▓") + wfMid.Render("▒"),
-		// sub 2: just starts to peel away
-		sp(1) + wfMid.Render("▒") + wfA(2).Render("▓") + wfMid.Render("▒"),
-		// sub 3: drifting slightly, near-vertical
-		sp(1) + wfDim.Render("░") + wfA(0).Render("▓") + wfMid.Render("▒"),
-		// sub 4: thin falling curtain
-		sp(2) + wfA(1).Render("▓") + wfMid.Render("▒"),
-		// sub 5: thin falling curtain
-		sp(2) + wfA(2).Render("▓") + wfMid.Render("▒"),
-		// sub 6: widening as it approaches the base
-		sp(2) + wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		// sub 7: wide pool — spray at edges, bright core, spreads both ways
-		sp(0) + wfDim.Render("░≈") + wfMid.Render("▒▒") + wfA(1).Render("▓▓") + wfMid.Render("▒▒") + wfDim.Render("≈░"),
-		// sub 8: pool continues spreading
-		sp(0) + wfDim.Render("≈░") + wfMid.Render("▒▒") + wfA(2).Render("▓▓") + wfMid.Render("▒▒") + wfDim.Render("░≈"),
-		// sub 9: settling pool — narrowing core, turbulence subsiding
-		sp(1) + wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		// sub 10: settling pool — core narrows to single bright column
-		sp(1) + wfDim.Render("░") + wfMid.Render("▒") + wfA(1).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		// sub 11: nearly settled — dim ripple flanks faint core
-		sp(2) + wfDim.Render("░") + wfA(2).Render("▓") + wfDim.Render("░"),
-		// sub 12: calm pool — mid ripple, minimal motion
-		sp(2) + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒"),
-		// sub 13: surface ripple — pool fully settled, gentle shimmer
-		sp(2) + wfDim.Render("░") + wfA(1).Render("▒") + wfDim.Render("░"),
+	wfRows := [14]string{
+		wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
+		wfDim.Render("░") + wfA(1).Render("▓") + wfMid.Render("▒"),
+		" " + wfMid.Render("▒") + wfA(2).Render("▓") + wfMid.Render("▒"),
+		" " + wfDim.Render("░") + wfA(0).Render("▓") + wfMid.Render("▒"),
+		"  " + wfA(1).Render("▓") + wfMid.Render("▒"),
+		"  " + wfA(2).Render("▓") + wfMid.Render("▒"),
+		"  " + wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
+		wfDim.Render("░≈") + wfMid.Render("▒▒") + wfA(1).Render("▓▓") + wfMid.Render("▒▒") + wfDim.Render("≈░"),
+		wfDim.Render("≈░") + wfMid.Render("▒▒") + wfA(2).Render("▓▓") + wfMid.Render("▒▒") + wfDim.Render("░≈"),
+		" " + wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓") + wfMid.Render("▒") + wfDim.Render("░"),
+		" " + wfDim.Render("░") + wfMid.Render("▒") + wfA(1).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
+		"  " + wfDim.Render("░") + wfA(2).Render("▓") + wfDim.Render("░"),
+		"  " + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒"),
+		"  " + wfDim.Render("░") + wfA(1).Render("▒") + wfDim.Render("░"),
 	}
 
-	// Channel exit: compact spill — trim trailing two blocks (▒░) off the top row.
 	wfExit := wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓")
-	l2 := prefixRepo + chanPad + cStyle.Render("█") + water + cStyle.Render("█") + wfExit
+	l2 := prefixRepo + cStyle.Render("█") + water + cStyle.Render("█") + wfExit
 
-	// Arch + pier rows: each logical row → 2 rendered sub-rows.
-	// Solid masonry ABUTMENTS (rowPadL wide) fill each side so the arch spans
-	// exactly chanW at every row — no blank gaps beside the channel walls.
-	// Mortar sub-row: t = lr/taperRows  (start of logical row)
-	// Brick sub-row:  t = (lr+0.5)/taperRows  (mid-point — extra curve step)
-	var archLines []string
-	for lr := 0; lr < taperRows+pierRows; lr++ {
-		bodyW := archTopW - lr*2
-		if bodyW < pierW {
-			bodyW = pierW
+	// Pillar styles: fg=color3/olive on bg=black; active uses bright green for ▒.
+	pillarBg     := lipgloss.NewStyle().Background(lipgloss.Color("0"))
+	pillarFg     := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Background(lipgloss.Color("0"))
+	pillarActive := lipgloss.NewStyle().Foreground(lipgloss.Color("#4bb96e")).Background(lipgloss.Color("0"))
+
+	// buildPillarRow returns the rendered 28-char content for pillar row r.
+	// When active, ▒ chars use the bright green highlight color instead of olive.
+	buildPillarRow := func(r int, active bool) string {
+		heavy := pillarFg
+		if active {
+			heavy = pillarActive
 		}
-		rowPadL := (colW - bodyW) / 2
-		gapW    := colW - bodyW
-
-		// Mortar sub-row arch crown: t at start of this logical row.
-		tMort  := math.Min(float64(lr)/float64(taperRows), 1.0)
-		lfM, ogM, rfM := 0, gapW, 0
-		if lr < taperRows {
-			lfM, ogM, rfM = archCrownAtT(tMort, gapW)
+		switch r {
+		case 0, 1, 2, 3, 4:
+			return pillarBg.Render(strings.Repeat(" ", 28))
+		case 5:
+			return heavy.Render(strings.Repeat("▒", 28))
+		case 6:
+			return pillarBg.Render(strings.Repeat(" ", 6)) +
+				pillarFg.Render("░") +
+				heavy.Render(strings.Repeat("▒", 16)) +
+				pillarBg.Render(strings.Repeat(" ", 5))
+		case 7:
+			return pillarBg.Render(strings.Repeat(" ", 9)) +
+				pillarFg.Render("░") +
+				heavy.Render(strings.Repeat("▒", 9)) +
+				pillarBg.Render(strings.Repeat(" ", 9))
+		case 8:
+			return pillarBg.Render(strings.Repeat(" ", 10)) +
+				pillarFg.Render("░") +
+				heavy.Render(strings.Repeat("▒", 7)) +
+				pillarBg.Render(strings.Repeat(" ", 10))
+		default: // rows 9–13: pier body
+			return pillarBg.Render(strings.Repeat(" ", 12)) +
+				pillarFg.Render("░") +
+				heavy.Render(strings.Repeat("▒", 4)) +
+				pillarBg.Render(strings.Repeat(" ", 11))
 		}
-
-		// Brick sub-row arch crown: t at midpoint — gives extra curve resolution.
-		tBrick := math.Min(float64(lr)+0.5, float64(taperRows)) / float64(taperRows)
-		lfB, ogB, rfB := 0, gapW, 0
-		if lr < taperRows {
-			lfB, ogB, rfB = archCrownAtT(tBrick, gapW)
-		}
-
-		var mortSB, brickSB strings.Builder
-		mortSB.WriteString(indent)
-		brickSB.WriteString(indent)
-
-		// Left abutment: solid masonry filling from channel wall to first pier edge.
-		// Width = rowPadL, grows each row so base is wider than keystone — correct.
-		offset := (brickW / 2) * (lr % 2)
-		{
-			abutMort := strings.Repeat("▀", rowPadL)
-			abutBrick := make([]rune, rowPadL)
-			for c := 0; c < rowPadL; c++ {
-				if (c+offset)%(brickW+1) == brickW {
-					abutBrick[c] = '▌'
-				} else {
-					abutBrick[c] = '█'
-				}
-			}
-			mortSB.WriteString(dim.Render(abutMort))
-			brickSB.WriteString(dim.Render(string(abutBrick)))
-		}
-
-		for i, step := range steps {
-			pStyle := dim
-			if isActive(step) {
-				pStyle = g
-			}
-
-			// Pier mortar sub-row.
-			mortSB.WriteString(pStyle.Render(strings.Repeat("▀", bodyW)))
-
-			// Pier brick sub-row: staggered joints.
-			body   := make([]rune, bodyW)
-			for c := 0; c < bodyW; c++ {
-				if (c+offset)%(brickW+1) == brickW {
-					body[c] = '▌'
-				} else {
-					body[c] = '█'
-				}
-			}
-			brickSB.WriteString(pStyle.Render(string(body)))
-
-			// Inter-pier span: arch crown colored per side.
-			// Left fill (lf) belongs to the LEFT pier; right fill (rf) to the RIGHT pier.
-			// This prevents color bleeding onto adjacent idle piers.
-			if i < n-1 {
-				lStyle := dim // left arch crown = left pier's color
-				if isActive(step) {
-					lStyle = g
-				}
-				rStyle := dim // right arch crown = right pier's color
-				if isActive(steps[i+1]) {
-					rStyle = g
-				}
-
-				// ── Mortar sub-row ────────────────────────────────────────────────────
-				if lfM > 0 {
-					mortSB.WriteString(lStyle.Render(strings.Repeat("▀", lfM)))
-				}
-				if ogM > 0 {
-					mortSB.WriteString(strings.Repeat(" ", ogM))
-				}
-				if rfM > 0 {
-					mortSB.WriteString(rStyle.Render(strings.Repeat("▀", rfM)))
-				}
-
-				// ── Brick sub-row (▌▐ haunch at intrados edge) ───────────────────────
-				if lfB > 0 {
-					if lfB > 1 {
-						brickSB.WriteString(lStyle.Render(strings.Repeat("█", lfB-1)))
-					}
-					brickSB.WriteString(lStyle.Render("▌"))
-				}
-				if ogB > 0 {
-					brickSB.WriteString(strings.Repeat(" ", ogB))
-				}
-				if rfB > 0 {
-					brickSB.WriteString(rStyle.Render("▐"))
-					if rfB > 1 {
-						brickSB.WriteString(rStyle.Render(strings.Repeat("█", rfB-1)))
-					}
-				}
-			}
-		}
-		// Right abutment: mirrors the left, fills channel wall to last pier edge.
-		{
-			abutMort := strings.Repeat("▀", rowPadL)
-			abutBrick := make([]rune, rowPadL)
-			for c := 0; c < rowPadL; c++ {
-				if (c+offset)%(brickW+1) == brickW {
-					abutBrick[c] = '▌'
-				} else {
-					abutBrick[c] = '█'
-				}
-			}
-			mortSB.WriteString(dim.Render(abutMort))
-			brickSB.WriteString(dim.Render(string(abutBrick)))
-		}
-
-		// Waterfall: append pre-built parabolic arc row for this sub-row pair.
-		subRow := lr * 2
-		mortSB.WriteString(wfRows[subRow])
-		brickSB.WriteString(wfRows[subRow+1])
-
-		archLines = append(archLines, mortSB.String(), brickSB.String())
 	}
 
-	// Label line.
+	// Build 14 arch lines: tile one pillar column per step, then append waterfall.
+	var archLines []string
+	for r := 0; r < 14; r++ {
+		var sb strings.Builder
+		sb.WriteString(indent)
+		for _, step := range steps {
+			sb.WriteString(buildPillarRow(r, isActive(step)))
+		}
+		sb.WriteString(wfRows[r])
+		archLines = append(archLines, sb.String())
+	}
+
+	// Label line: step names centered within pillarW, active step bold+green.
 	var lblLine strings.Builder
 	lblLine.WriteString(indent)
 	for _, step := range steps {
 		lbl := step
-		if len([]rune(lbl)) > colW-1 {
-			lbl = string([]rune(lbl)[:colW-2]) + "…"
+		if len([]rune(lbl)) > pillarW-1 {
+			lbl = string([]rune(lbl)[:pillarW-2]) + "…"
 		}
-		centered := padOrTruncCenter(lbl, colW)
+		centered := padOrTruncCenter(lbl, pillarW)
 		if isActive(step) {
 			lblLine.WriteString(g.Bold(true).Render(centered))
 		} else {
@@ -675,8 +506,8 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	}
 
 	result := []string{l1, l2}
-	result  = append(result, archLines...)
-	result  = append(result, lblLine.String())
+	result   = append(result, archLines...)
+	result   = append(result, lblLine.String())
 	return result
 }
 

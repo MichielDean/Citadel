@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### TUI dashboard: replace procedural arch with durdraw pillar template (ci-a8j0v)
+- Replaced procedural arch rendering in `tuiAqueductRow` with a static durdraw pillar template (14 rows × 28 cols, fg=color3/olive, bg=black) tiled once per cataractae step
+- Removed `archCrownAtT`, `colW`, `archTopW`, `taperRows`, `pierRows`, `brickW` constants and `math` import
+- Active cataractae step highlighted by rendering ▒ chars in bright green (#4bb96e)
+- Channel/water, waterfall, and step label rendering unchanged
+
 ### TUI dashboard: apply arch-designer constants from user session (ci-sdvst)
 - Updated arch constants in `tuiAqueductRow`: `colW` 14→19, `archTopW` 9→10, `taperRows` 4→3, `pierRows` 1→4, `brickW` 4→2
 - Expanded `wfRows` from `[10]string` to `[14]string`; added 4 new settling-pool sub-rows (10–13)

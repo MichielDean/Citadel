@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
@@ -547,5 +551,171 @@ func TestFormatElapsed_MinutesAndSeconds(t *testing.T) {
 	got := formatElapsed(2*time.Minute + 14*time.Second)
 	if got != "2m 14s" {
 		t.Errorf("formatElapsed(2m14s) = %q, want %q", got, "2m 14s")
+	}
+}
+
+// --- TestTuiAqueductRow — pillar template ---
+
+// stripANSITest removes ANSI escape sequences from s, returning plain text.
+func stripANSITest(s string) string {
+	var out strings.Builder
+	inEsc := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if r == 'm' {
+				inEsc = false
+			}
+			continue
+		}
+		out.WriteRune(r)
+	}
+	return out.String()
+}
+
+// TestTuiAqueductRow_LineCount verifies tuiAqueductRow returns exactly 17 lines:
+// 2 channel rows + 14 pillar rows + 1 label row.
+func TestTuiAqueductRow_LineCount(t *testing.T) {
+	m := newDashboardTUIModel("", "")
+	tests := []struct {
+		name   string
+		nSteps int
+	}{
+		{"one step", 1},
+		{"two steps", 2},
+		{"three steps", 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			steps := make([]string, tt.nSteps)
+			for i := range steps {
+				steps[i] = fmt.Sprintf("step%d", i+1)
+			}
+			ch := CataractaeInfo{Name: "virgo", Steps: steps}
+			lines := m.tuiAqueductRow(ch, 0)
+			const wantLines = 17 // 2 channel + 14 pillar + 1 label
+			if len(lines) != wantLines {
+				t.Errorf("tuiAqueductRow() returned %d lines, want %d", len(lines), wantLines)
+			}
+		})
+	}
+}
+
+// TestTuiAqueductRow_CrownRowIsSolidBlocks verifies that the arch crown row
+// (pillar row 5 = result[7]) contains N×28 ▒ characters in the pillar section.
+// This fails with the old brick arch (which used ▀/█/▌) and passes with the
+// new durdraw pillar template.
+func TestTuiAqueductRow_CrownRowIsSolidBlocks(t *testing.T) {
+	m := newDashboardTUIModel("", "")
+	steps := []string{"implement", "review", "merge"}
+	ch := CataractaeInfo{Name: "virgo", Steps: steps}
+	lines := m.tuiAqueductRow(ch, 0)
+
+	if len(lines) < 8 {
+		t.Fatalf("not enough lines: got %d", len(lines))
+	}
+
+	// result[7] = archLines[5] = pillar row 5 (full-width crown).
+	// After stripping ANSI and prefix, the first N*28 runes must all be ▒.
+	crownLine := stripANSITest(lines[7])
+	runes := []rune(crownLine)
+
+	// Prefix visual width = "  " + nameW(10) + "  " = 14 chars.
+	const prefixLen = 14
+	const pillarW = 28
+	want := len(steps) * pillarW
+
+	if len(runes) < prefixLen+want {
+		t.Fatalf("crown row too short: %d runes, need at least %d", len(runes), prefixLen+want)
+	}
+	for i := 0; i < want; i++ {
+		if runes[prefixLen+i] != '▒' {
+			t.Errorf("crown row pillar[%d] = %q, want '▒'", i, runes[prefixLen+i])
+			break
+		}
+	}
+}
+
+// TestTuiAqueductRow_PierBodyRowHasCorrectStructure verifies a pier body row
+// (pillar rows 9–13 = result[11..15]) has the expected 12sp+░+4▒+11sp structure
+// for each pillar, for a single-step aqueduct.
+func TestTuiAqueductRow_PierBodyRowHasCorrectStructure(t *testing.T) {
+	m := newDashboardTUIModel("", "")
+	steps := []string{"implement"}
+	ch := CataractaeInfo{Name: "virgo", Steps: steps}
+	lines := m.tuiAqueductRow(ch, 0)
+
+	// result[11] = archLines[9] = pillar row 9 (first pier body row).
+	// After stripping ANSI and prefix: 12 spaces + ░ + 4 ▒ + 11 spaces (+ waterfall).
+	pierLine := stripANSITest(lines[11])
+	runes := []rune(pierLine)
+
+	const prefixLen = 14
+	const pillarW = 28
+	if len(runes) < prefixLen+pillarW {
+		t.Fatalf("pier row too short: %d runes, need at least %d", len(runes), prefixLen+pillarW)
+	}
+	content := runes[prefixLen : prefixLen+pillarW]
+
+	// Verify structure: 12 spaces, then ░, then 4 ▒, then 11 spaces.
+	for i := 0; i < 12; i++ {
+		if content[i] != ' ' {
+			t.Errorf("pier row content[%d] = %q, want ' '", i, content[i])
+			break
+		}
+	}
+	if content[12] != '░' {
+		t.Errorf("pier row content[12] = %q, want '░'", content[12])
+	}
+	for i := 13; i < 17; i++ {
+		if content[i] != '▒' {
+			t.Errorf("pier row content[%d] = %q, want '▒'", i, content[i])
+			break
+		}
+	}
+	for i := 17; i < 28; i++ {
+		if content[i] != ' ' {
+			t.Errorf("pier row content[%d] = %q, want ' '", i, content[i])
+			break
+		}
+	}
+}
+
+// TestTuiAqueductRow_ActiveStepHasDifferentCrownColor verifies that the active
+// step pillar uses a different ANSI color for ▒ in the crown row than idle pillars.
+// Forces TrueColor rendering so lipgloss emits ANSI escape codes in the test context.
+func TestTuiAqueductRow_ActiveStepHasDifferentCrownColor(t *testing.T) {
+	// Force TrueColor so lipgloss emits ANSI escape sequences; restore after.
+	orig := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(orig) })
+
+	m := newDashboardTUIModel("", "")
+	steps := []string{"implement", "review", "merge"}
+
+	active := m.tuiAqueductRow(CataractaeInfo{
+		Name:      "virgo",
+		DropletID: "ci-abc12",
+		Step:      "review",
+		Steps:     steps,
+	}, 0)
+
+	idle := m.tuiAqueductRow(CataractaeInfo{
+		Name:  "virgo",
+		Steps: steps,
+	}, 0)
+
+	// Crown row is result[7]. Active version must differ from idle (different color escape).
+	if active[7] == idle[7] {
+		t.Error("active crown row should have different ANSI color than idle crown row")
+	}
+
+	// Both versions must have the same plain-text content (same ▒ chars, just different colors).
+	if stripANSITest(active[7]) != stripANSITest(idle[7]) {
+		t.Errorf("active and idle crown rows should have same plain text\nactive: %q\nidle:   %q",
+			stripANSITest(active[7]), stripANSITest(idle[7]))
 	}
 }
