@@ -81,15 +81,6 @@ if [ -z "$CHECKS" ]; then
 else
   echo "$CHECKS"
   # Wait for all checks to pass before merging.
-  # Fix failures:
-  # - Compile error → fix code, go build ./..., commit, push
-  # - Test failure → fix test or code, go test ./..., commit, push
-  # - Flaky test → gh run rerun <run_id> and wait for result
-  # - Merge conflict detected by CI → rebase again (Step 2) and push
-  # - Unresolved review comment → address it, commit, push
-  #
-  # After each fix:
-  # git add -A -- ':!CONTEXT.md' && git commit -m "fix: <specific issue>" && git push
 fi
 ```
 
