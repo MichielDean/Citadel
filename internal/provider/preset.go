@@ -5,6 +5,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 )
@@ -47,6 +48,12 @@ type ProviderPreset struct {
 	ResumeFlag string `json:"resume_flag,omitempty"`
 	// ResumeStyle controls whether resuming uses a flag or a positional subcommand.
 	ResumeStyle ResumeStyle `json:"resume_style,omitempty"`
+	// ExtraEnv maps additional environment variable names to values injected into
+	// the agent process. These are set in addition to (and may override) EnvPassthrough.
+	ExtraEnv map[string]string `json:"extra_env,omitempty"`
+	// DefaultModel is the model value passed via ModelFlag when launching the agent.
+	// An empty string means the agent's own default is used.
+	DefaultModel string `json:"default_model,omitempty"`
 }
 
 // builtins is the canonical set of provider presets shipped with Cistern.
@@ -99,6 +106,7 @@ func Builtins() []ProviderPreset {
 		p.Args = slices.Clone(p.Args)
 		p.EnvPassthrough = slices.Clone(p.EnvPassthrough)
 		p.ProcessNames = slices.Clone(p.ProcessNames)
+		p.ExtraEnv = maps.Clone(p.ExtraEnv)
 		out[i] = p
 	}
 	return out
