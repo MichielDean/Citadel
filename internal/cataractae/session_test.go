@@ -229,36 +229,14 @@ func TestClaudePresetBackwardCompat(t *testing.T) {
 	})
 }
 
-// buildFakeagentBin compiles the fakeagent binary into a temp directory and
-// returns its absolute path. The directory is automatically cleaned up.
-func buildFakeagentBin(t *testing.T) string {
+// buildTestBin compiles the Go package at importPath into a temp directory
+// and returns the absolute path to the resulting binary.
+func buildTestBin(t *testing.T, name, importPath string) string {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "fakeagent")
-	out, err := exec.Command(
-		"go", "build",
-		"-o", bin,
-		"github.com/MichielDean/cistern/internal/testutil/fakeagent",
-	).CombinedOutput()
+	bin := filepath.Join(t.TempDir(), name)
+	out, err := exec.Command("go", "build", "-o", bin, importPath).CombinedOutput()
 	if err != nil {
-		t.Fatalf("build fakeagent: %v\n%s", err, out)
-	}
-	return bin
-}
-
-// buildCtBin compiles the ct CLI binary into a temp directory and returns its
-// absolute path.
-func buildCtBin(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "ct")
-	out, err := exec.Command(
-		"go", "build",
-		"-o", bin,
-		"github.com/MichielDean/cistern/cmd/ct",
-	).CombinedOutput()
-	if err != nil {
-		t.Fatalf("build ct: %v\n%s", err, out)
+		t.Fatalf("build %s: %v\n%s", name, err, out)
 	}
 	return bin
 }
@@ -275,8 +253,8 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 	}
 
 	// Build fakeagent and ct.
-	fakeagentBin := buildFakeagentBin(t)
-	ctBin := buildCtBin(t)
+	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
+	ctBin := buildTestBin(t, "ct", "github.com/MichielDean/cistern/cmd/ct")
 
 	// Add both binaries to a temporary PATH so fakeagent can call 'ct'.
 	binDir := filepath.Dir(ctBin)

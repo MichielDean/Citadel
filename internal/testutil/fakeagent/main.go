@@ -33,20 +33,13 @@ import (
 func main() {
 	// Accept the same flags as claude so the command string built by
 	// buildClaudeCmd() / buildPresetCmd() is valid when the binary is
-	// substituted via CLAUDE_PATH.
-	skipPerms := flag.Bool("dangerously-skip-permissions", false, "")
-	addDir := flag.String("add-dir", "", "")
-	model := flag.String("model", "", "")
-	prompt := flag.String("p", "", "")
+	// substituted via CLAUDE_PATH. Return values are discarded — the
+	// flags exist only so flag.Parse does not reject them.
+	flag.Bool("dangerously-skip-permissions", false, "")
+	flag.String("add-dir", "", "")
+	flag.String("model", "", "")
+	flag.String("p", "", "")
 	flag.Parse()
-
-	// Suppress "declared but not used" errors — these flags are intentionally
-	// consumed but not acted upon.
-	_ = *skipPerms
-	_ = *addDir
-	_ = *model
-	_ = *prompt
-	_ = os.Getenv("CT_CATARACTA_NAME")
 
 	// Read CONTEXT.md from the working directory to find the droplet ID.
 	data, err := os.ReadFile("CONTEXT.md")

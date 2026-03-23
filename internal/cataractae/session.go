@@ -99,9 +99,7 @@ func (s *Session) buildClaudeCmd(skillsDir string) string {
 func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir string) string {
 	prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
 
-	var parts []string
-	parts = append(parts, preset.Command)
-	parts = append(parts, preset.Args...)
+	parts := append([]string{preset.Command}, preset.Args...)
 
 	if preset.AddDirFlag != "" {
 		parts = append(parts, preset.AddDirFlag, shellQuote(skillsDir))

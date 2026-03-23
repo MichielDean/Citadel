@@ -72,8 +72,8 @@ func (s *Server) Requests() []Request {
 	return out
 }
 
-// record stores the request and returns the body bytes.
-func (s *Server) record(r *http.Request) []byte {
+// record stores a snapshot of the incoming request.
+func (s *Server) record(r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	r.Body.Close()
 	s.mu.Lock()
@@ -84,7 +84,6 @@ func (s *Server) record(r *http.Request) []byte {
 		Body:    body,
 	})
 	s.mu.Unlock()
-	return body
 }
 
 // handleMessages responds to POST /v1/messages with a well-formed Anthropic
