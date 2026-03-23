@@ -164,7 +164,7 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.peekSelectIndex++
 				}
 			case "enter":
-				if m.peekSelectIndex >= 0 && m.peekSelectIndex < len(active) {
+				if m.peekSelectIndex < len(active) {
 					m = m.openPeekOn(active[m.peekSelectIndex])
 					return m, m.peek.Init()
 				}
