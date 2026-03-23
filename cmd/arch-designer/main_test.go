@@ -506,7 +506,22 @@ func TestTUIModel_View_ShowsConstants(t *testing.T) {
 	}
 }
 
-// keyMsg builds a tea.KeyMsg from a string (e.g. "tab", "shift+up").
+// keyMsg builds a tea.KeyMsg using the correct key type for special keys.
 func keyMsg(s string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s), Alt: false}
+	switch s {
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyMsg{Type: tea.KeyShiftTab}
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}
+	case "down":
+		return tea.KeyMsg{Type: tea.KeyDown}
+	case "shift+up":
+		return tea.KeyMsg{Type: tea.KeyShiftUp}
+	case "shift+down":
+		return tea.KeyMsg{Type: tea.KeyShiftDown}
+	default:
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	}
 }

@@ -534,7 +534,10 @@ func wsUpgrade(w http.ResponseWriter, r *http.Request) (net.Conn, *bufio.ReadWri
 func newArchDesignerMux() http.Handler {
 	mux := http.NewServeMux()
 
-	exe, _ := os.Executable()
+	exe, err := os.Executable()
+	if err != nil {
+		panic("arch-designer: cannot determine executable path: " + err.Error())
+	}
 
 	staticSub, err := fs.Sub(staticAssets, "assets/static")
 	if err != nil {
@@ -567,9 +570,6 @@ func newArchDesignerMux() http.Handler {
 		}
 		defer conn.Close()
 
-		if exe == "" {
-			return
-		}
 		cmd := exec.Command(exe)
 		cmd.Env = append(os.Environ(),
 			"TERM=xterm-256color",
@@ -601,9 +601,6 @@ func newArchDesignerMux() http.Handler {
 			defer cancel()
 			buf := make([]byte, wsMaxClientPayload)
 			for {
-				if err := conn.SetReadDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
-					return
-				}
 				opcode, payload, nb, err := wsReadClientFrame(brw.Reader, buf)
 				buf = nb
 				if err != nil {
@@ -929,12 +926,10 @@ document.getElementById('btn-min5').addEventListener('click', function() {
 });
 document.getElementById('btn-preset').addEventListener('click', function() {
   params = defaultParams();
-  selected = 0;
   sendKey('l');
 });
 document.getElementById('btn-reset').addEventListener('click', function() {
   params = defaultParams();
-  selected = 0;
   sendKey('r');
 });
 document.getElementById('btn-save').addEventListener('click', function() {
