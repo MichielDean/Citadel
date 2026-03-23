@@ -317,9 +317,13 @@ func (s *Castellarius) Run(ctx context.Context) error {
 	if s.supervised {
 		supervisorStatus = "supervised (will self-restart via supervisor)"
 	}
+	totalSlots := 0
+	for _, repo := range s.config.Repos {
+		totalSlots += repo.Cataractae
+	}
 	s.logger.Info("Cistern online. Aqueducts open.",
 		"repos", len(s.config.Repos),
-		"cataractae", s.config.MaxCataractae,
+		"cataractae", totalSlots,
 		"supervisor", supervisorStatus,
 	)
 
@@ -661,10 +665,6 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 	wf := s.workflows[repo.Name]
 
 	for {
-		if s.totalBusy() >= s.config.MaxCataractae {
-			return
-		}
-
 		worker := pool.AvailableAqueduct()
 		if worker == nil {
 			return

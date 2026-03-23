@@ -152,15 +152,6 @@ Examples:
 
 		// Append to config.
 		cfg.Repos = append(cfg.Repos, newRepo)
-		// Bump max_cataractae to cover all aqueducts.
-		total := 0
-		for _, r := range cfg.Repos {
-			total += r.Cataractae
-		}
-		if cfg.MaxCataractae < total {
-			cfg.MaxCataractae = total
-		}
-
 		if err := writeConfig(cfgPath, cfg); err != nil {
 			return fmt.Errorf("write config: %w", err)
 		}

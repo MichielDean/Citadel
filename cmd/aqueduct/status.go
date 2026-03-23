@@ -54,6 +54,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 	tw.Flush()
 
-	fmt.Printf("\ntotal cataractae: %d / %d (max)\n", totalWorkers, cfg.MaxCataractae)
+	fmt.Printf("\ntotal cataractae: %d\n", totalWorkers)
 	return nil
 }

@@ -111,10 +111,6 @@ func ValidateAqueductConfig(cfg *AqueductConfig) error {
 		return fmt.Errorf("farm config: at least one repo is required")
 	}
 
-	if cfg.MaxCataractae <= 0 {
-		return fmt.Errorf("farm config: max_cataractae must be > 0, got %d", cfg.MaxCataractae)
-	}
-
 	repoNames := make(map[string]bool, len(cfg.Repos))
 	prefixes := make(map[string]string, len(cfg.Repos))
 

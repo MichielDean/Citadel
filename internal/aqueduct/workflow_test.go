@@ -175,14 +175,15 @@ func TestValidateFarmConfig_NoRepos(t *testing.T) {
 	}
 }
 
-func TestValidateFarmConfig_MaxTotalWorkersZero(t *testing.T) {
+func TestValidateFarmConfig_MaxCataractaeIsNoOp(t *testing.T) {
+	// max_cataractae is deprecated — setting it to 0 should not cause a validation error.
+	// Capping is per-repo via pool size.
 	cfg := &AqueductConfig{
-		Repos:           []RepoConfig{{Name: "r1", Cataractae: 1}},
+		Repos:         []RepoConfig{{Name: "r1", Cataractae: 1, Prefix: "r1"}},
 		MaxCataractae: 0,
 	}
-	err := ValidateAqueductConfig(cfg)
-	if err == nil || !strings.Contains(err.Error(), "max_cataractae") {
-		t.Errorf("expected max_cataractae error, got %v", err)
+	if err := ValidateAqueductConfig(cfg); err != nil {
+		t.Errorf("expected no error with max_cataractae=0 (deprecated), got %v", err)
 	}
 }
 
