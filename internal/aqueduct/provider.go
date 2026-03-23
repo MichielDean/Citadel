@@ -30,11 +30,8 @@ func (cfg *AqueductConfig) ResolveProvider(repoName string) (provider.ProviderPr
 	}
 
 	var repoProvider *ProviderConfig
-	for i := range cfg.Repos {
-		if cfg.Repos[i].Name == repoName {
-			repoProvider = cfg.Repos[i].Provider
-			break
-		}
+	if idx := slices.IndexFunc(cfg.Repos, func(r RepoConfig) bool { return r.Name == repoName }); idx >= 0 {
+		repoProvider = cfg.Repos[idx].Provider
 	}
 	if repoProvider != nil && repoProvider.Name != "" {
 		name = repoProvider.Name
@@ -106,14 +103,11 @@ func applyProviderOverrides(p *provider.ProviderPreset, cfg *ProviderConfig) {
 // descriptive warning string in that case so callers can surface it to the user.
 // An empty return value means no issue was found.
 func ValidateModelForProvider(step WorkflowCataractae, preset provider.ProviderPreset) string {
-	if step.Model == nil {
+	if step.Model == nil || preset.ModelFlag != "" {
 		return ""
 	}
-	if preset.ModelFlag == "" {
-		return fmt.Sprintf(
-			"cataractae %q: provider %q has no model flag; model %q will be ignored",
-			step.Name, preset.Name, *step.Model,
-		)
-	}
-	return ""
+	return fmt.Sprintf(
+		"cataractae %q: provider %q has no model flag; model %q will be ignored",
+		step.Name, preset.Name, *step.Model,
+	)
 }
