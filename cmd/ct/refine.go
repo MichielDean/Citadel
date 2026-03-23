@@ -181,7 +181,7 @@ func callRefineAPIChatCompletions(llm provider.LLMProvider, title, description s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("%s API returned status %d: %s", llm.Name, resp.StatusCode, body)
 	}
 

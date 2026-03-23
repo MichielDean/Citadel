@@ -127,6 +127,9 @@ func MergePresets(base, overrides []ProviderPreset) []ProviderPreset {
 		idx := slices.IndexFunc(result, func(p ProviderPreset) bool {
 			return p.Name == u.Name
 		})
+		u.Args = slices.Clone(u.Args)
+		u.EnvPassthrough = slices.Clone(u.EnvPassthrough)
+		u.ProcessNames = slices.Clone(u.ProcessNames)
 		if idx >= 0 {
 			result[idx] = u
 		} else {
@@ -146,7 +149,13 @@ func ResolvePreset(name string) ProviderPreset {
 			return p
 		}
 	}
-	// Default: return the first built-in (claude).
+	// Default: fall back to the claude preset by explicit name lookup.
+	for _, p := range builtins {
+		if p.Name == "claude" {
+			return p
+		}
+	}
+	// Unreachable: claude is always in the built-in set.
 	return builtins[0]
 }
 

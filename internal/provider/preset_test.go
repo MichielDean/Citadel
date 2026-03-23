@@ -292,6 +292,32 @@ func TestProviderConfigMerge(t *testing.T) {
 			t.Errorf("MergePresets mutated base slice: Command = %q, want %q", base[0].Command, originalCmd)
 		}
 	})
+
+	t.Run("MergePresets does not alias override slice fields", func(t *testing.T) {
+		override := ProviderPreset{
+			Name:           "custom",
+			Args:           []string{"--flag"},
+			EnvPassthrough: []string{"MY_KEY"},
+		}
+		merged := MergePresets(Builtins(), []ProviderPreset{override})
+
+		got := findByName(merged, "custom")
+		if got == nil {
+			t.Fatal("custom not found in merged result")
+		}
+
+		// Mutate the original override's slice fields after the merge.
+		override.Args[0] = "mutated-after-merge"
+		override.EnvPassthrough[0] = "MUTATED_KEY"
+
+		// The merged result must not reflect mutations to the original override.
+		if got.Args[0] == "mutated-after-merge" {
+			t.Error("MergePresets aliased override Args: mutation of original override propagated into merged result")
+		}
+		if got.EnvPassthrough[0] == "MUTATED_KEY" {
+			t.Error("MergePresets aliased override EnvPassthrough: mutation of original override propagated into merged result")
+		}
+	})
 }
 
 // TestUserPresetsJSON writes a providers.json with both an override and a custom

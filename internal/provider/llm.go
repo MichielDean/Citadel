@@ -33,7 +33,7 @@ var llmBuiltins = []LLMProvider{
 	},
 	{
 		Name:         "openrouter",
-		BaseURL:      "https://openrouter.ai/api/v1",
+		BaseURL:      "https://openrouter.ai/api",
 		ApiKeyEnv:    "OPENROUTER_API_KEY",
 		DefaultModel: "openai/gpt-4o",
 	},

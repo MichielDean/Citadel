@@ -1,6 +1,9 @@
 package provider
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestLLMProviderDefaults verifies that each built-in LLM provider has the
 // correct BaseURL and ApiKeyEnv without any cistern.yaml or env vars present.
@@ -22,7 +25,7 @@ func TestLLMProviderDefaults(t *testing.T) {
 		},
 		{
 			name:          "openrouter",
-			wantBaseURL:   "https://openrouter.ai/api/v1",
+			wantBaseURL:   "https://openrouter.ai/api",
 			wantApiKeyEnv: "OPENROUTER_API_KEY",
 		},
 		{
@@ -80,6 +83,26 @@ func TestLLMBuiltins_ReturnsCopy(t *testing.T) {
 	second := LLMBuiltins()
 	if second[0].BaseURL == "mutated" {
 		t.Error("LLMBuiltins() returned a reference to internal state, want an independent copy")
+	}
+}
+
+// TestOpenRouterURL_NoDuplicateV1 is a regression guard that ensures the
+// OpenRouter BaseURL does not end in /v1, which would produce a double /v1/v1/
+// when callRefineAPIChatCompletions appends "/v1/chat/completions".
+func TestOpenRouterURL_NoDuplicateV1(t *testing.T) {
+	var openrouter LLMProvider
+	for _, p := range LLMBuiltins() {
+		if p.Name == "openrouter" {
+			openrouter = p
+			break
+		}
+	}
+	if openrouter.Name == "" {
+		t.Fatal("openrouter not found in LLMBuiltins()")
+	}
+	constructed := openrouter.BaseURL + "/v1/chat/completions"
+	if strings.Contains(constructed, "/v1/v1/") {
+		t.Errorf("openrouter URL has double /v1: %q — BaseURL must not end in /v1", constructed)
 	}
 }
 
