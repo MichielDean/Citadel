@@ -151,16 +151,16 @@ func goConstants(p archParams) string {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 var (
-	stoneStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b8cba"))
-	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#3d5a7a"))
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#58a6ff"))
-	labelStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#b1bac4"))
-	selStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#58a6ff")).Bold(true)
+	stoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b8cba"))
+	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#3d5a7a"))
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#58a6ff"))
+	labelStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#b1bac4"))
+	selStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#58a6ff")).Bold(true)
 	paramDimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6e7681"))
-	valStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#e6edf3"))
-	msgStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#3fb950"))
-	constStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f0f6fc"))
-	hintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#484f58"))
+	valStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#e6edf3"))
+	msgStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#3fb950"))
+	constStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f0f6fc"))
+	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#484f58"))
 )
 
 // ── Arch rendering ────────────────────────────────────────────────────────────
@@ -192,9 +192,9 @@ func archCrownAtT(t float64, gapWidth int) (lf, og, rf int) {
 	return lf, og, rf
 }
 
-// buildBrickRow returns a rune slice where every brickW-th cell (offset-adjusted)
+// buildBrickRow returns a string where every brickW-th cell (offset-adjusted)
 // is a mortar joint '▌' and every other cell is a solid '█'.
-func buildBrickRow(width, offset, brickW int) []rune {
+func buildBrickRow(width, offset, brickW int) string {
 	row := make([]rune, width)
 	for c := range row {
 		if (c+offset)%(brickW+1) == brickW {
@@ -203,7 +203,7 @@ func buildBrickRow(width, offset, brickW int) []rune {
 			row[c] = '█'
 		}
 	}
-	return row
+	return string(row)
 }
 
 // renderArch renders an arch preview for the given params and returns display lines.
@@ -211,10 +211,7 @@ func buildBrickRow(width, offset, brickW int) []rune {
 // per-droplet data overlay or waterfall animation.
 func renderArch(p archParams) []string {
 	p = clampParams(p)
-	pierW := p.ArchTopW - p.TaperRows*2
-	if pierW < 1 {
-		pierW = 1
-	}
+	pierW := max(p.ArchTopW-p.TaperRows*2, 1)
 	n := p.NumPiers
 	colW := p.ColW
 
@@ -241,14 +238,14 @@ func renderArch(p archParams) []string {
 
 		// Left abutment.
 		mortSB.WriteString(dimStyle.Render(strings.Repeat("▀", rowPadL)))
-		brickSB.WriteString(dimStyle.Render(string(buildBrickRow(rowPadL, offset, p.BrickW))))
+		brickSB.WriteString(dimStyle.Render(buildBrickRow(rowPadL, offset, p.BrickW)))
 
 		for i := 0; i < n; i++ {
 			// Pier mortar sub-row.
 			mortSB.WriteString(stoneStyle.Render(strings.Repeat("▀", bodyW)))
 
 			// Pier brick sub-row with staggered joints.
-			brickSB.WriteString(stoneStyle.Render(string(buildBrickRow(bodyW, offset, p.BrickW))))
+			brickSB.WriteString(stoneStyle.Render(buildBrickRow(bodyW, offset, p.BrickW)))
 
 			// Inter-pier arch span (not after the last pier).
 			if i < n-1 {
@@ -283,7 +280,7 @@ func renderArch(p archParams) []string {
 
 		// Right abutment.
 		mortSB.WriteString(dimStyle.Render(strings.Repeat("▀", rowPadL)))
-		brickSB.WriteString(dimStyle.Render(string(buildBrickRow(rowPadL, offset, p.BrickW))))
+		brickSB.WriteString(dimStyle.Render(buildBrickRow(rowPadL, offset, p.BrickW)))
 
 		result = append(result, mortSB.String(), brickSB.String())
 	}
@@ -294,9 +291,9 @@ func renderArch(p archParams) []string {
 // ── Bubble Tea TUI ────────────────────────────────────────────────────────────
 
 type tuiModel struct {
-	params   archParams
-	selected int
-	message  string
+	params    archParams
+	selected  int
+	message   string
 	showConst bool
 }
 
