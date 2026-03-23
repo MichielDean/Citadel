@@ -3,6 +3,7 @@ package aqueduct
 import (
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/MichielDean/cistern/internal/provider"
 )
@@ -44,17 +45,14 @@ func (cfg *AqueductConfig) ResolveProvider(repoName string) (provider.ProviderPr
 	if name == "custom" {
 		result = provider.ProviderPreset{Name: "custom"}
 	} else {
-		found := false
-		for _, p := range provider.Builtins() {
-			if p.Name == name {
-				result = p
-				found = true
-				break
-			}
-		}
-		if !found {
+		builtins := provider.Builtins()
+		idx := slices.IndexFunc(builtins, func(p provider.ProviderPreset) bool {
+			return p.Name == name
+		})
+		if idx < 0 {
 			return provider.ProviderPreset{}, fmt.Errorf("aqueduct: unknown provider %q", name)
 		}
+		result = builtins[idx]
 	}
 
 	// Apply top-level overrides onto the base preset, but only when the
