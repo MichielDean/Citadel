@@ -167,7 +167,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 			activeSteps := activeStepNames(wfCataractae, item.Complexity)
 			ci.Steps = activeSteps
 			ci.TotalCataractae = len(activeSteps)
-			ci.CataractaeIndex = cataractaeIndexInWorkflow(item.CurrentCataractae, wfCataractae)
+			ci.CataractaeIndex = slices.Index(activeSteps, item.CurrentCataractae) + 1
 		}
 		cataractae[i] = ci
 	}

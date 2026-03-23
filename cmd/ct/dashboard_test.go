@@ -673,10 +673,14 @@ func TestFetchDashboardData_ActiveAqueduct_FiltersStepsByComplexity(t *testing.T
 		t.Fatal(err)
 	}
 
-	// Add a complexity-1 droplet and assign it to virgo at "implement".
+	// Add a complexity-1 droplet and assign it to virgo at "merge" — a step
+	// AFTER the skipped "adv-review". In the full workflow [implement, adv-review, merge]
+	// "merge" is at position 3, but in the filtered list [implement, merge] it is at
+	// position 2. This exercises the CataractaeIndex bug where the full-list index
+	// would exceed TotalCataractae.
 	item, _ := c.Add("myrepo", "Trivial task", "", 1, 1)
 	c.GetReady("myrepo")
-	c.Assign(item.ID, "virgo", "implement")
+	c.Assign(item.ID, "virgo", "merge")
 	c.Close()
 
 	data := fetchDashboardData(cfgPath, dbPath)
@@ -705,6 +709,12 @@ func TestFetchDashboardData_ActiveAqueduct_FiltersStepsByComplexity(t *testing.T
 	// TotalCataractae must reflect filtered count.
 	if virgo.TotalCataractae != 2 {
 		t.Errorf("virgo.TotalCataractae = %d, want 2", virgo.TotalCataractae)
+	}
+
+	// CataractaeIndex must be the position in the FILTERED list (2), not the
+	// full-workflow position (3). Previously the bug caused index > total.
+	if virgo.CataractaeIndex != 2 {
+		t.Errorf("virgo.CataractaeIndex = %d, want 2 (filtered position of 'merge')", virgo.CataractaeIndex)
 	}
 }
 
