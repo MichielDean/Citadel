@@ -23,9 +23,10 @@ type Adapter struct {
 }
 
 // NewAdapter creates an Adapter with a Runner for each configured repo.
-func NewAdapter(configs []aqueduct.RepoConfig, workflows map[string]*aqueduct.Workflow, queueClients map[string]*cistern.Client) (*Adapter, error) {
-	runners := make(map[string]*Runner, len(configs))
-	for _, repo := range configs {
+// cfg is used to resolve the provider preset for each repo via ResolveProvider.
+func NewAdapter(cfg *aqueduct.AqueductConfig, workflows map[string]*aqueduct.Workflow, queueClients map[string]*cistern.Client) (*Adapter, error) {
+	runners := make(map[string]*Runner, len(cfg.Repos))
+	for _, repo := range cfg.Repos {
 		wf, ok := workflows[repo.Name]
 		if !ok {
 			return nil, fmt.Errorf("adapter: no workflow for repo %q", repo.Name)
@@ -34,10 +35,15 @@ func NewAdapter(configs []aqueduct.RepoConfig, workflows map[string]*aqueduct.Wo
 		if !ok {
 			return nil, fmt.Errorf("adapter: no queue client for repo %q", repo.Name)
 		}
+		preset, err := cfg.ResolveProvider(repo.Name)
+		if err != nil {
+			return nil, fmt.Errorf("adapter: resolve provider for %q: %w", repo.Name, err)
+		}
 		r, err := New(Config{
 			Repo:          repo,
 			Workflow:      wf,
 			CisternClient: client,
+			Preset:        preset,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("adapter: runner for %q: %w", repo.Name, err)

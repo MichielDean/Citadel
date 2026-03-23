@@ -1,6 +1,7 @@
 package cataractae
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -383,5 +384,96 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 	}
 	if got.Outcome != "pass" {
 		t.Errorf("droplet outcome = %q, want %q", got.Outcome, "pass")
+	}
+}
+
+// TestIsAgentAlive_ProcessNameMatches_ReturnsTrue verifies that isAgentAlive
+// returns true when the pane's current command matches one of the preset's
+// ProcessNames.
+func TestIsAgentAlive_ProcessNameMatches_ReturnsTrue(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) { return "claude", nil }
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude", "node"}},
+	}
+	if !s.isAgentAlive() {
+		t.Error("isAgentAlive() = false, want true when pane_current_command is in ProcessNames")
+	}
+}
+
+// TestIsAgentAlive_ProcessNameNotMatched_ReturnsFalse verifies that isAgentAlive
+// returns false when the pane's current command is not in ProcessNames — this is
+// a zombie session (tmux alive, agent dead).
+func TestIsAgentAlive_ProcessNameNotMatched_ReturnsFalse(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) { return "bash", nil }
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude", "node"}},
+	}
+	if s.isAgentAlive() {
+		t.Error("isAgentAlive() = true, want false when pane_current_command is not in ProcessNames")
+	}
+}
+
+// TestIsAgentAlive_EmptyProcessNames_ReturnsTrue verifies that isAgentAlive
+// returns true when no ProcessNames are configured — the preset has no way to
+// detect zombie sessions so it conservatively assumes the agent is alive.
+func TestIsAgentAlive_EmptyProcessNames_ReturnsTrue(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) { return "bash", nil }
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{},
+	}
+	if !s.isAgentAlive() {
+		t.Error("isAgentAlive() = false, want true when ProcessNames is empty (no detection configured)")
+	}
+}
+
+// TestIsAgentAlive_TmuxError_ReturnsFalse verifies that isAgentAlive returns
+// false when the tmux display-message call fails — treat an unqueryable session
+// as a dead agent.
+func TestIsAgentAlive_TmuxError_ReturnsFalse(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) {
+		return "", errors.New("tmux: can't find session: test-session")
+	}
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude"}},
+	}
+	if s.isAgentAlive() {
+		t.Error("isAgentAlive() = true, want false when tmux command errors")
+	}
+}
+
+// TestIsAgentAlive_PassesSessionIDToDisplayMessage verifies that isAgentAlive
+// forwards the session ID to tmuxDisplayMessage.
+func TestIsAgentAlive_PassesSessionIDToDisplayMessage(t *testing.T) {
+	var capturedID string
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) {
+		capturedID = id
+		return "claude", nil
+	}
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "myrepo-alice",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude"}},
+	}
+	s.isAgentAlive()
+	if capturedID != "myrepo-alice" {
+		t.Errorf("tmuxDisplayMessage called with id = %q, want %q", capturedID, "myrepo-alice")
 	}
 }

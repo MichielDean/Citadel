@@ -87,7 +87,7 @@ keep dispatching droplets into aqueducts automatically.`,
 			queueClients[repo.Name] = c
 		}
 
-		adapter, err := cataractae.NewAdapter(cfg.Repos, workflows, queueClients)
+		adapter, err := cataractae.NewAdapter(cfg, workflows, queueClients)
 		if err != nil {
 			return fmt.Errorf("runner adapter: %w", err)
 		}
