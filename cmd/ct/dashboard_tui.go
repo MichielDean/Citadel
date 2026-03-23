@@ -368,8 +368,8 @@ func (m dashboardTUIModel) viewIdleAqueductRow(ch CataractaeInfo) string {
 }
 
 // tuiAqueductRow renders a single aqueduct as a durdraw pillar diagram.
-// Layout (top to bottom): step labels → channel top (▀) → channel water → 9 pillar rows.
-// Total: 12 lines (1 label + 2 channel + 9 pillar).
+// Layout (top to bottom): name → info → step labels → channel top (▀) → channel water → 9 pillar rows.
+// Total: 14 lines (1 name + 1 info + 1 label + 2 channel + 9 pillar).
 //
 // Pillar row layout (28 chars wide):
 //
