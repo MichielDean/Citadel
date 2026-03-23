@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### TUI dashboard: move droplet info to dedicated line below aqueduct name (ci-rxzft)
+- Droplet ID, elapsed time, and progress bar are now displayed on a dedicated info line below the aqueduct name/repo line — no longer embedded in the water channel animation
+- Name line (`lines[0]`): aqueduct name (green) + repo name (dim) on one line; info line (`lines[1]`): droplet ID + elapsed + 10-char progress bar in green; empty string when aqueduct is idle
+- Water channel row is now a pure wave animation (`renderWave`) — `buildChanWater` and `infoStr` logic removed; channel top and water rows use a plain indent instead of the name/repo prefix
+- `tuiAqueductRow` now returns 14 lines (1 name + 1 info + 1 label + 2 channel + 9 pillar rows), up from 12
+
 ### TUI dashboard: show dry arch with 'drought' header when all aqueducts are idle (ci-gbb64)
 - When all aqueducts are idle, `viewAqueductArches()` now renders a single dry pillar arch centered in the terminal instead of collapsing to idle text rows
 - A centered `drought` label in dim styling sits above the arch; the pillar uses dim grey (`#46465a`) to convey emptiness — no water channel, no waterfall, no step labels
