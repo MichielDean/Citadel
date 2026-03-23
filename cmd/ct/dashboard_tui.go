@@ -447,9 +447,9 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		return wb.String()
 	}
 
-	// buildChanWaterN builds wave-animated water content of width w,
+	// buildChanWater builds wave-animated water content of width w,
 	// centering infoStr within it.
-	buildChanWaterN := func(infoStr string, infoStyle lipgloss.Style, w int) string {
+	buildChanWater := func(infoStr string, infoStyle lipgloss.Style, w int) string {
 		if w <= 0 {
 			return ""
 		}
@@ -486,11 +486,9 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	if wetInnerW > 0 {
 		bar     := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-		wetPart := buildChanWaterN(infoStr, wfMid, wetInnerW)
+		water = buildChanWater(infoStr, wfMid, wetInnerW)
 		if dryInnerW > 0 {
-			water = wetPart + pillarBg.Render(strings.Repeat(" ", dryInnerW))
-		} else {
-			water = wetPart
+			water += pillarBg.Render(strings.Repeat(" ", dryInnerW))
 		}
 	} else {
 		// No active step: fully dry channel.
