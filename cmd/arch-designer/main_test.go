@@ -285,8 +285,6 @@ func TestArchCrownAtT_ImpostFullyOpen(t *testing.T) {
 	if og != 6 {
 		t.Errorf("og = %d at t=1, want 6 (fully open at impost)", og)
 	}
-	_ = lf
-	_ = rf
 }
 
 func TestArchCrownAtT_ZeroGap(t *testing.T) {

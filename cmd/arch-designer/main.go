@@ -67,46 +67,18 @@ func defaultArchParams() archParams {
 
 // clampParams ensures all parameters are within valid bounds.
 func clampParams(p archParams) archParams {
-	if p.TaperRows < 1 {
-		p.TaperRows = 1
-	}
-	if p.TaperRows > 8 {
-		p.TaperRows = 8
-	}
-	if p.PierRows < 0 {
-		p.PierRows = 0
-	}
-	if p.PierRows > 4 {
-		p.PierRows = 4
-	}
-	if p.BrickW < 1 {
-		p.BrickW = 1
-	}
-	if p.BrickW > 8 {
-		p.BrickW = 8
-	}
-	if p.NumPiers < 1 {
-		p.NumPiers = 1
-	}
-	if p.NumPiers > 8 {
-		p.NumPiers = 8
-	}
+	clamp := func(v, lo, hi int) int { return max(lo, min(v, hi)) }
+
+	p.TaperRows = clamp(p.TaperRows, 1, 8)
+	p.PierRows = clamp(p.PierRows, 0, 4)
+	p.BrickW = clamp(p.BrickW, 1, 8)
+	p.NumPiers = clamp(p.NumPiers, 1, 8)
+
 	// pierW = archTopW - taperRows*2 must be >= 1
-	minArchTopW := p.TaperRows*2 + 1
-	if p.ArchTopW < minArchTopW {
-		p.ArchTopW = minArchTopW
-	}
+	p.ArchTopW = max(p.ArchTopW, p.TaperRows*2+1)
 	// gap between piers must be >= 0; archTopW must be < colW
-	minColW := p.ArchTopW + 2
-	if p.ColW < minColW {
-		p.ColW = minColW
-	}
-	if p.ColW > 30 {
-		p.ColW = 30
-	}
-	if p.ArchTopW > p.ColW-1 {
-		p.ArchTopW = p.ColW - 1
-	}
+	p.ColW = clamp(p.ColW, p.ArchTopW+2, 30)
+	p.ArchTopW = min(p.ArchTopW, p.ColW-1)
 	return p
 }
 
@@ -205,6 +177,20 @@ func archCrownAtT(t float64, gapWidth int) (lf, og, rf int) {
 	return lf, og, rf
 }
 
+// buildBrickRow returns a rune slice where every brickW-th cell (offset-adjusted)
+// is a mortar joint '▌' and every other cell is a solid '█'.
+func buildBrickRow(width, offset, brickW int) []rune {
+	row := make([]rune, width)
+	for c := range row {
+		if (c+offset)%(brickW+1) == brickW {
+			row[c] = '▌'
+		} else {
+			row[c] = '█'
+		}
+	}
+	return row
+}
+
 // renderArch renders an arch preview for the given params and returns display lines.
 // Replicates the structural rendering from cmd/ct/dashboard_tui.go without the
 // per-droplet data overlay or waterfall animation.
@@ -250,30 +236,14 @@ func renderArch(p archParams) []string {
 
 		// Left abutment.
 		mortSB.WriteString(dimStyle.Render(strings.Repeat("▀", rowPadL)))
-		abutBrick := make([]rune, rowPadL)
-		for c := 0; c < rowPadL; c++ {
-			if (c+offset)%(p.BrickW+1) == p.BrickW {
-				abutBrick[c] = '▌'
-			} else {
-				abutBrick[c] = '█'
-			}
-		}
-		brickSB.WriteString(dimStyle.Render(string(abutBrick)))
+		brickSB.WriteString(dimStyle.Render(string(buildBrickRow(rowPadL, offset, p.BrickW))))
 
 		for i := 0; i < n; i++ {
 			// Pier mortar sub-row.
 			mortSB.WriteString(stoneStyle.Render(strings.Repeat("▀", bodyW)))
 
 			// Pier brick sub-row with staggered joints.
-			body := make([]rune, bodyW)
-			for c := 0; c < bodyW; c++ {
-				if (c+offset)%(p.BrickW+1) == p.BrickW {
-					body[c] = '▌'
-				} else {
-					body[c] = '█'
-				}
-			}
-			brickSB.WriteString(stoneStyle.Render(string(body)))
+			brickSB.WriteString(stoneStyle.Render(string(buildBrickRow(bodyW, offset, p.BrickW))))
 
 			// Inter-pier arch span (not after the last pier).
 			if i < n-1 {
@@ -308,15 +278,7 @@ func renderArch(p archParams) []string {
 
 		// Right abutment.
 		mortSB.WriteString(dimStyle.Render(strings.Repeat("▀", rowPadL)))
-		abutBrick2 := make([]rune, rowPadL)
-		for c := 0; c < rowPadL; c++ {
-			if (c+offset)%(p.BrickW+1) == p.BrickW {
-				abutBrick2[c] = '▌'
-			} else {
-				abutBrick2[c] = '█'
-			}
-		}
-		brickSB.WriteString(dimStyle.Render(string(abutBrick2)))
+		brickSB.WriteString(dimStyle.Render(string(buildBrickRow(rowPadL, offset, p.BrickW))))
 
 		result = append(result, mortSB.String(), brickSB.String())
 	}
@@ -892,7 +854,10 @@ function sendKey(s) {
 }
 
 /* ── Local param state (mirrors TUI state for Save & Copy) ────────────── */
-var params = {colW:14, archTopW:9, taperRows:4, pierRows:1, brickW:4, numPiers:4};
+function defaultParams() {
+  return {colW:14, archTopW:9, taperRows:4, pierRows:1, brickW:4, numPiers:4};
+}
+var params = defaultParams();
 var selected = 0;
 var paramOrder = ['colW','archTopW','taperRows','pierRows','brickW','numPiers'];
 
@@ -963,12 +928,12 @@ document.getElementById('btn-min5').addEventListener('click', function() {
   sendKey('\x1b[1;2B'); /* Shift+Down */
 });
 document.getElementById('btn-preset').addEventListener('click', function() {
-  params = {colW:14, archTopW:9, taperRows:4, pierRows:1, brickW:4, numPiers:4};
+  params = defaultParams();
   selected = 0;
   sendKey('l');
 });
 document.getElementById('btn-reset').addEventListener('click', function() {
-  params = {colW:14, archTopW:9, taperRows:4, pierRows:1, brickW:4, numPiers:4};
+  params = defaultParams();
   selected = 0;
   sendKey('r');
 });
