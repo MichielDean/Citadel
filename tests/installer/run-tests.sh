@@ -37,6 +37,26 @@ fail() {
 echo "=== Cistern installer smoke tests ==="
 echo ""
 
+# ── Wait for systemd to reach multi-user.target (self-contained, CI-safe) ─────
+# Retries for up to 60 seconds so the script works on slow CI runners without
+# requiring the caller to sleep before invoking.
+_wait_for_systemd() {
+    local timeout=60
+    local i=0
+    echo "Waiting for systemd to reach multi-user.target..."
+    while [ "${i}" -lt "${timeout}" ]; do
+        if systemctl is-active --quiet multi-user.target 2>/dev/null; then
+            echo "systemd ready (${i}s)"
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    echo "[FAIL] systemd_boot_wait: multi-user.target not active after ${timeout}s" >&2
+    exit 1
+}
+_wait_for_systemd
+
 # ── Test 1: systemd reached multi-user.target ─────────────────────────────────
 # Given: container started with --privileged and systemd as PID 1
 # When:  querying the target state
@@ -109,18 +129,14 @@ fi
 # ── Test 7: ct doctor recognises claude CLI ───────────────────────────────────
 # Given: fakeagent is on PATH as "claude" and ct init has run
 # When:  running `ct doctor`
-# Then:  doctor output contains "claude CLI found" (check passes)
+# Then:  doctor output contains "✓ claude CLI found" (success prefix only)
+# Note:  doctor exits non-zero when other checks fail (e.g. gh not authenticated);
+#        that is expected. We only care that the claude check itself passes.
 doctor_out=$(CT_NO_ASCII_LOGO=1 ct doctor 2>&1 || true)
-if echo "${doctor_out}" | grep -qi "claude CLI found"; then
+if echo "${doctor_out}" | grep -q '✓.*claude CLI found'; then
     pass "ct_doctor_claude_found"
 else
-    # doctor exits non-zero when other checks fail (e.g. gh not authenticated) —
-    # that's expected in this environment. Only fail if the claude check is wrong.
-    if echo "${doctor_out}" | grep -qi "claude"; then
-        pass "ct_doctor_ran"
-    else
-        fail "ct_doctor_claude_found" "doctor output does not mention claude: ${doctor_out}"
-    fi
+    fail "ct_doctor_claude_found" "doctor did not report claude found: ${doctor_out}"
 fi
 
 # ── Test 8: start-castellarius.sh is present and executable ───────────────────
