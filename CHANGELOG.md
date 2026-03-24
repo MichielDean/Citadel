@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### CI job: installer integration tests on relevant file changes (ci-l8phc)
+- Adds `.github/workflows/installer-integration-tests.yml` — a GitHub Actions workflow named `installer-integration-tests` that triggers on pull requests touching `**/doctor.go`, `**/init.go`, `**/start-castellarius.sh`, or `tests/installer/**`
+- Builds the Docker test image and runs the container-based test suite; job fails if any scenario fails (exit code propagates)
+- `::error::` annotations emitted for each `[FAIL]` line so GitHub renders failures as visible errors in the Actions log and PR checks UI
+- `timeout-minutes: 15` prevents a hung test from occupying a self-hosted runner for the 6-hour default
+- Temp file path uses `GITHUB_RUN_ID` (`/tmp/installer-test-output-${GITHUB_RUN_ID}.txt`) to prevent collisions between concurrent runs on the same self-hosted runner
+- `persist-credentials: false` on checkout — the workflow only runs Docker commands post-checkout and does not need git credentials
+- Cleanup step (`if: always()`) removes the container, image, and temp file on every exit path — no resource leaks on shared self-hosted runners
+- Fork protection: job is skipped for PRs from forks via `github.event.pull_request.head.repo.full_name == github.repository` guard (self-hosted Docker not available to forked PRs)
+- Run locally with a single command: `bash tests/installer/run-local.sh` (documented in workflow header and `tests/installer/README.md`)
+
 ### Observability pass: structured logging throughout Castellarius and cataractae (ci-jgllb)
 - Session spawn now logs resolved command path, model, preset name, and context type (fresh vs resume) via structured `slog` key=value fields
 - Session resume logs the project directory and prior-session file count so operators can track session continuity
