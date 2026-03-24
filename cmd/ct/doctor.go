@@ -565,7 +565,6 @@ func checkSystemdServiceEnv(serviceName string, cfg *aqueduct.AqueductConfig) {
 			}
 		}
 	}
-
 }
 
 // resolveGoBinFn wraps resolveGoBin to allow injection in tests.

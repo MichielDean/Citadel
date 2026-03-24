@@ -1793,14 +1793,7 @@ func TestInstallSystemdService_ServiceFileHasNoAnthropicAPIKey(t *testing.T) {
 // os.Stat on the wrapper path returns a non-IsNotExist error (e.g. EACCES),
 // installSystemdService propagates the error instead of silently continuing.
 func TestInstallSystemdService_WrapperStatError_ReturnsError(t *testing.T) {
-	home := setupInstallSystemdServiceTest(t)
-	_ = home
-
-	// Pre-create the .cistern directory so MkdirAll does not fail before we reach the stat.
-	cisternDir := filepath.Join(home, ".cistern")
-	if err := os.MkdirAll(cisternDir, 0o755); err != nil {
-		t.Fatalf("mkdir cisternDir: %v", err)
-	}
+	setupInstallSystemdServiceTest(t)
 
 	// Inject a stat function that returns a non-IsNotExist error for the wrapper path.
 	origStatFn := osStatFn
