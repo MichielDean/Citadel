@@ -54,9 +54,12 @@ require_docker() {
     fi
 }
 
-# build_image builds the installer-test Docker image from the repo root.
+# build_image builds the systemd base image and then the installer-test image.
 build_image() {
     local repo_root="$1"
+    docker build \
+        --tag  "cistern-systemd-test" \
+        "${repo_root}/test/docker/systemd"
     docker build \
         --tag  "${IMAGE_NAME}" \
         --file "${repo_root}/test/docker/installer-test/Dockerfile" \
@@ -91,7 +94,7 @@ wait_for_systemd() {
 
     while [[ "${elapsed}" -lt "${max_wait}" ]]; do
         status=$(docker exec "${CONTAINER_NAME}" \
-            systemctl is-system-running 2>/dev/null || echo "initializing")
+            systemctl is-system-running 2>/dev/null || true)
         case "${status}" in
             running|degraded) return 0 ;;
         esac
@@ -130,7 +133,7 @@ run_ct_doctor() {
 # or unknown.
 service_status() {
     local service="$1"
-    exec_in_container systemctl is-active "${service}" 2>/dev/null || echo "inactive"
+    exec_in_container systemctl is-active "${service}" 2>/dev/null || true
 }
 
 # ─── Lifecycle ────────────────────────────────────────────────────────────────

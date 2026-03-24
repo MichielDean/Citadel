@@ -31,7 +31,7 @@ source "${SCRIPT_DIR}/test/installer/helpers.sh"
 test_systemd_boots() {
     local status
     status=$(exec_in_container \
-        systemctl is-system-running 2>/dev/null || echo "error")
+        systemctl is-system-running 2>/dev/null || true)
     case "${status}" in
         running|degraded) return 0 ;;
         *) return 1 ;;
