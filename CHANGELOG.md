@@ -12,6 +12,13 @@
 - Dashboard TUI: multi-aqueduct `p` picker now clears the peek-select mode overlay on successful new-window spawn, so the picker dismisses when the new window opens
 - Tests added: `TestPeekCmd_LiveAttach_ExistingSession` verifies live attach path; `TestDashboard_PeekSelect_InTmux_Success_ClearsPeekSelectMode` verifies the picker clears on spawn
 
+### Dashboard TUI: adaptive refresh rate reduces idle CPU usage (ci-bxe4q)
+- The dashboard polling loop now automatically backs off from fast refresh (2s) to slow refresh (5s) when the Castellarius is idle and no state changes are detected. Reduces CPU usage from ~3.8% to near-zero when idle, while maintaining responsive updates when droplets are actively flowing.
+- `runDashboardWith()` detects idle state by comparing dashboard state hash: if the hash matches the previous poll and `FlowingCount == 0`, the next tick uses the slow interval. Any state change (droplet count change, status update, or manual refresh via 'r' key) immediately resets to fast refresh.
+- Web dashboard address changed from `:5737` (all interfaces) to `127.0.0.1:5737` (localhost only) for security — the dashboard now only accepts connections from the local machine. Use `--addr 127.0.0.1:8080` to specify a custom localhost address.
+- SSE event stream handler in the web dashboard also implements adaptive backoff with the same pattern, refactored to use the same fetcher and interval injection as the TUI for consistency.
+- Adaptive backoff is transparent to the user: the dashboard remains as responsive as before when there is activity, and consumes less CPU when idle.
+
 ### Startup credentials and doctor checks: provider-aware instead of hardcoded to Anthropic (ci-hhj3d)
 - `checkStartupCredentials()` in `cmd/ct/castellarius.go` now parses the aqueduct config and checks only the environment variables required by each configured repo's provider preset, instead of always requiring `ANTHROPIC_API_KEY`. Falls back to `ANTHROPIC_API_KEY` when no config exists (new-install path).
 - `startupRequiredEnvVars()` now uses a `resolved` flag to distinguish between "providers resolved but need zero env vars" (e.g., opencode provider) and "no providers resolved at all", fixing a bug where opencode users were incorrectly blocked on missing `ANTHROPIC_API_KEY` and expired Claude OAuth tokens.
