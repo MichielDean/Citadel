@@ -7,9 +7,8 @@
 #   Reporting  : pass(), fail()
 #   Docker     : require_docker(), build_image(), start_container(),
 #                stop_container(), wait_for_systemd()
-#   Execution  : exec_in_container(), run_ct_init(), run_ct_doctor(),
-#                service_status()
-#   Lifecycle  : setup_container(), teardown_container()
+#   Execution  : exec_in_container(), service_status()
+#   Lifecycle  : setup_container()
 
 # ─── Global state ─────────────────────────────────────────────────────────────
 
@@ -93,7 +92,7 @@ wait_for_systemd() {
     local status
 
     while [[ "${elapsed}" -lt "${max_wait}" ]]; do
-        status=$(docker exec "${CONTAINER_NAME}" \
+        status=$(exec_in_container \
             systemctl is-system-running 2>/dev/null || true)
         case "${status}" in
             running|degraded) return 0 ;;
@@ -114,18 +113,6 @@ exec_in_container() {
         --env CT_NO_ASCII_LOGO=1 \
         "${CONTAINER_NAME}" \
         "$@"
-}
-
-# run_ct_init runs `ct init` in the container.
-# Returns the exit code of ct init.
-run_ct_init() {
-    exec_in_container ct init "$@"
-}
-
-# run_ct_doctor runs `ct doctor` in the container.
-# Returns the exit code of ct doctor (0 = all checks pass, 1 = some failed).
-run_ct_doctor() {
-    exec_in_container ct doctor "$@"
 }
 
 # service_status prints the active state of a systemd unit in the container.
@@ -159,9 +146,4 @@ setup_container() {
         stop_container
         exit 1
     fi
-}
-
-# teardown_container stops the container.
-teardown_container() {
-    stop_container
 }

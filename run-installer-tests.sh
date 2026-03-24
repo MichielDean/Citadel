@@ -53,9 +53,7 @@ test_fakeagent_available() {
 # test_ct_init verifies that `ct init` exits 0 and creates the Cistern config
 # file at the expected location.
 test_ct_init() {
-    if ! exec_in_container ct init >/dev/null 2>&1; then
-        return 1
-    fi
+    exec_in_container ct init >/dev/null 2>&1 &&
     exec_in_container test -f /root/.cistern/cistern.yaml
 }
 
@@ -94,7 +92,7 @@ run_test() {
 
 # ─── Cleanup ──────────────────────────────────────────────────────────────────
 
-trap teardown_container EXIT
+trap stop_container EXIT
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
