@@ -1,0 +1,57 @@
+name: Installer tests
+
+# Triggered on PRs that touch the installer, doctor, or init command — the
+# three surface areas this test suite validates.  Also runs when the test
+# infrastructure itself changes so regressions in the harness are caught early.
+on:
+  pull_request:
+    paths:
+      - 'cmd/ct/doctor.go'
+      - 'cmd/ct/init.go'
+      - 'cmd/ct/assets/start-castellarius.sh'
+      - 'start-castellarius.sh'
+      - 'run-installer-tests.sh'
+      - 'test/installer/**'
+      - 'test/docker/**'
+      - 'tests/installer/**'
+      - 'internal/testutil/fakeagent/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-tests:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Build the Go binaries so they are fresh before baking them into the
+      # Docker image.  This also validates that the Go code compiles.
+      - name: Build Go binaries
+        run: go build ./...
+
+      - name: Run installer tests
+        run: ./run-installer-tests.sh
+
+      # On failure, upload the captured container log as a workflow artifact
+      # so engineers can inspect what the container logged without needing to
+      # re-run locally.
+      - name: Upload container logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-test-logs
+          path: |
+            installer-test-container.log
+          retention-days: 7

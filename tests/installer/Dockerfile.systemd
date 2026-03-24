@@ -37,7 +37,8 @@ RUN CGO_ENABLED=0 GOOS=linux \
 # jrei/systemd-ubuntu:24.04 provides Ubuntu 24.04 with systemd as PID 1,
 # pre-configured for container use. Ubuntu 24.04 ships glibc 2.39, which
 # satisfies the runtime requirements of binaries built on Debian Bookworm.
-FROM jrei/systemd-ubuntu:24.04
+# jrei/systemd-ubuntu:24.04
+FROM jrei/systemd-ubuntu@sha256:6cf7f981a584f2afb83782f29abdcdff1fa16660a80be1fdb1f2fc45be40f0b7
 
 # Install runtime dependencies.
 # Deliberately excludes pass and gnupg — the credential story must work without
