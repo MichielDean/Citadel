@@ -291,7 +291,10 @@ func TestClaudeDefaultFallback(t *testing.T) {
 	t.Run("without model", func(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(preset, skillsDir)
+		got, err := s.buildPresetCmd(preset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd error: %v", err)
+		}
 		if got != want {
 			t.Errorf("default fallback command mismatch (no model):\nwant: %q\ngot:  %q", want, got)
 		}
@@ -300,7 +303,10 @@ func TestClaudeDefaultFallback(t *testing.T) {
 	t.Run("with model", func(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp", Model: "haiku"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(preset, skillsDir)
+		got, err := s.buildPresetCmd(preset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd error: %v", err)
+		}
 		if got != want {
 			t.Errorf("default fallback command mismatch (with model):\nwant: %q\ngot:  %q", want, got)
 		}

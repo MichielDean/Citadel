@@ -129,7 +129,10 @@ func TestProviderCommandStrings(t *testing.T) {
 			// --- Command string assertions ---
 
 			s := &Session{ID: "test", WorkDir: "/tmp"}
-			cmd := s.buildPresetCmd(tt.preset, skillsDir)
+			cmd, err := s.buildPresetCmd(tt.preset, skillsDir)
+			if err != nil {
+				t.Fatalf("buildPresetCmd error: %v", err)
+			}
 
 			// Binary must be the first token.
 			if !strings.HasPrefix(cmd, tt.wantCommand+" ") && cmd != tt.wantCommand {
@@ -172,7 +175,10 @@ func TestProviderCommandStrings(t *testing.T) {
 			// Model flag + value must appear when wantModelFlag is set.
 			if tt.wantModelFlag != "" {
 				sWithModel := &Session{ID: "test", WorkDir: "/tmp", Model: "test-model"}
-				cmdWithModel := sWithModel.buildPresetCmd(tt.preset, skillsDir)
+				cmdWithModel, err := sWithModel.buildPresetCmd(tt.preset, skillsDir)
+				if err != nil {
+					t.Fatalf("buildPresetCmd error: %v", err)
+				}
 				wantModelSubstr := tt.wantModelFlag + " test-model"
 				if !strings.Contains(cmdWithModel, wantModelSubstr) {
 					t.Errorf("cmd missing model flag %q:\n  got: %s", wantModelSubstr, cmdWithModel)
