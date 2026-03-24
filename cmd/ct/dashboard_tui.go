@@ -392,9 +392,7 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 //
 // Returns 15 lines: 1 drought label + 14 pillar rows.
 func (m dashboardTUIModel) viewDroughtArch() []string {
-	const pillarW = 28
-
-	leftPad := (m.width - pillarW) / 2
+	leftPad := (m.width - archPillarW) / 2
 	if leftPad < 0 {
 		leftPad = 0
 	}
@@ -402,35 +400,10 @@ func (m dashboardTUIModel) viewDroughtArch() []string {
 
 	droughtLabel := tuiStyleDim.Render(tuiPadCenter("drought", m.width))
 
-	buildRow := func(r int) string {
-		switch r {
-		case 0, 1, 2, 3, 4:
-			return strings.Repeat(" ", pillarW)
-		case 5:
-			return tuiStyleDim.Render(strings.Repeat("▒", pillarW))
-		case 6:
-			return strings.Repeat(" ", 6) +
-				tuiStyleDim.Render("░"+strings.Repeat("▒", 16)) +
-				strings.Repeat(" ", 5)
-		case 7:
-			return strings.Repeat(" ", 9) +
-				tuiStyleDim.Render("░"+strings.Repeat("▒", 9)) +
-				strings.Repeat(" ", 9)
-		case 8:
-			return strings.Repeat(" ", 10) +
-				tuiStyleDim.Render("░"+strings.Repeat("▒", 7)) +
-				strings.Repeat(" ", 10)
-		default: // rows 9–13: pier body
-			return strings.Repeat(" ", 12) +
-				tuiStyleDim.Render("░"+strings.Repeat("▒", 4)) +
-				strings.Repeat(" ", 11)
-		}
-	}
-
-	lines := make([]string, 0, 15)
+	lines := make([]string, 0, archPillarH+1)
 	lines = append(lines, droughtLabel)
-	for r := 0; r < 14; r++ {
-		lines = append(lines, indent+buildRow(r))
+	for r := 0; r < archPillarH; r++ {
+		lines = append(lines, indent+renderDroughtPillarRow(r))
 	}
 	return lines
 }
@@ -510,8 +483,7 @@ func (m dashboardTUIModel) viewPeekSelectOverlay() string {
 // Idle aqueducts (no active droplet) show no water at all.
 func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string {
 	const (
-		pillarW = 28 // pillar width per step (9 rows × 28 cols)
-		nameW   = 10
+		nameW = 10
 	)
 
 	g   := tuiStyleGreen
@@ -539,7 +511,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		info    := ch.DropletID + "  " + formatElapsed(ch.Elapsed)
 		infoLine = indent + g.Render(info)
 	}
-	chanW      := n * pillarW
+	chanW := n * archPillarW
 
 	isActive := func(step string) bool {
 		return step == ch.Step && ch.DropletID != ""
@@ -557,14 +529,12 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	// Waterfall is visible only when the droplet is on the final step.
 	isLastStep := activeIdx == n-1 && activeIdx >= 0
 
-	// Waterfall / channel-water styles — three brightness levels, black background.
-	wfBright := lipgloss.NewStyle().Foreground(lipgloss.Color("#a8eeff")).Background(lipgloss.Color("0"))
-	wfMid    := lipgloss.NewStyle().Foreground(lipgloss.Color("#3ec8e8")).Background(lipgloss.Color("0"))
-	wfDim    := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7a96")).Background(lipgloss.Color("0"))
+	// Water and channel styles — reference semantic arch color roles.
+	wfBright := archRoleWaterBright
+	wfMid    := archRoleWaterMid
+	wfDim    := archRoleWaterDim
 
-	// Channel wall style: dim foreground on black background.
-	cStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#46465a")).Background(lipgloss.Color("0"))
-	l1     := indent + cStyle.Render(strings.Repeat("▀", chanW))
+	l1 := indent + archRoleChannelWall.Render(strings.Repeat("▀", chanW))
 
 	// Wave pattern: 6-char repeating unit animated each frame — water flows right.
 	type waveCell struct {
@@ -586,9 +556,6 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		return wb.String()
 	}
 
-	// Pillar bg used for dry channel sections and blank pillar rows.
-	pillarBg := lipgloss.NewStyle().Background(lipgloss.Color("0"))
-
 	// Compute wet/dry widths for partial-water rendering.
 	// innerW is the channel content width (excluding the two █ walls).
 	innerW := chanW - 2
@@ -597,7 +564,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		// Subtract 1 to account for the left wall occupying the first column of
 		// the pillar grid; without the correction the wet region extends one
 		// character past the active pillar's visual right boundary.
-		wetInnerW = (activeIdx+1)*pillarW - 1
+		wetInnerW = (activeIdx+1)*archPillarW - 1
 		if wetInnerW > innerW {
 			wetInnerW = innerW
 		}
@@ -610,11 +577,11 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	if wetInnerW > 0 {
 		water = renderWave(wetInnerW)
 		if dryInnerW > 0 {
-			water += pillarBg.Render(strings.Repeat(" ", dryInnerW))
+			water += archRoleBackground.Render(strings.Repeat(" ", dryInnerW))
 		}
 	} else {
 		// No active step: fully dry channel.
-		water = pillarBg.Render(strings.Repeat(" ", innerW))
+		water = archRoleBackground.Render(strings.Repeat(" ", innerW))
 	}
 
 	// Waterfall brightness rotates with frame so ▓ appears to fall.
@@ -647,57 +614,19 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	}
 
 	wfExit := wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓")
-	l2 := indent + cStyle.Render("█") + water + cStyle.Render("█")
+	l2 := indent + archRoleChannelWall.Render("█") + water + archRoleChannelWall.Render("█")
 	if isLastStep {
 		l2 += wfExit
 	}
 
-	// Pillar styles: fg=color3/olive on bg=black; active uses bright green for ▒.
-	pillarFg     := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Background(lipgloss.Color("0"))
-	pillarActive := lipgloss.NewStyle().Foreground(lipgloss.Color("#4bb96e")).Background(lipgloss.Color("0"))
-
-	// buildPillarRow returns the rendered 28-char content for pillar row r.
-	// When active, ▒ chars use the bright green highlight color instead of olive.
-	buildPillarRow := func(r int, active bool) string {
-		heavy := pillarFg
-		if active {
-			heavy = pillarActive
-		}
-		switch r {
-		case 0, 1, 2, 3, 4:
-			return pillarBg.Render(strings.Repeat(" ", 28))
-		case 5:
-			return heavy.Render(strings.Repeat("▒", 28))
-		case 6:
-			return pillarBg.Render(strings.Repeat(" ", 6)) +
-				pillarFg.Render("░") +
-				heavy.Render(strings.Repeat("▒", 16)) +
-				pillarBg.Render(strings.Repeat(" ", 5))
-		case 7:
-			return pillarBg.Render(strings.Repeat(" ", 9)) +
-				pillarFg.Render("░") +
-				heavy.Render(strings.Repeat("▒", 9)) +
-				pillarBg.Render(strings.Repeat(" ", 9))
-		case 8:
-			return pillarBg.Render(strings.Repeat(" ", 10)) +
-				pillarFg.Render("░") +
-				heavy.Render(strings.Repeat("▒", 7)) +
-				pillarBg.Render(strings.Repeat(" ", 10))
-		default: // rows 9–13: pier body
-			return pillarBg.Render(strings.Repeat(" ", 12)) +
-				pillarFg.Render("░") +
-				heavy.Render(strings.Repeat("▒", 4)) +
-				pillarBg.Render(strings.Repeat(" ", 11))
-		}
-	}
-
-	// Build 9 arch lines: tile one pillar column per step, then append waterfall.
+	// Build 9 arch lines: tile one pillar column per step using the static pixel map,
+	// then append the waterfall column when the droplet is on the final step.
 	var archLines []string
 	for r := 5; r < 14; r++ {
 		var sb strings.Builder
 		sb.WriteString(indent)
 		for _, step := range steps {
-			sb.WriteString(buildPillarRow(r, isActive(step)))
+			sb.WriteString(renderArchPillarRow(r, isActive(step)))
 		}
 		if isLastStep {
 			sb.WriteString(wfRows[r-5])
@@ -711,10 +640,10 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	lblLine.WriteString(indent)
 	for _, step := range steps {
 		lbl := step
-		if len([]rune(lbl)) > pillarW-1 {
-			lbl = string([]rune(lbl)[:pillarW-2]) + "…"
+		if len([]rune(lbl)) > archPillarW-1 {
+			lbl = string([]rune(lbl)[:archPillarW-2]) + "…"
 		}
-		centered := padOrTruncCenter(lbl, pillarW)
+		centered := padOrTruncCenter(lbl, archPillarW)
 		if isActive(step) {
 			lblLine.WriteString(g.Bold(true).Render(centered))
 		} else {
