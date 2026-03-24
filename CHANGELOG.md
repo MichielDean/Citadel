@@ -9,6 +9,13 @@
 - `ct doctor` checks that `~/.cistern/env` exists, is chmod 600 (warn if world-readable), and contains `ANTHROPIC_API_KEY`
 - `ct doctor --fix` creates a missing `~/.cistern/env` and, in an interactive terminal, prompts for `ANTHROPIC_API_KEY` with masked input (no echo)
 
+### Installer test harness with fakeagent and pass/fail output (ci-f2s0s)
+- Adds `run-installer-tests.sh` — top-level test runner: builds the installer-test Docker image, starts a privileged container, runs 6 scaffolding tests, and reports results in GitHub Actions annotation format (`::notice::PASS:` / `::error::FAIL:`); exits 0 on all pass, 1 on any failure
+- Adds `test/installer/helpers.sh` — shared Docker and reporting helpers: `build_image()` builds the systemd base then the installer-test image (fails fast on base-image failure via `|| return 1`), `wait_for_systemd()` polls `systemctl is-system-running` and accepts both `running` and `degraded`, `exec_in_container()` runs commands inside the container, `service_status()` queries a systemd unit's active state; container name is PID-namespaced to prevent parallel-run collisions; EXIT trap unconditionally stops the container
+- Adds `test/docker/installer-test/Dockerfile` — two-stage image: Go builder stage compiles `ct` and `fakeagent` from source; runtime stage extends `cistern-systemd-test` (from ci-9olg2) with `git`, `tmux`, the compiled binaries, and a `/usr/local/bin/claude → fakeagent` symlink that stubs the Claude CLI without requiring a real API key or OAuth login
+- Tests covered: systemd boot state, `ct` binary presence, fakeagent/claude stub presence, `ct init` config creation, `ct doctor` non-crash (exit ≤ 1), `service_status` helper correctness
+- No credential or environment manipulation — scaffolding only
+
 ### systemd-capable Docker base image for installer tests (ci-9olg2)
 - Adds `test/docker/systemd/Dockerfile` — a Debian Bookworm image that boots with `systemd` as PID 1, suitable for testing systemd-managed service installers (e.g. `cistern-castellarius.service` via `install.sh`)
 - Sets `ENV container=docker` so systemd skips hardware-only targets; sends `STOPSIGNAL SIGRTMIN+3` so `docker stop` triggers an orderly shutdown instead of `SIGTERM`
