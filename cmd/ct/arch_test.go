@@ -237,10 +237,14 @@ func TestRenderDroughtPillarRow_Rows0to4_ProduceNoVisibleChars(t *testing.T) {
 //
 // Given: rows 0–4 of archPixelMap
 // When:  renderArchPillarRow is called for each
-// Then:  the output contains no non-space characters
+// Then:  the output contains no non-space characters after stripping ANSI codes
+//
+// Note: archRoleBackground sets a black terminal background, so lipgloss emits ANSI
+// escape codes in color-enabled environments (e.g. CLICOLOR_FORCE=1). strings.TrimSpace
+// cannot strip escape codes, so we use stripANSI first.
 func TestRenderArchPillarRow_Rows0to4_ProduceNoVisibleChars(t *testing.T) {
 	for r := 0; r < 5; r++ {
-		got := renderArchPillarRow(r, false)
+		got := stripANSI(renderArchPillarRow(r, false))
 		if strings.TrimSpace(got) != "" {
 			t.Errorf("renderArchPillarRow(%d, false): expected blank output, got %q", r, got)
 		}

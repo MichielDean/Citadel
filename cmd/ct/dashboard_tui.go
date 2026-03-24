@@ -483,8 +483,7 @@ func (m dashboardTUIModel) viewPeekSelectOverlay() string {
 // Idle aqueducts (no active droplet) show no water at all.
 func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string {
 	const (
-		pillarW = 28 // pillar width per step (9 rows × 28 cols)
-		nameW   = 10
+		nameW = 10
 	)
 
 	g   := tuiStyleGreen
@@ -512,7 +511,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		info    := ch.DropletID + "  " + formatElapsed(ch.Elapsed)
 		infoLine = indent + g.Render(info)
 	}
-	chanW      := n * pillarW
+	chanW := n * archPillarW
 
 	isActive := func(step string) bool {
 		return step == ch.Step && ch.DropletID != ""
@@ -565,7 +564,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		// Subtract 1 to account for the left wall occupying the first column of
 		// the pillar grid; without the correction the wet region extends one
 		// character past the active pillar's visual right boundary.
-		wetInnerW = (activeIdx+1)*pillarW - 1
+		wetInnerW = (activeIdx+1)*archPillarW - 1
 		if wetInnerW > innerW {
 			wetInnerW = innerW
 		}
@@ -641,10 +640,10 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	lblLine.WriteString(indent)
 	for _, step := range steps {
 		lbl := step
-		if len([]rune(lbl)) > pillarW-1 {
-			lbl = string([]rune(lbl)[:pillarW-2]) + "…"
+		if len([]rune(lbl)) > archPillarW-1 {
+			lbl = string([]rune(lbl)[:archPillarW-2]) + "…"
 		}
-		centered := padOrTruncCenter(lbl, pillarW)
+		centered := padOrTruncCenter(lbl, archPillarW)
 		if isActive(step) {
 			lblLine.WriteString(g.Bold(true).Render(centered))
 		} else {
