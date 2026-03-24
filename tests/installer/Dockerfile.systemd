@@ -52,25 +52,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Cistern binaries ─────────────────────────────────────────────────────────
 
 # ct CLI — the main Cistern binary.
-COPY --from=builder /out/ct /usr/local/bin/ct
-RUN chmod +x /usr/local/bin/ct
+COPY --chmod=0755 --from=builder /out/ct /usr/local/bin/ct
 
 # fakeagent installed as "claude" — acts as the Claude CLI stub.
 # Placed at /usr/local/bin/claude so exec.LookPath("claude") resolves it,
-# matching the path npm installs the real Claude Code CLI. The claudePath()
-# function in session.go checks $CLAUDE_PATH, then LookPath, then
-# $HOME/.local/bin/claude — any of these locations would work; /usr/local/bin
-# is the canonical npm global install prefix.
-COPY --from=builder /out/fakeagent /usr/local/bin/claude
-RUN chmod +x /usr/local/bin/claude
+# matching the path npm installs the real Claude Code CLI.
+COPY --chmod=0755 --from=builder /out/fakeagent /usr/local/bin/claude
 
 # ── Installer scripts ─────────────────────────────────────────────────────────
 
-COPY start-castellarius.sh /usr/local/bin/start-castellarius.sh
-RUN chmod +x /usr/local/bin/start-castellarius.sh
+COPY --chmod=0755 start-castellarius.sh /usr/local/bin/start-castellarius.sh
 
-COPY tests/installer/run-tests.sh /usr/local/bin/run-tests.sh
-RUN chmod +x /usr/local/bin/run-tests.sh
+COPY --chmod=0755 tests/installer/run-tests.sh /usr/local/bin/run-tests.sh
 
 # ── systemd init ──────────────────────────────────────────────────────────────
 # systemd is PID 1. Tests are run by exec-ing into the container once systemd
