@@ -416,14 +416,14 @@ ct castellarius status         Show aqueduct flow — which are flowing, which a
 
 # Dashboard
 ct dashboard                   Live TUI aqueduct arch diagram with cistern and recent flow
-ct dashboard --web             HTTP web dashboard on port 5737 — renders the real TUI via xterm.js
+ct dashboard --web             HTTP web dashboard on 127.0.0.1:5737 — renders the real TUI via xterm.js
                                Full ANSI color, box-drawing chars, animations. Pinch-to-zoom on
                                mobile (or Ctrl+scroll on desktop). Single-finger pan after zooming.
                                Resize protocol: browser sends {resize:{cols,rows}} on viewport change
                                so Bubble Tea renders at the correct terminal size.
                                Programmatic endpoints preserved: /api/dashboard/events (SSE),
                                /ws/aqueducts/{name}/peek (WebSocket)
-ct dashboard --web --addr :8080  Custom listen address
+ct dashboard --web --addr 127.0.0.1:8080  Custom listen address (must include hostname or IP)
 ct feed                        Alias for dashboard
 
 # Status — observe the system

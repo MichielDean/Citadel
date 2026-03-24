@@ -57,14 +57,16 @@ type dashboardTUIModel struct {
 	cfgPath         string
 	dbPath          string
 	data            *DashboardData
-	frame           int  // animation frame counter — increments every animInterval
-	scrollY         int  // scroll offset in lines (0 = top)
+	frame           int    // animation frame counter — increments every animInterval
+	scrollY         int    // scroll offset in lines (0 = top)
 	width           int
 	height          int
 	peekActive      bool
 	peek            peekModel
-	peekSelectMode  bool // picker overlay active when multiple aqueducts are flowing
-	peekSelectIndex int  // index of highlighted aqueduct in the picker
+	peekSelectMode  bool   // picker overlay active when multiple aqueducts are flowing
+	peekSelectIndex int    // index of highlighted aqueduct in the picker
+	stateHash       string // fingerprint of last data; "" = first poll (never triggers idle)
+	idleMode        bool   // true = backing off to idleRefreshInterval between polls
 }
 
 func newDashboardTUIModel(cfgPath, dbPath string) dashboardTUIModel {
@@ -77,11 +79,16 @@ func newDashboardTUIModel(cfgPath, dbPath string) dashboardTUIModel {
 }
 
 func (m dashboardTUIModel) Init() tea.Cmd {
-	return tea.Batch(m.fetchDataCmd(), tuiTick(), tuiAnimTick())
+	// The tick chain is self-sustaining:
+	// fetchDataCmd → tuiDataMsg → tuiTickWithInterval → tuiTickMsg → fetchDataCmd → …
+	// tuiDataMsg chooses the interval (fast or slow) based on idleMode.
+	return tea.Batch(m.fetchDataCmd(), tuiAnimTick())
 }
 
-func tuiTick() tea.Cmd {
-	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg {
+// tuiTickWithInterval schedules a single data-refresh tick after d.
+// The interval is chosen by the tuiDataMsg handler based on idle state.
+func tuiTickWithInterval(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tuiTickMsg(t)
 	})
 }
@@ -97,6 +104,21 @@ func (m dashboardTUIModel) fetchDataCmd() tea.Cmd {
 	return func() tea.Msg {
 		return tuiDataMsg(fetchDashboardData(cfgPath, dbPath))
 	}
+}
+
+// applyDataMsg updates model fields for new data and returns the interval-aware
+// tick command for the next refresh.
+func (m dashboardTUIModel) applyDataMsg(msg tuiDataMsg) (dashboardTUIModel, tea.Cmd) {
+	prev := m.stateHash
+	m.data = (*DashboardData)(msg)
+	newHash := dashboardStateHash(m.data)
+	m.idleMode = newHash == prev && prev != "" && m.data.FlowingCount == 0
+	m.stateHash = newHash
+	interval := refreshInterval
+	if m.idleMode {
+		interval = idleRefreshInterval
+	}
+	return m, tuiTickWithInterval(interval)
 }
 
 // activeAqueducts returns the subset of cataractae that have a flowing droplet.
@@ -186,13 +208,12 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.peek = updated.(peekModel)
 			return m, cmd
 		case tuiTickMsg:
-			return m, tea.Batch(m.fetchDataCmd(), tuiTick())
+			return m, m.fetchDataCmd()
 		case tuiAnimMsg:
 			m.frame++
 			return m, tuiAnimTick()
 		case tuiDataMsg:
-			m.data = (*DashboardData)(msg)
-			return m, nil
+			return m.applyDataMsg(msg)
 		}
 		return m, nil
 	}
@@ -231,19 +252,20 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.height = msg.Height
 			return m, nil
 		case tuiTickMsg:
-			return m, tea.Batch(m.fetchDataCmd(), tuiTick())
+			return m, m.fetchDataCmd()
 		case tuiAnimMsg:
 			m.frame++
 			return m, tuiAnimTick()
 		case tuiDataMsg:
-			m.data = (*DashboardData)(msg)
+			var cmd tea.Cmd
+			m, cmd = m.applyDataMsg(msg)
 			active := activeAqueducts(m.data.Cataractae)
 			if len(active) == 0 {
 				m.peekSelectMode = false
 			} else if m.peekSelectIndex >= len(active) {
 				m.peekSelectIndex = len(active) - 1
 			}
-			return m, nil
+			return m, cmd
 		case tuiPeekNewWindowErrMsg:
 			return m.openInlinePeek(msg.ch, msg.err)
 		}
@@ -257,15 +279,14 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tuiTickMsg:
-		return m, tea.Batch(m.fetchDataCmd(), tuiTick())
+		return m, m.fetchDataCmd()
 
 	case tuiAnimMsg:
 		m.frame++
 		return m, tuiAnimTick()
 
 	case tuiDataMsg:
-		m.data = (*DashboardData)(msg)
-		return m, nil
+		return m.applyDataMsg(msg)
 
 	case tuiPeekNewWindowErrMsg:
 		return m.openInlinePeek(msg.ch, msg.err)
