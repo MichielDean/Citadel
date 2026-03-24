@@ -80,3 +80,4 @@ jobs:
         run: |
           docker stop "${CONTAINER_NAME}" 2>/dev/null || true
           docker rmi "${IMAGE_TAG}" 2>/dev/null || true
+          rm -f "/tmp/installer-test-output-${GITHUB_RUN_ID}.txt"

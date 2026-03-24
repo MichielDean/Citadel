@@ -52,7 +52,7 @@ _wait_for_systemd() {
         sleep 1
         i=$((i + 1))
     done
-    echo "[FAIL] systemd_boot_wait: multi-user.target not active after ${timeout}s" >&2
+    fail "systemd_boot_wait" "multi-user.target not active after ${timeout}s"
     exit 1
 }
 _wait_for_systemd
