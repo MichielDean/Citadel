@@ -202,7 +202,10 @@ func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir strin
 		return "", fmt.Errorf("preset %q has no command configured", preset.Name)
 	}
 
-	parts := append([]string{resolveCommandFn(preset.Command)}, preset.Args...)
+	parts := []string{shellQuote(resolveCommandFn(preset.Command))}
+	for _, a := range preset.Args {
+		parts = append(parts, shellQuote(a))
+	}
 
 	if preset.AddDirFlag != "" {
 		parts = append(parts, preset.AddDirFlag, shellQuote(skillsDir))
@@ -232,7 +235,10 @@ func (s *Session) buildContinueCmd(preset provider.ProviderPreset, skillsDir str
 		return "", fmt.Errorf("preset %q has no ContinueFlag configured", preset.Name)
 	}
 
-	parts := append([]string{resolveCommandFn(preset.Command)}, preset.Args...)
+	parts := []string{shellQuote(resolveCommandFn(preset.Command))}
+	for _, a := range preset.Args {
+		parts = append(parts, shellQuote(a))
+	}
 
 	if preset.AddDirFlag != "" {
 		parts = append(parts, preset.AddDirFlag, shellQuote(skillsDir))

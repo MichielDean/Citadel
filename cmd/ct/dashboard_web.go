@@ -34,6 +34,14 @@ var staticAssets embed.FS
 // inside bufio.Writer.Flush.
 const wsWriteTimeout = 10 * time.Second
 
+// wsTuiReadTimeout is the read deadline applied in the /ws/tui WS handler's
+// frame-reader goroutine (B). It is reset after each received frame to keep
+// active sessions alive. Without a deadline, a network partition + idle PTY
+// leaks goroutines A (ptmx.Read) and B (io.ReadFull) — neither gets an error,
+// and cancel() is never called. Five minutes allows long idle-but-connected
+// sessions while still reaping silently-partitioned ones.
+const wsTuiReadTimeout = 5 * time.Minute
+
 // wsMaxClientPayload is the maximum payload size accepted from a client frame.
 // Client→server frames carry only resize JSON (~40 bytes) or close frames,
 // so 4 KiB is generous. This prevents a malicious client from triggering
@@ -471,15 +479,19 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		go func() {
 			defer cancel() // arm watchdog (C) on any exit
 			buf := make([]byte, wsMaxClientPayload)
-			// No read deadline — this is an interactive session; the user may idle
-			// indefinitely between keystrokes. Goroutine C handles cleanup on disconnect.
-			_ = conn.SetReadDeadline(time.Time{})
+			// Set a read deadline to reap silently-partitioned connections.
+			// Without it, a network partition + idle PTY leaks goroutines A
+			// (ptmx.Read) and B (io.ReadFull) — neither gets an error, and
+			// cancel() is never called. The deadline is reset after each
+			// received frame so genuinely-active sessions are never reaped.
+			conn.SetReadDeadline(time.Now().Add(wsTuiReadTimeout)) //nolint:errcheck
 			for {
 				opcode, payload, nb, err := wsReadClientFrame(brw.Reader, buf)
 				buf = nb
 				if err != nil {
 					return
 				}
+				conn.SetReadDeadline(time.Now().Add(wsTuiReadTimeout)) //nolint:errcheck
 				switch opcode {
 				case wsOpcodeText:
 					handleTuiTextFrame(payload, ptmx, func(cols, rows uint16) {
