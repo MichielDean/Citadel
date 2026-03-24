@@ -216,10 +216,12 @@ else
         pass "fresh_install_service_active"
 
         # Then: ct doctor exits 0 with all checks satisfied.
-        if ANTHROPIC_API_KEY=sk-ant-test-fresh-install CT_NO_ASCII_LOGO=1 ct doctor 2>&1; then
+        _doctor_out=$(ANTHROPIC_API_KEY=sk-ant-test-fresh-install \
+                      CT_NO_ASCII_LOGO=1 ct doctor 2>&1) && _doctor_exit=0 || _doctor_exit=$?
+        if [ "${_doctor_exit}" -eq 0 ]; then
             pass "fresh_install_ct_doctor_passes"
         else
-            fail "fresh_install_ct_doctor_passes" "ct doctor exited non-zero"
+            fail "fresh_install_ct_doctor_passes" "ct doctor exited non-zero: ${_doctor_out}"
         fi
     else
         _svc_state=$(systemctl is-active cistern-castellarius.service 2>/dev/null || true)
@@ -418,11 +420,12 @@ else
         pass "upgrade_service_active"
 
         # Then: ct doctor passes with full credential environment.
-        if ANTHROPIC_API_KEY=sk-ant-test-upgrade-preserved \
-           CT_NO_ASCII_LOGO=1 ct doctor 2>&1; then
+        _doctor_out=$(ANTHROPIC_API_KEY=sk-ant-test-upgrade-preserved \
+                      CT_NO_ASCII_LOGO=1 ct doctor 2>&1) && _doctor_exit=0 || _doctor_exit=$?
+        if [ "${_doctor_exit}" -eq 0 ]; then
             pass "upgrade_ct_doctor_passes"
         else
-            fail "upgrade_ct_doctor_passes" "ct doctor failed after upgrade"
+            fail "upgrade_ct_doctor_passes" "ct doctor failed after upgrade: ${_doctor_out}"
         fi
     else
         _svc_state=$(systemctl is-active cistern-castellarius.service 2>/dev/null || true)
