@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fresh-install and upgrade integration test cases (ci-z1e9b)
+- Adds `test_fresh_install` to `run-installer-tests.sh` — end-to-end first-time install: asserts no `~/.cistern` exists before run, executes `ct init`, writes a minimal `cistern.yaml` (`repos: []`) and a placeholder `ANTHROPIC_API_KEY`, installs and starts `cistern-castellarius` as a system service, verifies the service is active, `claude` is on PATH, and `ct doctor` exits 0
+- Adds `test_upgrade` to `run-installer-tests.sh` — upgrade simulation: pre-populates `~/.cistern` with a stale config containing a removed key (`stale_old_key: removed_in_v2`), runs `ct init` again (existing files preserved via `writeFileIfAbsent`), verifies the service restarts cleanly (active) and `ct doctor` still exits 0; `yaml.Unmarshal` ignores the unknown key so no migration is needed
+- Adds `install_system_service()` helper — writes a `cistern-castellarius` system service unit to `/etc/systemd/system/` via `docker exec -i` heredoc (outer `'INSTALL_SCRIPT'` quoting keeps host expansion suppressed; inner `EOF` allows `${HOME_DIR}` to expand inside the container's shell), then calls `daemon-reload`, `enable`, `restart`
+- Adds `wait_for_service_active()` helper — polls `service_status` (the existing helper) until the named unit reports `active` or a configurable timeout (default 10 s) expires; reuses `service_status` instead of duplicating the `exec_in_container + systemctl is-active` call
+- Adds a `gh` stub to `test/docker/installer-test/Dockerfile` — a one-line `exit 0` script at `/usr/local/bin/gh` so `ct doctor`'s "gh CLI installed" and "gh authenticated" checks succeed without a real GitHub CLI or credentials
+- Container cleanup on failure is guaranteed by the pre-existing EXIT trap — no orphaned containers; total test count in `run-installer-tests.sh` reaches 8
+
 ### ~/.cistern/env credential store; ct init, ct doctor, start-castellarius.sh (ci-qdc7q)
 - `~/.cistern/env` is now the canonical credential store — a simple `KEY=VALUE` file (one pair per line, chmod 600)
 - `ct init` creates `~/.cistern/env` with chmod 600, adds `env` to `~/.cistern/.gitignore`, and writes `~/.cistern/start-castellarius.sh`

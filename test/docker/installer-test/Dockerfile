@@ -58,3 +58,7 @@ COPY --from=builder /out/fakeagent   /usr/local/bin/fakeagent
 # found" check and allows fakeagent-based tests to exercise the agent spawn
 # pipeline without a real LLM or API key.
 RUN ln -s /usr/local/bin/fakeagent /usr/local/bin/claude
+
+# Stub the gh CLI so that ct doctor's "gh CLI installed" and "gh authenticated"
+# checks succeed without a real GitHub CLI installation or credentials.
+RUN printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/gh && chmod +x /usr/local/bin/gh
