@@ -5,6 +5,18 @@ Ubuntu 24.04 container.  The container starts real systemd as PID 1 and then
 verifies that the installer artifacts (`ct`, `start-castellarius.sh`, the
 fakeagent Claude stub) work correctly without `pass` or GPG.
 
+## Quick start (run locally)
+
+From the **repository root**, run the full suite with a single command:
+
+```bash
+bash tests/installer/run-local.sh
+```
+
+This builds the test image, starts the container, runs all smoke tests and
+integration scenarios, then stops the container.  Exit code is `0` if
+everything passes, `1` if any test fails.
+
 ## Prerequisites
 
 - Docker with support for `--privileged` containers
