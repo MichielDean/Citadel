@@ -2004,7 +2004,7 @@ func TestPrepareDropletWorktree_LogsWorktreeResumed(t *testing.T) {
 }
 
 // TestRemoveDropletWorktree_LogsWorktreeDeleted verifies that removeDropletWorktree
-// emits a slog.Info entry containing "worktree deleted".
+// emits a slog.Info entry containing "worktree deleted" when the removal succeeds.
 func TestRemoveDropletWorktree_LogsWorktreeDeleted(t *testing.T) {
 	var buf bytes.Buffer
 	l := newTestLogger(&buf)
@@ -2025,6 +2025,33 @@ func TestRemoveDropletWorktree_LogsWorktreeDeleted(t *testing.T) {
 		t.Errorf("log missing 'worktree deleted'; got: %s", out)
 	}
 	if !strings.Contains(out, "ci-wt-del") {
+		t.Errorf("log missing droplet ID; got: %s", out)
+	}
+}
+
+// TestRemoveDropletWorktree_LogsWarn_WhenWorktreeMissing verifies that when the
+// worktree does not exist, removeDropletWorktreeWithLogger emits a Warn-level
+// entry rather than a false "worktree deleted" success message.
+func TestRemoveDropletWorktree_LogsWarn_WhenWorktreeMissing(t *testing.T) {
+	var buf bytes.Buffer
+	l := newTestLogger(&buf)
+
+	primary := makeBareAndClone(t)
+	sandboxRoot := t.TempDir()
+	repoName := "logrepo"
+	dropletID := "ci-wt-missing"
+
+	// Do NOT create the worktree — removal should fail.
+	removeDropletWorktreeWithLogger(l, primary, sandboxRoot, repoName, dropletID)
+
+	out := buf.String()
+	if strings.Contains(out, "worktree deleted") {
+		t.Errorf("unexpected 'worktree deleted' success log when worktree was missing; got: %s", out)
+	}
+	if !strings.Contains(out, "worktree deletion failed") {
+		t.Errorf("expected 'worktree deletion failed' Warn log; got: %s", out)
+	}
+	if !strings.Contains(out, dropletID) {
 		t.Errorf("log missing droplet ID; got: %s", out)
 	}
 }

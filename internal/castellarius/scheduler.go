@@ -329,7 +329,7 @@ func (s *Castellarius) Run(ctx context.Context) error {
 
 	// Startup credential check: log which env vars are set (names only, never values)
 	// and whether gh is authenticated. Helps diagnose auth failures without leaking secrets.
-	s.logStartupCredentials()
+	s.logStartupCredentials(ctx)
 
 	// Integrity check: regenerate any missing or corrupt CLAUDE.md files before
 	// accepting work. A corrupted CLAUDE.md (e.g. "test\n\nold instructions") means
@@ -425,7 +425,7 @@ func (s *Castellarius) Run(ctx context.Context) error {
 // logStartupCredentials logs which credential-related environment variables are
 // set (names only — values are never logged) and whether gh is authenticated.
 // Called once at Castellarius startup to surface auth problems early.
-func (s *Castellarius) logStartupCredentials() {
+func (s *Castellarius) logStartupCredentials(ctx context.Context) {
 	// Collect the names of set env vars across all repo presets. Values are
 	// intentionally never logged to prevent credential leakage.
 	seenVars := map[string]bool{}
@@ -453,7 +453,10 @@ func (s *Castellarius) logStartupCredentials() {
 	}
 
 	// gh auth status output is NOT logged (may contain token fragments).
-	if exec.Command("gh", "auth", "status").Run() == nil {
+	// Use a 10s timeout so a hung credential helper cannot block startup indefinitely.
+	ghCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if exec.CommandContext(ghCtx, "gh", "auth", "status").Run() == nil {
 		s.logger.Info("startup credentials: gh authenticated")
 	} else {
 		s.logger.Warn("startup credentials: gh auth status failed — sessions may fail on GitHub operations")
@@ -1313,13 +1316,17 @@ func removeDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRoo
 	worktreePath := filepath.Join(sandboxRoot, repoName, dropletID)
 	rm := exec.Command("git", "worktree", "remove", "--force", worktreePath)
 	rm.Dir = primaryDir
-	_ = rm.Run()
+	rmErr := rm.Run()
 
 	del := exec.Command("git", "branch", "-D", "feat/"+dropletID)
 	del.Dir = primaryDir
 	_ = del.Run()
 
-	logger.Info("worktree deleted", "droplet", dropletID, "path", worktreePath)
+	if rmErr != nil {
+		logger.Warn("worktree deletion failed", "droplet", dropletID, "path", worktreePath, "error", rmErr)
+	} else {
+		logger.Info("worktree deleted", "droplet", dropletID, "path", worktreePath)
+	}
 }
 
 // dirtyNonContextFiles returns uncommitted non-CONTEXT.md files in dir.

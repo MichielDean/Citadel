@@ -252,6 +252,7 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 	for i, sk := range step.Skills {
 		skillNames[i] = sk.Name
 	}
+	itemID := item.ID
 	sess := &Session{
 		ID:             w.SessionID,
 		WorkDir:        ctxDir,
@@ -260,6 +261,10 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 		TimeoutMinutes: step.TimeoutMinutes,
 		Preset:         r.preset,
 		Skills:         skillNames,
+		DropletSignaledOutcome: func() bool {
+			d, err := r.queue.Get(itemID)
+			return err == nil && d.Outcome != ""
+		},
 	}
 	if err := sess.Spawn(); err != nil {
 		cleanup()

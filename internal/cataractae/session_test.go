@@ -20,17 +20,37 @@ import (
 	"github.com/MichielDean/cistern/internal/provider"
 )
 
+// syncBuffer wraps bytes.Buffer with a mutex so that concurrent Write calls
+// (from background goroutines writing via slog) and String() calls (from the
+// test polling loop) do not race under go test -race.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // captureDefaultSlog temporarily replaces slog.Default() with a buffer-backed
 // text logger for the duration of the test, then restores the original.
 // Returns the buffer whose String() can be inspected for log output.
-func captureDefaultSlog(t *testing.T) *bytes.Buffer {
+func captureDefaultSlog(t *testing.T) *syncBuffer {
 	t.Helper()
 	prev := slog.Default()
-	var buf bytes.Buffer
-	l := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	buf := &syncBuffer{}
+	l := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	slog.SetDefault(l)
 	t.Cleanup(func() { slog.SetDefault(prev) })
-	return &buf
+	return buf
 }
 
 func TestBuildClaudeCmd_ContainsAddDir(t *testing.T) {
@@ -1469,5 +1489,88 @@ func TestSpawn_LogsQuickExit_WhenSessionDiesImmediately(t *testing.T) {
 	}
 	if !strings.Contains(out, "session=quick-exit-test") {
 		t.Errorf("quick-exit log missing session field; got: %s", out)
+	}
+}
+
+// TestSpawn_QuickExit_CancelledByKill verifies that calling kill() before the
+// quick-exit window expires cancels the goroutine so no spurious warning is logged
+// when the session is intentionally stopped.
+func TestSpawn_QuickExit_CancelledByKill(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true") // exits immediately
+
+	workDir := t.TempDir()
+	s := &Session{
+		ID:      "kill-cancel-test",
+		WorkDir: workDir,
+	}
+
+	// Use a window long enough that we can call kill() before it fires.
+	orig := quickExitWindow
+	quickExitWindow = 500 * time.Millisecond
+	t.Cleanup(func() { quickExitWindow = orig })
+
+	if err := s.spawn(); err != nil {
+		t.Skip("spawn failed (tmux environment issue):", err)
+	}
+
+	// Cancel the goroutine by killing the session before the window expires.
+	s.kill()
+
+	// Wait longer than the window to give the goroutine time to fire if not cancelled.
+	time.Sleep(800 * time.Millisecond)
+
+	out := buf.String()
+	if strings.Contains(out, "exited quickly") {
+		t.Errorf("unexpected quick-exit warning after intentional kill; got: %s", out)
+	}
+}
+
+// TestSpawn_QuickExit_SuppressedWhenOutcomeSignaled verifies that when
+// DropletSignaledOutcome returns true the goroutine does not emit a warning —
+// a fast agent that completed successfully should not be flagged as a possible
+// auth failure.
+func TestSpawn_QuickExit_SuppressedWhenOutcomeSignaled(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true") // exits immediately
+
+	workDir := t.TempDir()
+	s := &Session{
+		ID:      "outcome-suppress-test",
+		WorkDir: workDir,
+		DropletSignaledOutcome: func() bool {
+			return true // simulate a successfully completed droplet
+		},
+	}
+
+	orig := quickExitWindow
+	quickExitWindow = 200 * time.Millisecond
+	t.Cleanup(func() { quickExitWindow = orig })
+
+	if err := s.spawn(); err != nil {
+		t.Skip("spawn failed (tmux environment issue):", err)
+	}
+	defer s.kill()
+
+	// Wait longer than the window.
+	time.Sleep(500 * time.Millisecond)
+
+	out := buf.String()
+	if strings.Contains(out, "exited quickly") {
+		t.Errorf("unexpected quick-exit warning when outcome already signaled; got: %s", out)
 	}
 }

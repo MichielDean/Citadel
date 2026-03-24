@@ -49,6 +49,17 @@ type Session struct {
 	// that do not support AddDirFlag. Skills are read from ~/.cistern/skills/<name>/SKILL.md.
 	// Providers with SupportsAddDir=true receive skill files automatically via --add-dir.
 	Skills []string
+
+	// DropletSignaledOutcome, if non-nil, is called by the quick-exit goroutine
+	// before emitting a warning. If it returns true the session has already signaled
+	// an outcome (pass/recirculate/block) and the warning is suppressed —
+	// preventing false positives when a fast agent task completes within the window.
+	DropletSignaledOutcome func() bool
+
+	// done is closed by kill() to cancel the quick-exit goroutine so it does
+	// not emit a spurious warning when the session is intentionally stopped.
+	done     chan struct{}
+	killOnce sync.Once
 }
 
 // Spawn creates a new tmux session running the agent and returns immediately.
@@ -66,6 +77,11 @@ func (s *Session) spawn() error {
 	// Kill any stale tmux session with the same name before creating a new one.
 	slog.Default().Info("session: killing stale session before spawn", "session", s.ID)
 	s.kill()
+
+	// Reset the done channel and killOnce for this spawn so the quick-exit
+	// goroutine below can be cancelled via a fresh kill() call.
+	s.killOnce = sync.Once{}
+	s.done = make(chan struct{})
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -143,17 +159,30 @@ func (s *Session) spawn() error {
 
 	// Quick-exit detection: warn if the session dies within quickExitWindow of
 	// spawning — a possible auth failure, missing binary, or prompt error.
+	// The goroutine can be cancelled via the done channel (closed by kill()) to
+	// avoid false positives on intentional kills and graceful shutdown.
 	spawnedAt := time.Now()
 	sessionID := s.ID
+	done := s.done
+	checkOutcome := s.DropletSignaledOutcome
+	window := quickExitWindow // capture at spawn time to avoid concurrent access with test overrides
 	go func() {
-		time.Sleep(quickExitWindow)
-		if !isSessionAlive(sessionID) {
-			elapsed := time.Since(spawnedAt).Round(time.Second)
-			slog.Default().Warn("session exited quickly — possible auth failure or binary not found",
-				"session", sessionID,
-				"elapsed", elapsed.String(),
-			)
+		select {
+		case <-time.After(window):
+		case <-done:
+			return // session killed intentionally — suppress warning
 		}
+		if isSessionAlive(sessionID) {
+			return
+		}
+		if checkOutcome != nil && checkOutcome() {
+			return // session signaled an outcome — not an auth failure
+		}
+		elapsed := time.Since(spawnedAt).Round(time.Second)
+		slog.Default().Warn("session exited quickly — possible auth failure or binary not found",
+			"session", sessionID,
+			"elapsed", elapsed.String(),
+		)
 	}()
 
 	return nil
@@ -446,9 +475,14 @@ func (s *Session) resolveIdentityPath() string {
 	return filepath.Join(s.resolveIdentityDir(), s.Preset.InstrFile())
 }
 
-// kill terminates the tmux session if it exists.
+// kill terminates the tmux session if it exists and cancels the quick-exit goroutine.
 func (s *Session) kill() {
 	exec.Command("tmux", "kill-session", "-t", s.ID).Run()
+	s.killOnce.Do(func() {
+		if s.done != nil {
+			close(s.done)
+		}
+	})
 }
 
 // isAlive checks whether the tmux session still exists.
