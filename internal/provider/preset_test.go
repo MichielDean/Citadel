@@ -36,6 +36,7 @@ func TestBuiltins_ClaudePreset(t *testing.T) {
 	assertStrs(t, "EnvPassthrough", []string{"ANTHROPIC_API_KEY"}, got.EnvPassthrough)
 	assertStr(t, "ModelFlag", "--model", got.ModelFlag)
 	assertStr(t, "AddDirFlag", "--add-dir", got.AddDirFlag)
+	assertStr(t, "PromptFlag", "-p", got.PromptFlag)
 	assertStr(t, "InstructionsFile", "CLAUDE.md", got.InstructionsFile)
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/provider"
 	"github.com/MichielDean/cistern/internal/skills"
 )
 
@@ -32,6 +33,7 @@ type Runner struct {
 	repo     aqueduct.RepoConfig
 	workflow *aqueduct.Workflow
 	queue    *cistern.Client
+	preset   provider.ProviderPreset
 
 	workers          []*Worker
 	handoffThreshold int
@@ -47,6 +49,7 @@ type Config struct {
 	SandboxRoot      string // Override for sandbox root dir (default: ~/.cistern/sandboxes)
 	HandoffThreshold int    // Token threshold for session handoff (default: 150000)
 	SkipInitialClone bool   // Skip the startup clone (for tests with fake repo URLs)
+	Preset           provider.ProviderPreset // Resolved provider preset; zero-value falls back to legacy claude path
 }
 
 // New creates a Runner for the given repo, initializing named workers from the
@@ -99,6 +102,7 @@ func New(cfg Config) (*Runner, error) {
 		repo:             cfg.Repo,
 		workflow:         cfg.Workflow,
 		queue:            cfg.CisternClient,
+		preset:           cfg.Preset,
 		workers:          workers,
 		handoffThreshold: handoff,
 	}, nil
@@ -237,17 +241,15 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 		}
 	}
 
-	// 3. Spawn Claude Code session in tmux. Returns immediately.
-	var modelVal string
-	if step.Model != nil {
-		modelVal = *step.Model
-	}
+	// 3. Spawn agent session in tmux. Returns immediately.
+	modelVal := resolveModelVal(step.Model, r.preset)
 	sess := &Session{
 		ID:             w.SessionID,
 		WorkDir:        ctxDir,
 		Model:          modelVal,
 		Identity:       step.Identity,
 		TimeoutMinutes: step.TimeoutMinutes,
+		Preset:         r.preset,
 	}
 	if err := sess.Spawn(); err != nil {
 		cleanup()
@@ -270,6 +272,16 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 	}
 
 	return nil
+}
+
+// resolveModelVal returns the model string to pass to the agent. It prefers
+// the step-level override (step.Model) and falls back to preset.DefaultModel
+// when the step does not specify a model.
+func resolveModelVal(stepModel *string, preset provider.ProviderPreset) string {
+	if stepModel != nil {
+		return *stepModel
+	}
+	return preset.DefaultModel
 }
 
 // CataractaeByName looks up a workflow step by name.

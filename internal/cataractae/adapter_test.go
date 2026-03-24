@@ -360,11 +360,13 @@ func TestAdapterSpawn_AgentNoWorker(t *testing.T) {
 // repo has no workflow configured.
 func TestNewAdapter_NoWorkflow(t *testing.T) {
 	client := testQueueClient(t)
-	repos := []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}}
+	cfg := &aqueduct.AqueductConfig{
+		Repos: []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}},
+	}
 	workflows := map[string]*aqueduct.Workflow{} // missing "myrepo"
 	clients := map[string]*cistern.Client{"myrepo": client}
 
-	_, err := NewAdapter(repos, workflows, clients)
+	_, err := NewAdapter(cfg, workflows, clients)
 	if err == nil {
 		t.Fatal("expected error when workflow missing")
 	}
@@ -379,11 +381,13 @@ func TestNewAdapter_NoQueueClient(t *testing.T) {
 	wf := &aqueduct.Workflow{Name: "feature", Cataractae: []aqueduct.WorkflowCataractae{
 		{Name: "implement", Type: aqueduct.CataractaeTypeAgent},
 	}}
-	repos := []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}}
+	cfg := &aqueduct.AqueductConfig{
+		Repos: []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}},
+	}
 	workflows := map[string]*aqueduct.Workflow{"myrepo": wf}
 	clients := map[string]*cistern.Client{} // missing "myrepo"
 
-	_, err := NewAdapter(repos, workflows, clients)
+	_, err := NewAdapter(cfg, workflows, clients)
 	if err == nil {
 		t.Fatal("expected error when queue client missing")
 	}

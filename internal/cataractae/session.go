@@ -6,17 +6,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/MichielDean/cistern/internal/provider"
 )
 
-// Session manages a Claude Code execution inside a tmux session.
+// Session manages an agent execution inside a tmux session.
 type Session struct {
 	// ID is the tmux session name (e.g., "myrepo-alice").
 	ID string
 
-	// WorkDir is the directory claude runs in.
+	// WorkDir is the directory the agent runs in.
 	WorkDir string
 
 	// Model is the LLM model to use (e.g., "sonnet", "haiku").
@@ -30,16 +31,20 @@ type Session struct {
 	// TimeoutMinutes is the maximum runtime hint passed to the agent via CONTEXT.md.
 	// 0 means default (60 minutes).
 	TimeoutMinutes int
+
+	// Preset is the provider preset that controls how the agent is launched.
+	// When Name is empty, spawn falls back to the legacy claude hard-coded path.
+	Preset provider.ProviderPreset
 }
 
-// Spawn creates a new tmux session running claude and returns immediately.
+// Spawn creates a new tmux session running the agent and returns immediately.
 // The Castellarius observe loop detects completion via the outcome field in the DB —
 // agents signal their outcome by calling `ct droplet pass/recirculate/block <id>`.
 func (s *Session) Spawn() error {
 	return s.spawn()
 }
 
-// spawn creates a new tmux session running claude.
+// spawn creates a new tmux session running the agent.
 func (s *Session) spawn() error {
 	// Kill any stale session with the same name.
 	s.kill()
@@ -49,25 +54,22 @@ func (s *Session) spawn() error {
 		return fmt.Errorf("spawn: cannot determine home directory: %w", err)
 	}
 	skillsDir := filepath.Join(home, ".cistern", "skills")
-	claudeCmd := s.buildClaudeCmd(skillsDir)
 
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}
-	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		args = append(args, "-e", "ANTHROPIC_API_KEY="+key)
+
+	var agentCmd string
+	if s.Preset.Name != "" {
+		agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
+		if err != nil {
+			return fmt.Errorf("spawn: %w", err)
+		}
+	} else {
+		// Legacy fallback: no preset configured — use the hardcoded claude path.
+		agentCmd = s.buildClaudeCmd(skillsDir)
 	}
-	if path := os.Getenv("PATH"); path != "" {
-		args = append(args, "-e", "PATH="+path)
-	}
-	if tok := os.Getenv("GH_TOKEN"); tok != "" {
-		args = append(args, "-e", "GH_TOKEN="+tok)
-	}
-	if s.Identity != "" {
-		args = append(args, "-e", "CT_CATARACTA_NAME="+s.Identity)
-	}
-	if db := os.Getenv("CT_DB"); db != "" {
-		args = append(args, "-e", "CT_DB="+db)
-	}
-	args = append(args, claudeCmd)
+
+	args = append(args, s.collectEnvArgs()...)
+	args = append(args, agentCmd)
 	cmd := exec.Command("tmux", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, err, out)
@@ -75,6 +77,49 @@ func (s *Session) spawn() error {
 
 	log.Printf("session %s: spawned in %s", s.ID, s.WorkDir)
 	return nil
+}
+
+// collectEnvArgs builds the tmux -e env argument pairs for the session.
+// The preset path forwards EnvPassthrough vars and ExtraEnv static values.
+// The legacy path forwards ANTHROPIC_API_KEY.
+// Platform-level vars (PATH, GH_TOKEN, CT_CATARACTA_NAME, CT_DB) are always
+// forwarded regardless of provider.
+func (s *Session) collectEnvArgs() []string {
+	var args []string
+
+	if s.Preset.Name != "" {
+		// Preset-driven env passthrough: forward each listed var if set.
+		for _, envVar := range s.Preset.EnvPassthrough {
+			if val := os.Getenv(envVar); val != "" {
+				args = append(args, "-e", envVar+"="+val)
+			}
+		}
+		// Extra env: static values injected from preset config overrides.
+		for k, v := range s.Preset.ExtraEnv {
+			args = append(args, "-e", k+"="+v)
+		}
+	} else {
+		// Legacy fallback: forward the claude API key.
+		if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+			args = append(args, "-e", "ANTHROPIC_API_KEY="+key)
+		}
+	}
+
+	// Always-pass: platform-level vars needed regardless of provider.
+	if path := os.Getenv("PATH"); path != "" {
+		args = append(args, "-e", "PATH="+path)
+	}
+	if s.Identity != "" {
+		args = append(args, "-e", "CT_CATARACTA_NAME="+s.Identity)
+	}
+	if db := os.Getenv("CT_DB"); db != "" {
+		args = append(args, "-e", "CT_DB="+db)
+	}
+	if tok := os.Getenv("GH_TOKEN"); tok != "" {
+		args = append(args, "-e", "GH_TOKEN="+tok)
+	}
+
+	return args
 }
 
 // buildClaudeCmd constructs the shell command string passed to tmux new-session.
@@ -94,10 +139,13 @@ func (s *Session) buildClaudeCmd(skillsDir string) string {
 }
 
 // buildPresetCmd constructs the shell command string for a ProviderPreset.
+// Returns an error if preset.Command is empty.
 // The output is byte-for-byte identical to buildClaudeCmd when called with the
 // built-in "claude" preset and CLAUDE_PATH set to "claude".
-func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir string) string {
-	prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
+func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir string) (string, error) {
+	if preset.Command == "" {
+		return "", fmt.Errorf("preset %q has no command configured", preset.Name)
+	}
 
 	parts := append([]string{preset.Command}, preset.Args...)
 
@@ -109,9 +157,12 @@ func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir strin
 		parts = append(parts, preset.ModelFlag, s.Model)
 	}
 
-	parts = append(parts, "-p", "'"+prompt+"'")
+	if preset.PromptFlag != "" {
+		prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
+		parts = append(parts, preset.PromptFlag, "'"+prompt+"'")
+	}
 
-	return strings.Join(parts, " ")
+	return strings.Join(parts, " "), nil
 }
 
 // shellQuote wraps s in single quotes, escaping any single quotes within s,
@@ -192,6 +243,35 @@ func (s *Session) kill() {
 func (s *Session) isAlive() bool {
 	err := exec.Command("tmux", "has-session", "-t", s.ID).Run()
 	return err == nil
+}
+
+// tmuxDisplayMessage queries tmux for the current command running in the first
+// pane of the named session. It is a variable so tests can substitute a fake
+// implementation without requiring tmux to be installed on the test machine.
+var tmuxDisplayMessage = func(sessionID string) (string, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "-t", sessionID, "#{pane_current_command}").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// isAgentAlive reports whether the agent process is still running inside the
+// tmux session. It queries pane_current_command and compares it against
+// preset.ProcessNames. A session can be alive (tmux exists) while the agent
+// has exited — isAgentAlive detects this zombie state.
+//
+// Returns true when ProcessNames is empty: no detection is configured so the
+// function conservatively assumes the agent is alive.
+func (s *Session) isAgentAlive() bool {
+	if len(s.Preset.ProcessNames) == 0 {
+		return true // no process names configured — cannot detect zombie
+	}
+	current, err := tmuxDisplayMessage(s.ID)
+	if err != nil {
+		return false
+	}
+	return slices.Contains(s.Preset.ProcessNames, current)
 }
 
 // claudePathFn resolves the path to the claude executable. It is a variable so

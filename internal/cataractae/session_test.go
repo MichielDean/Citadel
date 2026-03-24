@@ -1,6 +1,7 @@
 package cataractae
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -203,7 +204,10 @@ func TestClaudePresetBackwardCompat(t *testing.T) {
 	t.Run("without model", func(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(claudePreset, skillsDir)
+		got, err := s.buildPresetCmd(claudePreset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd: %v", err)
+		}
 		if got != want {
 			t.Errorf("backward compat broken (no model):\nwant: %q\ngot:  %q", want, got)
 		}
@@ -212,7 +216,10 @@ func TestClaudePresetBackwardCompat(t *testing.T) {
 	t.Run("with model", func(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp", Model: "haiku"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(claudePreset, skillsDir)
+		got, err := s.buildPresetCmd(claudePreset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd: %v", err)
+		}
 		if got != want {
 			t.Errorf("backward compat broken (with model):\nwant: %q\ngot:  %q", want, got)
 		}
@@ -222,7 +229,10 @@ func TestClaudePresetBackwardCompat(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp"}
 		dir := "/home/john doe/.cistern/skills"
 		want := s.buildClaudeCmd(dir)
-		got := s.buildPresetCmd(claudePreset, dir)
+		got, err := s.buildPresetCmd(claudePreset, dir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd: %v", err)
+		}
 		if got != want {
 			t.Errorf("backward compat broken (spaces in path):\nwant: %q\ngot:  %q", want, got)
 		}
@@ -249,7 +259,10 @@ func TestClaudePresetBackwardCompat(t *testing.T) {
 
 		s := &Session{ID: "test", WorkDir: "/tmp"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(resolvedPreset, skillsDir)
+		got, err := s.buildPresetCmd(resolvedPreset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd: %v", err)
+		}
 		if got != want {
 			t.Errorf("LookPath compat broken — preset.Command must match resolved path:\nwant: %q\ngot:  %q", want, got)
 		}
@@ -278,7 +291,10 @@ func TestClaudeDefaultFallback(t *testing.T) {
 	t.Run("without model", func(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(preset, skillsDir)
+		got, err := s.buildPresetCmd(preset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd error: %v", err)
+		}
 		if got != want {
 			t.Errorf("default fallback command mismatch (no model):\nwant: %q\ngot:  %q", want, got)
 		}
@@ -287,7 +303,10 @@ func TestClaudeDefaultFallback(t *testing.T) {
 	t.Run("with model", func(t *testing.T) {
 		s := &Session{ID: "test", WorkDir: "/tmp", Model: "haiku"}
 		want := s.buildClaudeCmd(skillsDir)
-		got := s.buildPresetCmd(preset, skillsDir)
+		got, err := s.buildPresetCmd(preset, skillsDir)
+		if err != nil {
+			t.Fatalf("buildPresetCmd error: %v", err)
+		}
 		if got != want {
 			t.Errorf("default fallback command mismatch (with model):\nwant: %q\ngot:  %q", want, got)
 		}
@@ -383,5 +402,211 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 	}
 	if got.Outcome != "pass" {
 		t.Errorf("droplet outcome = %q, want %q", got.Outcome, "pass")
+	}
+}
+
+// TestIsAgentAlive_ProcessNameMatches_ReturnsTrue verifies that isAgentAlive
+// returns true when the pane's current command matches one of the preset's
+// ProcessNames.
+func TestIsAgentAlive_ProcessNameMatches_ReturnsTrue(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) { return "claude", nil }
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude", "node"}},
+	}
+	if !s.isAgentAlive() {
+		t.Error("isAgentAlive() = false, want true when pane_current_command is in ProcessNames")
+	}
+}
+
+// TestIsAgentAlive_ProcessNameNotMatched_ReturnsFalse verifies that isAgentAlive
+// returns false when the pane's current command is not in ProcessNames — this is
+// a zombie session (tmux alive, agent dead).
+func TestIsAgentAlive_ProcessNameNotMatched_ReturnsFalse(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) { return "bash", nil }
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude", "node"}},
+	}
+	if s.isAgentAlive() {
+		t.Error("isAgentAlive() = true, want false when pane_current_command is not in ProcessNames")
+	}
+}
+
+// TestIsAgentAlive_EmptyProcessNames_ReturnsTrue verifies that isAgentAlive
+// returns true when no ProcessNames are configured — the preset has no way to
+// detect zombie sessions so it conservatively assumes the agent is alive.
+func TestIsAgentAlive_EmptyProcessNames_ReturnsTrue(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) { return "bash", nil }
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{},
+	}
+	if !s.isAgentAlive() {
+		t.Error("isAgentAlive() = false, want true when ProcessNames is empty (no detection configured)")
+	}
+}
+
+// TestIsAgentAlive_TmuxError_ReturnsFalse verifies that isAgentAlive returns
+// false when the tmux display-message call fails — treat an unqueryable session
+// as a dead agent.
+func TestIsAgentAlive_TmuxError_ReturnsFalse(t *testing.T) {
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) {
+		return "", errors.New("tmux: can't find session: test-session")
+	}
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "test-session",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude"}},
+	}
+	if s.isAgentAlive() {
+		t.Error("isAgentAlive() = true, want false when tmux command errors")
+	}
+}
+
+// TestBuildPresetCmd_EmptyCommand_ReturnsError verifies that buildPresetCmd
+// returns a descriptive error when the preset has no command configured.
+// A misconfigured provider with Name set but Command empty must not silently
+// produce a broken tmux command.
+func TestBuildPresetCmd_EmptyCommand_ReturnsError(t *testing.T) {
+	s := &Session{ID: "test", WorkDir: "/tmp"}
+	preset := provider.ProviderPreset{Name: "custom"} // Command is deliberately empty
+	_, err := s.buildPresetCmd(preset, "/skills")
+	if err == nil {
+		t.Fatal("expected error for preset with empty Command, got nil")
+	}
+	if !strings.Contains(err.Error(), "custom") {
+		t.Errorf("error %q should mention the preset name", err.Error())
+	}
+	if !strings.Contains(err.Error(), "no command configured") {
+		t.Errorf("error %q should mention 'no command configured'", err.Error())
+	}
+}
+
+// TestBuildPresetCmd_PromptFlag_AppendedWhenNonEmpty verifies that buildPresetCmd
+// uses preset.PromptFlag to deliver the prompt when it is set.
+func TestBuildPresetCmd_PromptFlag_AppendedWhenNonEmpty(t *testing.T) {
+	s := &Session{ID: "test", WorkDir: "/tmp"}
+	preset := provider.ProviderPreset{
+		Name:       "myagent",
+		Command:    "myagent",
+		PromptFlag: "--prompt",
+	}
+	cmd, err := s.buildPresetCmd(preset, "/skills")
+	if err != nil {
+		t.Fatalf("buildPresetCmd: %v", err)
+	}
+	if !strings.Contains(cmd, "--prompt") {
+		t.Errorf("buildPresetCmd output missing PromptFlag: %s", cmd)
+	}
+}
+
+// TestBuildPresetCmd_PromptFlag_OmittedWhenEmpty verifies that buildPresetCmd
+// does not append any prompt flag when PromptFlag is empty. Presets for CLIs
+// that do not accept -p (e.g. opencode) must have PromptFlag="" to avoid
+// spawn failures from unrecognized flags.
+func TestBuildPresetCmd_PromptFlag_OmittedWhenEmpty(t *testing.T) {
+	s := &Session{ID: "test", WorkDir: "/tmp"}
+	preset := provider.ProviderPreset{
+		Name:    "opencode",
+		Command: "opencode",
+		// PromptFlag deliberately empty — prompt delivered via instructions file
+	}
+	cmd, err := s.buildPresetCmd(preset, "/skills")
+	if err != nil {
+		t.Fatalf("buildPresetCmd: %v", err)
+	}
+	if strings.Contains(cmd, " -p ") || strings.Contains(cmd, " --prompt") {
+		t.Errorf("buildPresetCmd with empty PromptFlag should not contain a prompt flag: %s", cmd)
+	}
+	if !strings.HasPrefix(cmd, "opencode") {
+		t.Errorf("buildPresetCmd output = %q, want prefix %q", cmd, "opencode")
+	}
+}
+
+// TestCollectEnvArgs_GHToken_AlwaysForwarded_PresetPath verifies that GH_TOKEN
+// is included in env args when using the preset path. This is a regression test
+// for the ci-sc2wl refactor: the legacy path forwarded GH_TOKEN but the preset
+// path only iterated EnvPassthrough (which did not include GH_TOKEN for claude).
+func TestCollectEnvArgs_GHToken_AlwaysForwarded_PresetPath(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghtoken-preset-123")
+	t.Setenv("ANTHROPIC_API_KEY", "") // isolate to GH_TOKEN check
+
+	s := &Session{
+		ID:     "test",
+		Preset: provider.ProviderPreset{Name: "claude", Command: "claude"},
+	}
+	args := s.collectEnvArgs()
+	if !containsEnvPair(args, "GH_TOKEN", "ghtoken-preset-123") {
+		t.Errorf("collectEnvArgs (preset path) missing GH_TOKEN; args: %v", args)
+	}
+}
+
+// TestCollectEnvArgs_GHToken_AlwaysForwarded_LegacyPath verifies that GH_TOKEN
+// is included in env args when using the legacy (no-preset) path.
+func TestCollectEnvArgs_GHToken_AlwaysForwarded_LegacyPath(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghtoken-legacy-456")
+
+	s := &Session{ID: "test"} // Preset.Name is empty — legacy path
+	args := s.collectEnvArgs()
+	if !containsEnvPair(args, "GH_TOKEN", "ghtoken-legacy-456") {
+		t.Errorf("collectEnvArgs (legacy path) missing GH_TOKEN; args: %v", args)
+	}
+}
+
+// TestCollectEnvArgs_GHToken_AbsentWhenNotSet verifies that GH_TOKEN is not
+// included in env args when it is unset in the environment.
+func TestCollectEnvArgs_GHToken_AbsentWhenNotSet(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+
+	s := &Session{ID: "test", Preset: provider.ProviderPreset{Name: "claude"}}
+	args := s.collectEnvArgs()
+	for _, a := range args {
+		if strings.Contains(a, "GH_TOKEN") {
+			t.Errorf("collectEnvArgs contains GH_TOKEN when unset; args: %v", args)
+		}
+	}
+}
+
+// containsEnvPair checks whether args contains "-e" followed by "key=val".
+func containsEnvPair(args []string, key, val string) bool {
+	target := key + "=" + val
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-e" && args[i+1] == target {
+			return true
+		}
+	}
+	return false
+}
+
+// TestIsAgentAlive_PassesSessionIDToDisplayMessage verifies that isAgentAlive
+// forwards the session ID to tmuxDisplayMessage.
+func TestIsAgentAlive_PassesSessionIDToDisplayMessage(t *testing.T) {
+	var capturedID string
+	orig := tmuxDisplayMessage
+	tmuxDisplayMessage = func(id string) (string, error) {
+		capturedID = id
+		return "claude", nil
+	}
+	t.Cleanup(func() { tmuxDisplayMessage = orig })
+
+	s := &Session{
+		ID:     "myrepo-alice",
+		Preset: provider.ProviderPreset{ProcessNames: []string{"claude"}},
+	}
+	s.isAgentAlive()
+	if capturedID != "myrepo-alice" {
+		t.Errorf("tmuxDisplayMessage called with id = %q, want %q", capturedID, "myrepo-alice")
 	}
 }
