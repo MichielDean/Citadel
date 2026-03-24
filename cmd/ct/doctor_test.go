@@ -1875,3 +1875,43 @@ func TestCheckSystemdServiceEnv_NoAPIKeyCheck(t *testing.T) {
 		t.Errorf("checkSystemdServiceEnv emitted an ANTHROPIC_API_KEY warning; output:\n%s", output)
 	}
 }
+
+// --- Provider-aware env file checks ---
+
+// TestDoctorEnvCheck_GeminiProvider_GeminiKeySet_Passes verifies that the doctor
+// env file check passes for a gemini-configured setup when GEMINI_API_KEY is
+// present in ~/.cistern/env and ANTHROPIC_API_KEY is absent.
+func TestDoctorEnvCheck_GeminiProvider_GeminiKeySet_Passes(t *testing.T) {
+	home := t.TempDir()
+	cfgPath := writeMinimalConfig(t, home, "gemini")
+	envPath := filepath.Join(filepath.Dir(cfgPath), "env")
+	if err := os.WriteFile(envPath, []byte("GEMINI_API_KEY=gemini-test-key\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	requiredVars, _ := startupRequiredEnvVars(cfgPath)
+	for _, key := range requiredVars {
+		if err := checkCisternEnvHasKey(envPath, key); err != nil {
+			t.Errorf("env check for %s failed: %v", key, err)
+		}
+	}
+}
+
+// TestDoctorEnvCheck_GeminiProvider_GeminiKeyMissing_Fails verifies that the
+// doctor env file check fails for a gemini setup when GEMINI_API_KEY is absent.
+func TestDoctorEnvCheck_GeminiProvider_GeminiKeyMissing_Fails(t *testing.T) {
+	home := t.TempDir()
+	cfgPath := writeMinimalConfig(t, home, "gemini")
+	envPath := filepath.Join(filepath.Dir(cfgPath), "env")
+	// Env file with only ANTHROPIC_API_KEY — not what gemini needs.
+	if err := os.WriteFile(envPath, []byte("ANTHROPIC_API_KEY=sk-ant-test\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	requiredVars, _ := startupRequiredEnvVars(cfgPath)
+	for _, key := range requiredVars {
+		if err := checkCisternEnvHasKey(envPath, key); err == nil {
+			t.Errorf("expected env check for %s to fail when key is absent from env file", key)
+		}
+	}
+}
