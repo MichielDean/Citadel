@@ -1,17 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
-	anthropic "github.com/anthropics/anthropic-sdk-go"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -63,137 +60,61 @@ In "depends_on", reference the exact "title" value of an earlier droplet in this
 array to express ordering (e.g. if droplet 2 requires droplet 1 to be delivered first).
 Keep each droplet focused and deliverable by a single engineer in a reasonable timeframe.`
 
-// callRefineAPI calls Claude with extended thinking to turn a rough idea into
-// one or more well-specified droplet proposals.
-func callRefineAPI(title, description string) ([]DropletProposal, error) {
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY is not set\nHint: run 'pass anthropic/claude' to configure it")
+// runNonInteractive invokes the configured agent binary in non-interactive
+// (single-shot) mode to turn a rough idea into well-specified droplet
+// proposals. It builds the command from the preset's NonInteractive config,
+// passes a combined prompt via PromptFlag, and parses stdout via extractProposals.
+func runNonInteractive(preset provider.ProviderPreset, systemPrompt, userPrompt string) ([]DropletProposal, error) {
+	// Validate that required env vars from the preset are set.
+	for _, key := range preset.EnvPassthrough {
+		if os.Getenv(key) == "" {
+			return nil, fmt.Errorf("%s is not set", key)
+		}
 	}
 
-	client := anthropic.NewClient()
-
-	userPrompt := "Title: " + title
-	if description != "" {
-		userPrompt += "\nDescription: " + description
+	// Build the combined prompt (system + user).
+	combinedPrompt := systemPrompt
+	if userPrompt != "" {
+		combinedPrompt += "\n\n" + userPrompt
 	}
+
+	// Build args: [Subcommand] [preset.Args...] [PrintFlag] [PromptFlag combinedPrompt]
+	var args []string
+	if preset.NonInteractive.Subcommand != "" {
+		args = append(args, preset.NonInteractive.Subcommand)
+	}
+	args = append(args, preset.Args...)
+	if preset.NonInteractive.PrintFlag != "" {
+		args = append(args, preset.NonInteractive.PrintFlag)
+	}
+	if preset.NonInteractive.PromptFlag != "" {
+		args = append(args, preset.NonInteractive.PromptFlag)
+	}
+	args = append(args, combinedPrompt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 4096,
-		System: []anthropic.TextBlockParam{
-			{Text: filterSystemPrompt},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt)),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("Claude API call failed: %w", err)
-	}
+	cmd := exec.CommandContext(ctx, preset.Command, args...)
 
-	var responseText strings.Builder
-	for _, block := range resp.Content {
-		if block.Type == "text" {
-			responseText.WriteString(block.Text)
+	// Inherit parent env; append any extra vars from the preset.
+	if len(preset.ExtraEnv) > 0 {
+		env := os.Environ()
+		for k, v := range preset.ExtraEnv {
+			env = append(env, k+"="+v)
 		}
+		cmd.Env = env
 	}
 
-	return extractProposals(responseText.String())
-}
-
-// callRefineAPIWith calls the refine API using the given LLM provider config.
-// For "anthropic" it delegates to callRefineAPI (Anthropic SDK, honouring
-// ANTHROPIC_BASE_URL for test injection). All other providers use the
-// OpenAI-compatible /v1/chat/completions endpoint at llm.BaseURL.
-func callRefineAPIWith(llm provider.LLMProvider, title, description string) ([]DropletProposal, error) {
-	if llm.ApiKeyEnv != "" && os.Getenv(llm.ApiKeyEnv) == "" {
-		return nil, fmt.Errorf("%s API key (%s) is not set", llm.Name, llm.ApiKeyEnv)
-	}
-	if llm.Name == "anthropic" {
-		return callRefineAPI(title, description)
-	}
-	return callRefineAPIChatCompletions(llm, title, description)
-}
-
-// openAIChatRequest is the request body for /v1/chat/completions.
-type openAIChatRequest struct {
-	Model     string          `json:"model"`
-	Messages  []openAIMessage `json:"messages"`
-	MaxTokens int             `json:"max_tokens"`
-}
-
-// openAIMessage is a single message in an OpenAI-compatible chat request.
-type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// openAIChatResponse is the response from /v1/chat/completions.
-type openAIChatResponse struct {
-	Choices []struct {
-		Message openAIMessage `json:"message"`
-	} `json:"choices"`
-}
-
-// callRefineAPIChatCompletions calls an OpenAI-compatible /v1/chat/completions
-// endpoint and returns parsed droplet proposals.
-func callRefineAPIChatCompletions(llm provider.LLMProvider, title, description string) ([]DropletProposal, error) {
-	userPrompt := "Title: " + title
-	if description != "" {
-		userPrompt += "\nDescription: " + description
-	}
-
-	reqBody := openAIChatRequest{
-		Model: llm.DefaultModel,
-		Messages: []openAIMessage{
-			{Role: "system", Content: filterSystemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
-		MaxTokens: 4096,
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, llm.BaseURL+"/v1/chat/completions", bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if llm.ApiKeyEnv != "" {
-		if key := os.Getenv(llm.ApiKeyEnv); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
+		if ee, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("agent exec failed (exit %d): %s", ee.ExitCode(), strings.TrimSpace(string(ee.Stderr)))
 		}
+		return nil, fmt.Errorf("agent exec failed: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%s API call failed: %w", llm.Name, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("%s API returned status %d: %s", llm.Name, resp.StatusCode, body)
-	}
-
-	var chatResp openAIChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", llm.Name, err)
-	}
-	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("%s returned no choices", llm.Name)
-	}
-
-	return extractProposals(chatResp.Choices[0].Message.Content)
+	return extractProposals(string(out))
 }
 
 // extractProposals parses a JSON array of DropletProposals from LLM output.
