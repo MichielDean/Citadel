@@ -88,6 +88,7 @@ ct droplet show <id>             # Detail view
 # Manage flowing work
 ct droplet restart <id>          # Retry a failed droplet
 ct droplet escalate <id>         # Bump priority
+ct droplet cancel <id>           # Cancel — won't be implemented
 ct droplet note <id> "..."       # Add a note to a droplet
 
 # Daemon control
