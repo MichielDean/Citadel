@@ -631,6 +631,69 @@ func TestTick_RecirculateNoPassRoute_StillEscalates(t *testing.T) {
 	}
 }
 
+func TestTick_RecirculateNoRoute_BlocksWithDiagnosticNote(t *testing.T) {
+	// Given: a droplet at "implement" which has no on_recirculate route and no on_pass route
+	// (so it can't auto-promote either).
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{
+		{ID: "b1", CurrentCataractae: "implement"},
+	}
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	// Use a custom workflow where implement has no on_pass or on_recirculate routes.
+	config := testConfig()
+	workflows := map[string]*aqueduct.Workflow{
+		"test-repo": {
+			Name: "test",
+			Cataractae: []aqueduct.WorkflowCataractae{
+				{
+					Name:   "implement",
+					Type:   aqueduct.CataractaeTypeAgent,
+					OnFail: "blocked",
+					// Intentionally no OnPass and no OnRecirculate
+				},
+				{
+					Name:          "review",
+					Type:          aqueduct.CataractaeTypeAgent,
+					OnPass:        "done",
+					OnFail:        "implement",
+					OnRecirculate: "implement",
+				},
+			},
+		},
+	}
+	clients := map[string]CisternClient{"test-repo": client}
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	// When: the cataractae signals recirculate.
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	// Then: droplet is blocked/escalated.
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if _, ok := client.escalated["b1"]; !ok {
+		t.Fatal("expected droplet to be blocked/escalated when no on_recirculate route exists")
+	}
+
+	// And: a diagnostic note naming the step and missing route is attached.
+	found := false
+	for _, n := range client.attached {
+		if n.id == "b1" && strings.Contains(n.notes, "implement") && strings.Contains(n.notes, "on_recirculate") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected diagnostic note about missing on_recirculate route, got notes: %v", client.attached)
+	}
+}
+
 func TestTick_NoWorkAvailable(t *testing.T) {
 	client := newMockClient()
 	runner := newMockRunner(client)
