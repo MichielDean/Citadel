@@ -1156,10 +1156,8 @@ func stripANSI(s string) string {
 // When lines <= 0 the full scrollback buffer is captured (-S -).
 // When lines > 0 only the last N lines of history are captured (-S -N).
 func capturePane(session string, lines int) (string, error) {
-	var startFlag string
-	if lines <= 0 {
-		startFlag = "-" // start of scrollback buffer
-	} else {
+	startFlag := "-" // start of scrollback buffer (full history)
+	if lines > 0 {
 		startFlag = fmt.Sprintf("-%d", lines)
 	}
 	out, err := exec.Command("tmux", "capture-pane", "-t", session+":0.0", "-p",
