@@ -106,9 +106,15 @@ Use the `ct` CLI (the item ID is in CONTEXT.md):
 ct droplet pass <id> --notes "Implemented X using TDD. Added N tests covering happy path, edge cases, and error paths. All tests pass."
 ```
 
-**Block (genuinely blocked — missing dependency or fundamentally unclear requirements):**
+**Block (genuinely blocked — waiting on external dependency or fundamentally unclear requirements):**
 ```
 ct droplet block <id> --notes "Blocked: <specific reason>"
 ```
 
+**Cancel (won't be implemented — superseded, filed in error, or no longer needed):**
+```
+ct droplet cancel <id> --notes "<reason>"
+```
+
 Do **not** use `block` for ordinary revision cycles — that is for genuine blockers only.
+`block` = waiting on something external. `cancel` = will not be implemented.

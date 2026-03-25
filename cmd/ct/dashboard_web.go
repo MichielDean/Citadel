@@ -570,44 +570,10 @@ func newDashboardMuxWith(cfgPath, dbPath string, fetcher func(cfg, db string) *D
 	return newDashboardMuxInternalWith(cfgPath, dbPath, nil, fetcher, fastInterval, slowInterval)
 }
 
-// newDashboardMuxInternal returns an http.Handler for the web dashboard.
-// tui may be nil; if so the /ws/tui endpoint closes connections immediately.
-func newDashboardMuxInternal(cfgPath, dbPath string, tui *DashboardTUI) http.Handler {
-	return newDashboardMuxInternalWith(cfgPath, dbPath, tui, fetchDashboardData, refreshInterval, idleRefreshInterval)
-}
-
-// newDashboardMuxInternalWith returns an http.Handler for the web dashboard with custom
-// fetcher and refresh intervals. Exposed for testing.
-func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetcher func(cfg, db string) *DashboardData, fastInterval, slowInterval time.Duration) http.Handler {
-	mux := http.NewServeMux()
-
-	// Serve bundled xterm.js assets so the dashboard works in airgapped environments.
-	staticSub, err := fs.Sub(staticAssets, "assets/static")
-	if err != nil {
-		panic("embedded static assets not found: " + err.Error())
-	}
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, dashboardHTML)
-	})
-
-	mux.HandleFunc("/api/dashboard", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		data := fetcher(cfgPath, dbPath)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(data) //nolint:errcheck
-	})
-
-	mux.HandleFunc("/api/dashboard/events", func(w http.ResponseWriter, r *http.Request) {
+// makeDashboardEventsHandler returns an http.HandlerFunc for the SSE dashboard events
+// endpoint. Parameterised so tests can inject a custom fetcher and intervals.
+func makeDashboardEventsHandler(cfgPath, dbPath string, fetcher func(string, string) *DashboardData, fastInterval, slowInterval time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -652,7 +618,47 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 				ticker.Reset(next)
 			}
 		}
+	}
+}
+
+// newDashboardMuxInternal returns an http.Handler for the web dashboard.
+// tui may be nil; if so the /ws/tui endpoint closes connections immediately.
+func newDashboardMuxInternal(cfgPath, dbPath string, tui *DashboardTUI) http.Handler {
+	return newDashboardMuxInternalWith(cfgPath, dbPath, tui, fetchDashboardData, refreshInterval, idleRefreshInterval)
+}
+
+// newDashboardMuxInternalWith returns an http.Handler for the web dashboard with custom
+// fetcher and refresh intervals. Exposed for testing.
+func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetcher func(cfg, db string) *DashboardData, fastInterval, slowInterval time.Duration) http.Handler {
+	mux := http.NewServeMux()
+
+	// Serve bundled xterm.js assets so the dashboard works in airgapped environments.
+	staticSub, err := fs.Sub(staticAssets, "assets/static")
+	if err != nil {
+		panic("embedded static assets not found: " + err.Error())
+	}
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, dashboardHTML)
 	})
+
+	mux.HandleFunc("/api/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		data := fetcher(cfgPath, dbPath)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(data) //nolint:errcheck
+	})
+
+	mux.HandleFunc("/api/dashboard/events", makeDashboardEventsHandler(cfgPath, dbPath, fetcher, fastInterval, slowInterval))
 
 	// GET /api/aqueducts/{name}/peek — snapshot of current tmux pane output.
 	mux.HandleFunc("/api/aqueducts/{name}/peek", func(w http.ResponseWriter, r *http.Request) {

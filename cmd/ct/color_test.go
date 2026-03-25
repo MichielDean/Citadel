@@ -20,6 +20,7 @@ func TestStatusCode(t *testing.T) {
 		{"awaiting", colorYellow},
 		{"stagnant", colorRed},
 		{"delivered", colorDim},
+		{"cancelled", colorDim},
 		{"unknown", ""},
 		{"", ""},
 	}
