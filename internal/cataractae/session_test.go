@@ -1499,6 +1499,307 @@ func TestSpawn_QuickExit_CancelledByKill(t *testing.T) {
 	}
 }
 
+// --- isTmuxServerDeadError tests ---
+
+// TestIsTmuxServerDeadError verifies that the dead-server detector matches the
+// known tmux error patterns and ignores unrelated failures.
+func TestIsTmuxServerDeadError(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"no server running on socket path", "no server running on /tmp/tmux-1000/default", true},
+		{"no server running uppercase", "No server running on /tmp/tmux-1000/default", true},
+		{"failed to connect to server lowercase", "failed to connect to server", true},
+		{"failed to connect to server uppercase", "Failed to connect to server", true},
+		{"error connecting to socket", "error connecting to /tmp/tmux-1000/default", true},
+		{"error connecting with reason", "Error connecting to /tmp/tmux-500/default (Connection refused)", true},
+		{"unrelated error", "invalid option: -Z", false},
+		{"permission denied", "open terminal failed: not a terminal", false},
+		{"empty output", "", false},
+		{"partial substring must not match", "server running fine", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isTmuxServerDeadError([]byte(tc.output))
+			if got != tc.want {
+				t.Errorf("isTmuxServerDeadError(%q) = %v, want %v", tc.output, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- dead tmux server recovery tests ---
+
+// TestSpawn_TmuxServerDead_RecoverySucceeds verifies that when execTmuxNewSession
+// fails with a dead-server error on the first attempt, spawn() kills the stale
+// server, retries, and logs the recovery on success.
+func TestSpawn_TmuxServerDead_RecoverySucceeds(t *testing.T) {
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true") // 'true' binary exists; won't actually be run
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	callCount := 0
+	killCalled := false
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		callCount++
+		if callCount <= 2 {
+			// First call (outside mutex) and double-check (inside mutex) both see
+			// a dead server. Third call (after kill) succeeds.
+			return []byte("no server running on /tmp/tmux-1000/default"), fmt.Errorf("exit status 1")
+		}
+		return nil, nil // retry after kill succeeds
+	}
+	execTmuxKillServer = func() { killCalled = true }
+
+	// Extend quickExitWindow so the goroutine does not fire during this test.
+	orig := quickExitWindow
+	quickExitWindow = 10 * time.Second
+	t.Cleanup(func() { quickExitWindow = orig })
+
+	workDir := t.TempDir()
+	s := &Session{ID: "tmux-recovery-ok", WorkDir: workDir}
+
+	err := s.spawn()
+	s.kill() // cancel the quick-exit goroutine before it fires
+
+	if err != nil {
+		t.Fatalf("spawn returned unexpected error: %v", err)
+	}
+	if callCount != 3 {
+		t.Errorf("execTmuxNewSession called %d times, want 3 (initial + double-check + retry-after-kill)", callCount)
+	}
+	if !killCalled {
+		t.Error("execTmuxKillServer was not called during recovery")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "dead tmux server detected") {
+		t.Errorf("expected dead-server detection log; got: %s", out)
+	}
+	if !strings.Contains(out, "recovered from dead tmux server") {
+		t.Errorf("expected recovery success log; got: %s", out)
+	}
+}
+
+// TestSpawn_TmuxServerDead_RecoveryFails verifies that when both spawn attempts
+// fail with a dead-server error, spawn() returns an error with a clear reason and
+// logs an ERROR distinguishing this from an auth failure.
+func TestSpawn_TmuxServerDead_RecoveryFails(t *testing.T) {
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	callCount := 0
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		callCount++
+		return []byte("no server running on /tmp/tmux-1000/default"), fmt.Errorf("exit status 1")
+	}
+	execTmuxKillServer = func() {} // no-op
+
+	workDir := t.TempDir()
+	s := &Session{ID: "tmux-recovery-fail", WorkDir: workDir}
+
+	err := s.spawn()
+
+	if err == nil {
+		t.Fatal("spawn should have returned an error when recovery fails")
+	}
+	if callCount != 3 {
+		t.Errorf("execTmuxNewSession called %d times, want 3 (initial + double-check + retry-after-kill)", callCount)
+	}
+	if !strings.Contains(err.Error(), "server dead, recovery failed") {
+		t.Errorf("error should describe recovery failure; got: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "tmux server recovery failed") {
+		t.Errorf("expected ERROR log for recovery failure; got: %s", out)
+	}
+}
+
+// TestSpawn_TmuxError_NonServer_NoRecovery verifies that a generic tmux error
+// (not a dead-server error) causes spawn() to return immediately without
+// calling execTmuxKillServer or retrying.
+func TestSpawn_TmuxError_NonServer_NoRecovery(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	callCount := 0
+	killCalled := false
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		callCount++
+		return []byte("invalid option: -Z"), fmt.Errorf("exit status 1")
+	}
+	execTmuxKillServer = func() { killCalled = true }
+
+	workDir := t.TempDir()
+	s := &Session{ID: "tmux-non-server-err", WorkDir: workDir}
+
+	err := s.spawn()
+
+	if err == nil {
+		t.Fatal("spawn should have returned an error")
+	}
+	if callCount != 1 {
+		t.Errorf("execTmuxNewSession called %d times, want 1 (no retry for non-server errors)", callCount)
+	}
+	if killCalled {
+		t.Error("execTmuxKillServer should not be called for non-server errors")
+	}
+}
+
+// TestSpawn_TmuxServerDead_ConcurrentRecoveryIsSerializedByMutex verifies that
+// when two goroutines simultaneously detect a dead tmux server, their recovery
+// blocks are serialized — execTmuxKillServer is never called concurrently.
+// This guards against the interleaving where goroutine B calls execTmuxKillServer
+// and destroys the server that goroutine A just recovered.
+func TestSpawn_TmuxServerDead_ConcurrentRecoveryIsSerializedByMutex(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	orig := quickExitWindow
+	quickExitWindow = 10 * time.Second
+	t.Cleanup(func() { quickExitWindow = orig })
+
+	// Both spawns always fail with a dead-server error so both enter the recovery
+	// block. The test is about serialization, not recovery success.
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		return []byte("no server running on /tmp/tmux-1000/default"), fmt.Errorf("exit status 1")
+	}
+
+	var concurrent int64  // current number of goroutines inside execTmuxKillServer
+	var raceDetected int64 // set non-zero if concurrent > 1 is ever observed
+	execTmuxKillServer = func() {
+		n := atomic.AddInt64(&concurrent, 1)
+		if n > 1 {
+			atomic.StoreInt64(&raceDetected, 1)
+		}
+		time.Sleep(20 * time.Millisecond) // hold long enough to detect overlap
+		atomic.AddInt64(&concurrent, -1)
+	}
+
+	workDir := t.TempDir()
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // release both goroutines simultaneously
+			s := &Session{ID: fmt.Sprintf("concurrent-recovery-%d", i), WorkDir: workDir}
+			s.spawn() //nolint:errcheck // error expected — only testing serialization
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	if atomic.LoadInt64(&raceDetected) != 0 {
+		t.Error("execTmuxKillServer was called concurrently — tmuxRecoveryMu did not serialize recovery")
+	}
+}
+
+// TestSpawn_TmuxServerDead_DoubleCheckPreventsKillingRecoveredServer verifies
+// that when goroutine A recovers the dead tmux server inside the mutex, goroutine
+// B's double-check (retrying before killing) detects the server is now alive and
+// skips execTmuxKillServer entirely — preventing B from destroying A's session.
+// This validates the double-checked locking pattern: re-validate after acquiring
+// the lock before proceeding with the destructive kill step.
+func TestSpawn_TmuxServerDead_DoubleCheckPreventsKillingRecoveredServer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	orig := quickExitWindow
+	quickExitWindow = 10 * time.Second
+	t.Cleanup(func() { quickExitWindow = orig })
+
+	// The server is "dead" until execTmuxKillServer is called; after that it is
+	// "alive". This models: goroutine A's kill restarts the server, so goroutine
+	// B's double-check (which runs after A releases the mutex) succeeds and B
+	// skips its own kill.
+	var killCount int64
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		if atomic.LoadInt64(&killCount) == 0 {
+			return []byte("no server running on /tmp/tmux-1000/default"), fmt.Errorf("exit status 1")
+		}
+		return nil, nil // server recovered after kill
+	}
+	execTmuxKillServer = func() {
+		atomic.AddInt64(&killCount, 1)
+	}
+
+	workDir := t.TempDir()
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range 2 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			s := &Session{ID: fmt.Sprintf("double-check-%d", i), WorkDir: workDir}
+			errs[i] = s.spawn()
+			s.kill() // cancel quick-exit goroutine
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// Both spawns must succeed.
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: spawn returned unexpected error: %v", i, err)
+		}
+	}
+	// execTmuxKillServer must be called exactly once: by the goroutine that held
+	// the mutex first. The second goroutine's double-check sees the recovered
+	// server and skips the kill.
+	if got := atomic.LoadInt64(&killCount); got != 1 {
+		t.Errorf("execTmuxKillServer called %d times, want 1 (double-check must prevent second kill)", got)
+	}
+}
+
 // TestSpawn_QuickExit_SuppressedWhenOutcomeSignaled verifies that when
 // DropletSignaledOutcome returns true the goroutine does not emit a warning —
 // a fast agent that completed successfully should not be flagged as a possible
