@@ -218,7 +218,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 		   AND NOT EXISTS (
 		     SELECT 1 FROM droplet_dependencies dep
 		     JOIN droplets dep_d ON dep_d.id = dep.depends_on
-		     WHERE dep.droplet_id = d.id AND dep_d.status != 'delivered'
+		     WHERE dep.droplet_id = d.id AND dep_d.status NOT IN ('delivered', 'cancelled')
 		   )
 		 ORDER BY d.priority ASC, d.created_at ASC
 		 LIMIT 1`,
@@ -280,7 +280,7 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 		   AND NOT EXISTS (
 		     SELECT 1 FROM droplet_dependencies dep
 		     JOIN droplets dep_d ON dep_d.id = dep.depends_on
-		     WHERE dep.droplet_id = d.id AND dep_d.status != 'delivered'
+		     WHERE dep.droplet_id = d.id AND dep_d.status NOT IN ('delivered', 'cancelled')
 		   )
 		 ORDER BY d.priority ASC, d.created_at ASC
 		 LIMIT 1`,
@@ -532,11 +532,6 @@ func (c *Client) Escalate(id, reason string) error {
 // dispatch queue and from default list views. They can still be retrieved with
 // List(repo, "cancelled"). If reason is non-empty it is recorded as a note.
 func (c *Client) Cancel(id, reason string) error {
-	if reason != "" {
-		if err := c.AddNote(id, "cancel", reason); err != nil {
-			return err
-		}
-	}
 	res, err := c.db.Exec(
 		`UPDATE droplets SET status = 'cancelled', updated_at = ? WHERE id = ?`,
 		time.Now().UTC(), id,
@@ -544,7 +539,15 @@ func (c *Client) Cancel(id, reason string) error {
 	if err != nil {
 		return fmt.Errorf("cistern: cancel %s: %w", id, err)
 	}
-	return checkRowsAffected(res, id)
+	if err := checkRowsAffected(res, id); err != nil {
+		return err
+	}
+	if reason != "" {
+		if err := c.AddNote(id, "cancel", reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CloseItem marks a droplet as delivered.
@@ -674,6 +677,10 @@ func (c *Client) Search(query, status string, priority int) ([]*Droplet, error) 
 	if status != "" {
 		qry += ` AND status = ?`
 		args = append(args, status)
+	} else {
+		// Exclude cancelled from default views; they are only shown when explicitly
+		// requested with status="cancelled".
+		qry += ` AND status != 'cancelled'`
 	}
 	if priority != 0 {
 		qry += ` AND priority = ?`
@@ -740,7 +747,7 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 	if dryRun {
 		var count int
 		err := c.db.QueryRow(
-			`SELECT COUNT(*) FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?`,
+			`SELECT COUNT(*) FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?`,
 			cutoff,
 		).Scan(&count)
 		if err != nil {
@@ -757,7 +764,7 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 	if _, err := tx.Exec(
 		`DELETE FROM cataractae_notes WHERE droplet_id IN (
-			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
+			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
 		return 0, fmt.Errorf("cistern: purge cataractae_notes: %w", err)
@@ -765,7 +772,7 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 	if _, err := tx.Exec(
 		`DELETE FROM events WHERE droplet_id IN (
-			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
+			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
 		return 0, fmt.Errorf("cistern: purge events: %w", err)
@@ -773,14 +780,14 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 	if _, err := tx.Exec(
 		`DELETE FROM droplet_issues WHERE droplet_id IN (
-			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
+			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
 		return 0, fmt.Errorf("cistern: purge droplet_issues: %w", err)
 	}
 
 	res, err := tx.Exec(
-		`DELETE FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?`,
+		`DELETE FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?`,
 		cutoff,
 	)
 	if err != nil {

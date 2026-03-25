@@ -1244,3 +1244,106 @@ func TestList_CancelledStatus_ReturnsOnlyCancelled(t *testing.T) {
 		t.Errorf("returned item %s, want %s", items[0].ID, cancelled.ID)
 	}
 }
+
+// TestCancel_NotFound_NoOrphanNote verifies that cancelling a nonexistent droplet
+// does NOT create an orphan note row (UPDATE must happen before AddNote).
+func TestCancel_NotFound_NoOrphanNote(t *testing.T) {
+	c := testClient(t)
+
+	// Cancel a droplet that does not exist — must return an error.
+	err := c.Cancel("nonexistent-id", "some reason")
+	if err == nil {
+		t.Fatal("expected error for nonexistent droplet, got nil")
+	}
+
+	// No note should have been inserted for the nonexistent droplet.
+	notes, err2 := c.GetNotes("nonexistent-id")
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	if len(notes) != 0 {
+		t.Errorf("Cancel on nonexistent droplet created %d orphan note(s); want 0", len(notes))
+	}
+}
+
+// TestPurge_IncludesCancelled verifies that cancelled droplets are cleaned up by Purge.
+func TestPurge_IncludesCancelled(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Cancelled task", "", 1, 3)
+	c.Cancel(item.ID, "won't do")
+
+	n, err := c.Purge(-time.Hour, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("Purge returned %d, want 1 (cancelled item)", n)
+	}
+	if got, _ := c.Get(item.ID); got != nil {
+		t.Error("cancelled item should have been purged")
+	}
+}
+
+// TestGetReady_CancelledDependency_DoesNotBlock verifies that a droplet whose
+// dependency was cancelled is still dispatched (cancelled != unresolved).
+func TestGetReady_CancelledDependency_DoesNotBlock(t *testing.T) {
+	c := testClient(t)
+	dep, _ := c.Add("myrepo", "Dependency", "", 1, 3)
+	child, _ := c.Add("myrepo", "Child", "", 2, 3, dep.ID)
+
+	// Cancel the dependency instead of delivering it.
+	if err := c.Cancel(dep.ID, "no longer needed"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Child should now be dispatchable — cancelled dep must not block it.
+	got, err := c.GetReady("myrepo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("GetReady returned nil — cancelled dependency should not block child")
+	}
+	if got.ID != child.ID {
+		t.Errorf("GetReady returned %s, want child %s", got.ID, child.ID)
+	}
+}
+
+// TestSearch_ExcludesCancelledByDefault verifies that Search omits cancelled
+// droplets when no status filter is given (consistent with List behaviour).
+func TestSearch_ExcludesCancelledByDefault(t *testing.T) {
+	c := testClient(t)
+	c.Add("myrepo", "Active task", "", 1, 3)
+	cancelled, _ := c.Add("myrepo", "Cancelled task", "", 1, 3)
+	c.Cancel(cancelled.ID, "not needed")
+
+	results, err := c.Search("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.ID == cancelled.ID {
+			t.Errorf("Search returned cancelled droplet %s — must be hidden by default", cancelled.ID)
+		}
+	}
+}
+
+// TestSearch_CancelledStatus_ReturnsCancelled verifies that Search with an explicit
+// status="cancelled" filter returns cancelled droplets.
+func TestSearch_CancelledStatus_ReturnsCancelled(t *testing.T) {
+	c := testClient(t)
+	c.Add("myrepo", "Active task", "", 1, 3)
+	cancelled, _ := c.Add("myrepo", "Cancelled task", "", 1, 3)
+	c.Cancel(cancelled.ID, "not needed")
+
+	results, err := c.Search("", "cancelled", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Search(cancelled) returned %d items, want 1", len(results))
+	}
+	if results[0].ID != cancelled.ID {
+		t.Errorf("Search(cancelled) returned %s, want %s", results[0].ID, cancelled.ID)
+	}
+}
