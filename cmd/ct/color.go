@@ -31,7 +31,7 @@ func statusCode(dStatus string) string {
 		return colorYellow
 	case "stagnant":
 		return colorRed
-	case "delivered":
+	case "delivered", "cancelled":
 		return colorDim
 	default:
 		return ""
@@ -51,6 +51,8 @@ func statusIcon(dStatus string) string {
 		return col(colorRed, "✗")
 	case "delivered":
 		return col(colorDim, "✓")
+	case "cancelled":
+		return col(colorDim, "✗")
 	default:
 		return " "
 	}

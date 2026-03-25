@@ -123,11 +123,12 @@ func resolveFilterPreset(repo string) provider.ProviderPreset {
 // --- cistern list ---
 
 var (
-	listRepo   string
-	listStatus string
-	listOutput string
-	listAll    bool
-	listWatch  bool
+	listRepo      string
+	listStatus    string
+	listOutput    string
+	listAll       bool
+	listWatch     bool
+	listCancelled bool
 )
 
 var dropletListCmd = &cobra.Command{
@@ -151,7 +152,12 @@ var dropletListCmd = &cobra.Command{
 		defer c.Close()
 
 		render := func() error {
-			items, err := c.List(listRepo, listStatus)
+			// --cancelled overrides --status and shows only cancelled droplets.
+			effectiveStatus := listStatus
+			if listCancelled {
+				effectiveStatus = "cancelled"
+			}
+			items, err := c.List(listRepo, effectiveStatus)
 			if err != nil {
 				return err
 			}
@@ -171,7 +177,7 @@ var dropletListCmd = &cobra.Command{
 			// TABLE output: split into active and delivered.
 			// Default hides delivered items; --all shows them in a dimmed section.
 			// If --status is set explicitly, honour it and don't split.
-			filterDelivered := listStatus == "" && !listAll
+			filterDelivered := listStatus == "" && !listAll && !listCancelled
 			var active, dimmed []*cistern.Droplet
 			for _, item := range items {
 				if filterDelivered && item.Status == "delivered" {
@@ -1060,6 +1066,29 @@ var dropletBlockCmd = &cobra.Command{
 	},
 }
 
+// --- cistern cancel ---
+
+var cancelNotes string
+
+var dropletCancelCmd = &cobra.Command{
+	Use:   "cancel <id>",
+	Short: "Cancel a droplet — won't be implemented or is no longer needed",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := cistern.New(resolveDBPath(), "")
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		if err := c.Cancel(args[0], cancelNotes); err != nil {
+			return err
+		}
+		fmt.Printf("droplet %s: cancelled\n", args[0])
+		return nil
+	},
+}
+
 // --- cistern approve ---
 
 var dropletApproveCmd = &cobra.Command{
@@ -1314,6 +1343,7 @@ func init() {
 	dropletListCmd.Flags().StringVar(&listOutput, "output", "table", "output format: table or json")
 	dropletListCmd.Flags().BoolVar(&listAll, "all", false, "include delivered droplets in a dimmed section below active ones")
 	dropletListCmd.Flags().BoolVar(&listWatch, "watch", false, "live-refresh the list every 2 seconds (Ctrl-C to stop)")
+	dropletListCmd.Flags().BoolVar(&listCancelled, "cancelled", false, "show only cancelled droplets (for audit)")
 
 	dropletSearchCmd.Flags().StringVar(&searchQuery, "query", "", "filter by title substring (case-insensitive)")
 	dropletSearchCmd.Flags().StringVar(&searchStatus, "status", "", "filter by status (open|in_progress|delivered|stagnant)")
@@ -1334,6 +1364,7 @@ func init() {
 	dropletRecirculateCmd.Flags().StringVar(&recirculateTo, "to", "", "named cataractae to recirculate to (e.g. --to implement)")
 	dropletRecirculateCmd.Flags().StringVar(&recirculateNotes, "notes", "", "add a note before signaling recirculate")
 	dropletBlockCmd.Flags().StringVar(&blockNotes, "notes", "", "add a note before signaling block")
+	dropletCancelCmd.Flags().StringVar(&cancelNotes, "notes", "", "reason for cancellation")
 
 	dropletPeekCmd.Flags().IntVar(&peekLines, "lines", 50, "number of lines to capture")
 	dropletPeekCmd.Flags().BoolVar(&peekRaw, "raw", false, "do not strip ANSI codes")
@@ -1358,7 +1389,7 @@ func init() {
 
 	dropletCmd.AddCommand(dropletAddCmd, dropletListCmd, dropletShowCmd, dropletNoteCmd,
 		dropletCloseCmd, dropletReopenCmd, dropletEscalateCmd, dropletPurgeCmd,
-		dropletPassCmd, dropletRecirculateCmd, dropletBlockCmd, dropletApproveCmd,
+		dropletPassCmd, dropletRecirculateCmd, dropletBlockCmd, dropletCancelCmd, dropletApproveCmd,
 		dropletStatsCmd, dropletDepsCmd, dropletPeekCmd, dropletIssueCmd, dropletSearchCmd,
 		dropletExportCmd, dropletRenameCmd, dropletRestartCmd, dropletEditCmd)
 	rootCmd.AddCommand(dropletCmd)

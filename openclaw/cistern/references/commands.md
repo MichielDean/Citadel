@@ -4,13 +4,15 @@
 
 ```bash
 ct droplet list                          # All droplets
-ct droplet list --status <status>        # Filter: pending|running|done|failed
+ct droplet list --status <status>        # Filter: pending|running|done|failed|cancelled
+ct droplet list --cancelled              # Show only cancelled droplets (audit purposes)
 ct droplet list --repo <repo>            # Filter by repo
 ct droplet show <id>                     # Full detail
 ct droplet add --title "..." --repo <r>  # Add new droplet (direct)
 ct droplet add --filter --title "..." --repo <r>  # Add with filtration (LLM-assisted)
 ct droplet restart <id>                  # Retry failed droplet
 ct droplet escalate <id>                 # Bump priority
+ct droplet cancel <id>                   # Cancel droplet — won't be implemented or no longer needed
 ct droplet note <id> "..."               # Add a note
 ```
 
@@ -56,6 +58,29 @@ tmux send-keys -t filtration "/tmp/add-droplet.sh" Enter
 | standard | 2 | qa |
 | full | 3 | none (default) |
 | critical | 4 | none + human approval required |
+
+### Droplet Signaling (Terminal Outcomes)
+
+Agents use these commands to signal the outcome of their work:
+
+```bash
+ct droplet pass <id>                     # Work complete — advance to next stage
+ct droplet pass <id> --notes "..."       # Pass with optional note
+
+ct droplet recirculate <id>              # Needs revision — send back for rework
+ct droplet recirculate <id> --notes "..." # Include feedback/issues
+ct droplet recirculate <id> --to <stage> # Recirculate to specific stage
+
+ct droplet block <id>                    # Blocked — waiting on external dependency
+ct droplet block <id> --notes "..."      # Include reason (e.g., "awaiting API key")
+
+ct droplet cancel <id>                   # Cancel — won't be implemented
+ct droplet cancel <id> --notes "..."     # Include reason (e.g., "superseded by X")
+```
+
+**Distinction:**
+- **block** = Waiting on external dependency, cannot proceed. Droplet will retry when unblocked.
+- **cancel** = Won't be implemented. Droplet is closed; will not dispatch. Use for superseded work, filed-in-error items, or scope out-of-reach.
 
 ## Castellarius Daemon
 

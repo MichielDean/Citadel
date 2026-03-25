@@ -218,7 +218,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 		   AND NOT EXISTS (
 		     SELECT 1 FROM droplet_dependencies dep
 		     JOIN droplets dep_d ON dep_d.id = dep.depends_on
-		     WHERE dep.droplet_id = d.id AND dep_d.status != 'delivered'
+		     WHERE dep.droplet_id = d.id AND dep_d.status NOT IN ('delivered', 'cancelled')
 		   )
 		 ORDER BY d.priority ASC, d.created_at ASC
 		 LIMIT 1`,
@@ -280,7 +280,7 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 		   AND NOT EXISTS (
 		     SELECT 1 FROM droplet_dependencies dep
 		     JOIN droplets dep_d ON dep_d.id = dep.depends_on
-		     WHERE dep.droplet_id = d.id AND dep_d.status != 'delivered'
+		     WHERE dep.droplet_id = d.id AND dep_d.status NOT IN ('delivered', 'cancelled')
 		   )
 		 ORDER BY d.priority ASC, d.created_at ASC
 		 LIMIT 1`,
@@ -528,6 +528,28 @@ func (c *Client) Escalate(id, reason string) error {
 	return nil
 }
 
+// Cancel marks a droplet as cancelled. Cancelled droplets are excluded from the
+// dispatch queue and from default list views. They can still be retrieved with
+// List(repo, "cancelled"). If reason is non-empty it is recorded as a note.
+func (c *Client) Cancel(id, reason string) error {
+	res, err := c.db.Exec(
+		`UPDATE droplets SET status = 'cancelled', updated_at = ? WHERE id = ?`,
+		time.Now().UTC(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("cistern: cancel %s: %w", id, err)
+	}
+	if err := checkRowsAffected(res, id); err != nil {
+		return err
+	}
+	if reason != "" {
+		if err := c.AddNote(id, "cancel", reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CloseItem marks a droplet as delivered.
 func (c *Client) CloseItem(id string) error {
 	res, err := c.db.Exec(
@@ -594,6 +616,7 @@ func (c *Client) Get(id string) (*Droplet, error) {
 }
 
 // List returns droplets filtered by repo and/or status. Empty strings mean no filter.
+// Cancelled droplets are always excluded unless status is explicitly "cancelled".
 func (c *Client) List(repo, status string) ([]*Droplet, error) {
 	query := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets WHERE 1=1`
@@ -605,6 +628,10 @@ func (c *Client) List(repo, status string) ([]*Droplet, error) {
 	if status != "" {
 		query += ` AND status = ?`
 		args = append(args, status)
+	} else {
+		// Exclude cancelled from default views; they are only shown when explicitly
+		// requested with status="cancelled".
+		query += ` AND status != 'cancelled'`
 	}
 	query += ` ORDER BY priority ASC, created_at ASC`
 
@@ -650,6 +677,10 @@ func (c *Client) Search(query, status string, priority int) ([]*Droplet, error) 
 	if status != "" {
 		qry += ` AND status = ?`
 		args = append(args, status)
+	} else {
+		// Exclude cancelled from default views; they are only shown when explicitly
+		// requested with status="cancelled".
+		qry += ` AND status != 'cancelled'`
 	}
 	if priority != 0 {
 		qry += ` AND priority = ?`
@@ -707,7 +738,7 @@ func scanDroplet(row *sql.Row) (*Droplet, error) {
 	return &droplet, nil
 }
 
-// Purge deletes delivered/stagnant droplets older than olderThan, cascading to
+// Purge deletes delivered/stagnant/cancelled droplets older than olderThan, cascading to
 // cataractae_notes and events. Returns the count of droplets deleted (or that would be
 // deleted in dry-run mode).
 func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
@@ -716,7 +747,7 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 	if dryRun {
 		var count int
 		err := c.db.QueryRow(
-			`SELECT COUNT(*) FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?`,
+			`SELECT COUNT(*) FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?`,
 			cutoff,
 		).Scan(&count)
 		if err != nil {
@@ -733,7 +764,7 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 	if _, err := tx.Exec(
 		`DELETE FROM cataractae_notes WHERE droplet_id IN (
-			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
+			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
 		return 0, fmt.Errorf("cistern: purge cataractae_notes: %w", err)
@@ -741,7 +772,7 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 	if _, err := tx.Exec(
 		`DELETE FROM events WHERE droplet_id IN (
-			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
+			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
 		return 0, fmt.Errorf("cistern: purge events: %w", err)
@@ -749,14 +780,14 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 	if _, err := tx.Exec(
 		`DELETE FROM droplet_issues WHERE droplet_id IN (
-			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?
+			SELECT id FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?
 		)`, cutoff,
 	); err != nil {
 		return 0, fmt.Errorf("cistern: purge droplet_issues: %w", err)
 	}
 
 	res, err := tx.Exec(
-		`DELETE FROM droplets WHERE status IN ('delivered', 'stagnant') AND updated_at < ?`,
+		`DELETE FROM droplets WHERE status IN ('delivered', 'stagnant', 'cancelled') AND updated_at < ?`,
 		cutoff,
 	)
 	if err != nil {

@@ -351,6 +351,183 @@ func TestDropletStats_WithData(t *testing.T) {
 	}
 }
 
+func TestDropletCancel(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := c.Add("repo", "Old feature", "", 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	cancelNotes = ""
+	out := captureStdout(t, func() {
+		if err := dropletCancelCmd.RunE(dropletCancelCmd, []string{item.ID}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "cancelled") {
+		t.Errorf("expected 'cancelled' in output, got: %q", out)
+	}
+
+	// Verify status is cancelled in the DB.
+	c2, _ := cistern.New(db, "")
+	defer c2.Close()
+	got, err := c2.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "cancelled" {
+		t.Errorf("status = %q, want %q", got.Status, "cancelled")
+	}
+}
+
+func TestDropletCancel_WithNotes(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := c.Add("repo", "Superseded feature", "", 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	cancelNotes = "superseded by newer approach"
+	defer func() { cancelNotes = "" }()
+
+	if err := dropletCancelCmd.RunE(dropletCancelCmd, []string{item.ID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the reason note was recorded.
+	c2, _ := cistern.New(db, "")
+	defer c2.Close()
+	notes, err := c2.GetNotes(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, n := range notes {
+		if strings.Contains(n.Content, "superseded by newer approach") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("cancel reason note not recorded; notes: %v", notes)
+	}
+}
+
+func TestDropletCancel_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	cancelNotes = ""
+	err := dropletCancelCmd.RunE(dropletCancelCmd, []string{"nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent droplet")
+	}
+}
+
+func TestDropletList_HidesCancelledByDefault(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, _ := c.Add("repo", "Active feature", "", 1, 3)
+	cancelled, _ := c.Add("repo", "Old feature", "", 1, 3)
+	c.Cancel(cancelled.ID, "not needed")
+	c.Close()
+
+	// Default list (no flags) must not include the cancelled droplet.
+	listOutput = "json"
+	listRepo = ""
+	listStatus = ""
+	listAll = false
+	listCancelled = false
+	defer func() { listOutput = "table"; listCancelled = false }()
+
+	out := captureStdout(t, func() {
+		if err := dropletListCmd.RunE(dropletListCmd, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &items); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	for _, item := range items {
+		if item["id"] == cancelled.ID {
+			t.Errorf("cancelled droplet %s should not appear in default list", cancelled.ID)
+		}
+	}
+	found := false
+	for _, item := range items {
+		if item["id"] == active.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("active droplet %s missing from list", active.ID)
+	}
+}
+
+func TestDropletList_CancelledFlag(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("repo", "Active feature", "", 1, 3)
+	cancelled, _ := c.Add("repo", "Old feature", "", 1, 3)
+	c.Cancel(cancelled.ID, "not needed")
+	c.Close()
+
+	listOutput = "json"
+	listRepo = ""
+	listStatus = ""
+	listAll = false
+	listCancelled = true
+	defer func() { listOutput = "table"; listCancelled = false }()
+
+	out := captureStdout(t, func() {
+		if err := dropletListCmd.RunE(dropletListCmd, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &items); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if len(items) != 1 {
+		t.Fatalf("--cancelled list returned %d items, want 1", len(items))
+	}
+	if items[0]["id"] != cancelled.ID {
+		t.Errorf("returned item %s, want %s", items[0]["id"], cancelled.ID)
+	}
+}
+
 func TestDropletApprove(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")

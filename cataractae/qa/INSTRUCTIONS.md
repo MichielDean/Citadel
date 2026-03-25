@@ -69,6 +69,13 @@ ct droplet recirculate <id> --notes "Tests pass but quality is insufficient:\n1.
 ct droplet block <id> --notes "Escalating: requirements ambiguity — <specific question>"
 ```
 
+**Cancel (won't be implemented — superseded, filed in error, or no longer needed):**
+```
+ct droplet cancel <id> --notes "<reason>"
+```
+
+`block` = waiting on something external. `cancel` = will not be implemented.
+
 **Do not approve work just because tests pass.** Passing tests with no meaningful
 assertions, no edge cases, and no error coverage is a recirculate.
 
