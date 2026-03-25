@@ -23,6 +23,26 @@ If repeatedly failing, check logs for the specific cataractae:
 journalctl --user -u cistern-castellarius --since "1 hour ago"
 ```
 
+### Droplet Repeatedly Failing with "backing off" Messages
+
+If you see logs like `droplet=<id> backing off <seconds>s after <N> consecutive quick exits`, the session is exiting very quickly (≤30 seconds by default). This usually indicates:
+- Missing or expired API credentials (ANTHROPIC_API_KEY, etc.)
+- Agent binary not found or permission denied
+- Provider-side rejection (rate limit, invalid token, service unavailable)
+
+**Diagnosis:**
+1. Check the session output: `ct droplet peek <id>` (or `ct droplet peek <id> --snapshot` for completed sessions)
+2. Verify credentials are set: `ct doctor` (checks env vars and API keys)
+3. Check provider status: if it's a known outage, the Castellarius will detect it and hold all droplets at max backoff
+
+**Provider Degradation:**
+If you see `provider=<name> appears degraded — queued droplets will be held at max backoff on next dispatch`, the provider has experienced multiple failures across different aqueducts. The Castellarius backs off all droplets to reduce API hammering while the provider recovers. When the provider recovers (first successful session), backoff resets automatically.
+
+If the provider remains degraded, investigate:
+- Is the provider service actually down? Check its status dashboard
+- Is authentication stale? Run `ct doctor --fix` to refresh tokens
+- Rate limiting? Reduce concurrent aqueducts or add delays in cataractae timeouts
+
 ### Cataractae Signaled Recirculate But No on_recirculate Route Configured
 
 If you see a diagnostic note like: `"cataractae 'foo' signaled recirculate but has no on_recirculate route configured"`, the droplet is blocked because an agent incorrectly used `ct droplet recirculate` instead of `ct droplet pass` or `ct droplet block`.

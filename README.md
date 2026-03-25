@@ -328,6 +328,14 @@ Config lives at `~/.cistern/cistern.yaml`. Key options:
 # Heartbeat: how often the Castellarius scans for stalled sessions
 heartbeat_interval: 30s
 
+# Exponential backoff for quick session exits and provider degradation detection
+# When a session exits quickly (within this threshold) without an outcome,
+# trigger per-droplet exponential backoff. When 3+ sessions fail across 2+ aqueducts
+# within 5 minutes, fast-forward all affected droplets to max backoff (provider appears degraded).
+# Defaults: 30s for quick-exit threshold, 30m for max backoff
+quick_exit_threshold_seconds: 30
+max_backoff_minutes: 30
+
 # Rate limit: protect the delivery cataractae API endpoint
 # Omit to use defaults (60 req/min per IP, 120 req/min per token)
 # rate_limit:

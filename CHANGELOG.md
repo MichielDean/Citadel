@@ -12,6 +12,23 @@
 - This fixes the issue where droplets would get stuck indefinitely if the tmux server died while Castellarius was running; now the droplet auto-recovers and continues flowing
 - Tests added: `TestSpawn_TmuxServerDead_Recovers`, `TestSpawn_TmuxServerDead_ConcurrentRecoveryIsSerializedByMutex`, `TestSpawn_TmuxServerDead_DoubleCheckPreventsKillingRecoveredServer`, plus five more comprehensive recovery scenarios
 
+### Castellarius: exponential backoff for quick exits and provider-aware degradation detection (ci-y0kk0)
+- Sessions that exit quickly (≤30 seconds by default, configurable via `quick_exit_threshold_seconds`) without signaling a droplet outcome trigger per-droplet exponential backoff: 30s → 1m → 2m → 4m → 8m → … up to a configurable max (default 30 minutes via `max_backoff_minutes`)
+- Backoff counter resets to zero when a droplet's session completes successfully (>30 seconds run time)
+- Logs on each quick exit: `droplet=<id> backing off <seconds>s after <N> consecutive quick exits` helps operators diagnose recurring auth failures, missing binaries, or provider issues
+- **Provider degradation detection** — When 3+ sessions across 2+ aqueducts experience quick exits within a 5-minute window, the provider is marked as degraded and all queued droplets for that provider fast-forward immediately to max backoff (skip the exponential ramp-up), reducing API hammering during provider outages
+- Fast-forward is lazy: the triggering droplet fast-forwards at detection time; other queued droplets fast-forward on their next dispatch attempt, allowing the Castellarius to complete one heartbeat cycle before acting
+- Logs once per minute during degradation: `provider=<name> appears degraded — queued droplets will be held at max backoff on next dispatch` helps operators spot widespread provider issues immediately
+- On provider recovery (first successful session >30s after degradation), the global degradation state clears automatically and per-droplet backoff resumes normal exponential ramp, eliminating stale degradation state if the provider re-fails within the log-rate window
+- Configuration in `~/.cistern/cistern.yaml` under the Castellarius section:
+  ```yaml
+  quick_exit_threshold_seconds: 30    # Session duration below which a death is treated as a quick exit (default)
+  max_backoff_minutes: 30              # Upper bound for per-droplet backoff delay (default)
+  ```
+- Backoff is provider-agnostic: works with any configured agent provider (claude, codex, gemini, copilot, opencode) — no hardcoding to Anthropic/Claude
+- Distinguishes tmux/infrastructure failures (local issues, fix and retry immediately) from provider failures (back off, wait for recovery) — if tmux session socket is dead and the exit was intentional (droplet signaled outcome), no backoff is applied
+- Tests added: 30 test cases covering exponential ramp boundaries, overflow protection (shift >62 and negative delay guards), degradation detection thresholds, lazy fast-forward behavior, recovery on first successful session, stale-event pruning, and full scheduler integration
+
 ### Web dashboard: add ESC back hint button to exit peek mode (ci-2ejep)
 - The web dashboard now displays an "ESC = back" button in the bottom-right corner of the terminal display, providing visual indication that pressing Escape or clicking the button will close the peek overlay
 - Button is always visible and clickable: clicking sends an Esc keystroke to the terminal to exit peek mode and return to the main dashboard view, useful for users unfamiliar with the Escape keyboard shortcut or who prefer mouse navigation
