@@ -2,13 +2,14 @@
 
 ## Unreleased
 
-### Castellarius: auto-promote recirculate to pass when no route exists (ci-blpza)
-- When a cataractae signals `ct droplet recirculate` but the aqueduct config has no `on_recirculate` route for that step, the Castellarius now auto-promotes the outcome to `pass` instead of stalling
+### Castellarius: auto-promote recirculate to pass when no route exists, with diagnostic note for escalation (ci-blpza, ci-m5e29)
+- When a cataractae signals `ct droplet recirculate` but the aqueduct config has no `on_recirculate` route for that step, the Castellarius now auto-promotes the outcome to `pass` instead of stalling (if a pass route exists)
 - Rationale: The work is almost certainly complete — the agent chose the wrong signal. There is no upstream to send it to, so recirculate is semantically meaningless here. Auto-promoting is non-destructive.
 - User-visible: When auto-promoted, a note is attached to the droplet: `Auto-promoted: cataractae "<name>" signaled recirculate but has no on_recirculate route — treated as pass. Review agent behavior if this recurs.`
+- When escalation is necessary (no on_recirculate and no on_pass routes), a diagnostic note is added: `cataractae "<name>" signaled recirculate but has no on_recirculate route configured — this is likely an agent error (recirculate used instead of pass or block). Manual intervention required.` This surfaces the problem immediately instead of silently stalling.
 - Logged at WARN level in the Castellarius logs for visibility without failing the pipeline
 - Interim fix: Once ci-amg37 (prompt templating) lands, recirculate will not appear in the agent's context at all, making this edge case unreachable
-- Tests added: `TestTick_RecirculateAutoPromotesToPass` verifies routing to the on_pass target with warning note; `TestTick_RecirculateNoPassRoute_StillEscalates` verifies escalation still occurs when neither on_recirculate nor on_pass routes exist
+- Tests added: `TestTick_RecirculateAutoPromotesToPass` verifies routing to the on_pass target with warning note; `TestTick_RecirculateNoPassRoute_StillEscalates` verifies escalation still occurs when neither on_recirculate nor on_pass routes exist; `TestTick_RecirculateNoRouteAddsDescriptiveNote` verifies the diagnostic note is attached before escalation
 
 ### Peek: attach read-only to live tmux session instead of polling snapshots (ci-61hbi)
 - `ct droplet peek <id>` now attaches read-only to the live agent tmux session by default (`tmux attach-session -r`), providing real-time scrolling output instead of static snapshots
