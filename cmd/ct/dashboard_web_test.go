@@ -1042,6 +1042,30 @@ func TestDashboardHTML_OnDataForwardsKeystrokes(t *testing.T) {
 	}
 }
 
+// TestDashboardHTML_EscHint verifies that the ESC hint button and capture-phase
+// keydown listener are present and correctly wired in the web dashboard HTML.
+func TestDashboardHTML_EscHint(t *testing.T) {
+	checks := []struct {
+		want string
+		desc string
+	}{
+		{`id="esc-hint"`, "esc-hint element"},
+		{`onclick="sendEsc()"`, "onclick calls sendEsc"},
+		{"function sendEsc()", "sendEsc function"},
+		{`ws.send('\x1b')`, "ESC byte forwarding"},
+		{`addEventListener('keydown'`, "capture-phase keydown listener"},
+		{`e.key === 'Escape'`, "Escape key check"},
+		{"preventDefault()", "preventDefault to suppress browser default Escape behavior"},
+		{"stopPropagation()", "stopPropagation to prevent double-send"},
+		{"capture", "capture:true to intercept before xterm.js"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(dashboardHTML, c.want) {
+			t.Errorf("dashboardHTML must contain %s (%q)", c.desc, c.want)
+		}
+	}
+}
+
 // TestDashboardTUI_ReconnectDoesNotRestartChild asserts that disconnecting and
 // reconnecting a WebSocket client does not cause the child process to restart.
 //

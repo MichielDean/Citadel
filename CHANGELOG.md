@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Web dashboard: add ESC back hint button to exit peek mode (ci-2ejep)
+- The web dashboard now displays an "ESC = back" button in the bottom-right corner of the terminal display, providing visual indication that pressing Escape or clicking the button will close the peek overlay
+- Button is always visible and clickable: clicking sends an Esc keystroke to the terminal to exit peek mode and return to the main dashboard view, useful for users unfamiliar with the Escape keyboard shortcut or who prefer mouse navigation
+- Capture-phase Escape keydown handler forwards Esc keystrokes from the browser keyboard directly to the PTY, ensuring keystrokes reach the TUI even if xterm.js or the browser would normally intercept them (e.g., triggering fullscreen exit instead)
+- `preventDefault()` is called on the Escape keydown event to suppress browser default Escape behavior (exit fullscreen, close find bar, page loading) while allowing the TUI to receive the keystroke
+- Tests added: `TestDashboardHTML_EscHint` verifies the button element exists, is clickable via `sendEsc()`, and the capture-phase listener is properly attached with `stopPropagation()` and `preventDefault()` calls
+
 ### Castellarius: auto-promote recirculate to pass when no route exists, with diagnostic note for escalation (ci-blpza, ci-m5e29)
 - When a cataractae signals `ct droplet recirculate` but the aqueduct config has no `on_recirculate` route for that step, the Castellarius now auto-promotes the outcome to `pass` instead of stalling (if a pass route exists)
 - Rationale: The work is almost certainly complete — the agent chose the wrong signal. There is no upstream to send it to, so recirculate is semantically meaningless here. Auto-promoting is non-destructive.
