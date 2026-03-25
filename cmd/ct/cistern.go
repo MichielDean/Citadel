@@ -330,6 +330,8 @@ func displayStatus(status string) string {
 		return "stagnant"
 	case "closed", "delivered":
 		return "delivered"
+	case "cancelled":
+		return "cancelled"
 	default:
 		return status
 	}
