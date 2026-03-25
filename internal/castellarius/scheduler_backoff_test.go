@@ -256,8 +256,7 @@ func TestDispatch_DropletsInBackoff_NotSpawned(t *testing.T) {
 
 	// The dispatch goroutine should have returned early without calling Spawn.
 	// Allow time for the goroutine to run.
-	notSpawned := !runner.waitCalls(1, 200*time.Millisecond)
-	if !notSpawned {
+	if runner.waitCalls(1, 200*time.Millisecond) {
 		runner.mu.Lock()
 		n := len(runner.calls)
 		runner.mu.Unlock()
@@ -306,8 +305,7 @@ func TestDispatch_DropletsWithDegradedProvider_FastForwardedToMax(t *testing.T) 
 
 	sched.Tick(context.Background())
 
-	notSpawned := !runner.waitCalls(1, 200*time.Millisecond)
-	if !notSpawned {
+	if runner.waitCalls(1, 200*time.Millisecond) {
 		runner.mu.Lock()
 		n := len(runner.calls)
 		runner.mu.Unlock()
