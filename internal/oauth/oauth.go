@@ -179,8 +179,8 @@ func ResolveAccessToken(home, tokenURL string, httpDo func(*http.Request) (*http
 		return "", nil // absent or malformed — caller falls back to env var
 	}
 
-	// Token is valid: no expiry set, or not yet expired.
-	if creds.ExpiresAt == 0 || time.Now().Before(time.UnixMilli(creds.ExpiresAt)) {
+	// Token is valid: not expired or near expiry (5-minute buffer matches session.go).
+	if !IsExpiredOrNear(creds, 5*time.Minute) {
 		return creds.AccessToken, nil
 	}
 

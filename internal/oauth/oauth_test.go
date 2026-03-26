@@ -514,6 +514,27 @@ func TestResolveAccessToken_ZeroExpiry_TreatedAsFresh(t *testing.T) {
 	}
 }
 
+func TestResolveAccessToken_NearExpiry_TriggersRefresh(t *testing.T) {
+	home := t.TempDir()
+	// Token expiring in 3 minutes — within the 5-minute buffer.
+	nearExpiry := time.Now().Add(3 * time.Minute).UnixMilli()
+	writeCredentials(t, home, "tok-near-expired", "tok-refresh", nearExpiry)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"access_token":"tok-refreshed","expires_in":3600}`)
+	}))
+	defer srv.Close()
+
+	token, err := ResolveAccessToken(home, srv.URL, srv.Client().Do)
+	if err != nil {
+		t.Fatalf("expected nil error after refresh for near-expired token, got: %v", err)
+	}
+	if token != "tok-refreshed" {
+		t.Errorf("token = %q, want tok-refreshed (near-expired token should trigger refresh)", token)
+	}
+}
+
 func TestResolveAccessToken_ExpiredNoRefreshToken_ReturnsError(t *testing.T) {
 	home := t.TempDir()
 	// Write credentials with expired token and no refresh token.
