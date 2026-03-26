@@ -161,9 +161,12 @@ func (s *Session) spawn() error {
 	// cleaned up after a successful run (or after being read on quick-exit).
 	sessionLogPath := filepath.Join(home, ".cistern", "session-logs", s.ID+".log")
 	if err := os.MkdirAll(filepath.Dir(sessionLogPath), 0o750); err == nil {
-		// Wrap the agent command: ( agentCmd ) 2>&1 | tee /path/to/log
-		// Use exec to replace the shell so exit code propagates correctly.
-		agentCmd = "( " + agentCmd + " ) 2>&1 | tee " + shellQuote(sessionLogPath) + "; exit ${PIPESTATUS[0]}"
+		// Wrap the agent command to tee stdout+stderr to the session log file.
+		// IMPORTANT: use 'bash' explicitly — tmux spawns commands via /bin/sh
+		// which may be dash on Ubuntu/Debian, and dash does not support PIPESTATUS.
+		// We need PIPESTATUS[0] to propagate the agent's exit code through the pipe
+		// so the tmux session exits with the correct status.
+		agentCmd = "bash -c " + shellQuote("( "+agentCmd+" ) 2>&1 | tee "+shellQuote(sessionLogPath)+"; exit ${PIPESTATUS[0]}")
 	}
 
 	args = append(args, s.collectEnvArgs()...)
