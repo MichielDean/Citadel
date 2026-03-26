@@ -179,13 +179,8 @@ func ResolveAccessToken(home, tokenURL string, httpDo func(*http.Request) (*http
 		return "", nil // absent or malformed — caller falls back to env var
 	}
 
-	// No expiry info — treat token as valid.
-	if creds.ExpiresAt == 0 {
-		return creds.AccessToken, nil
-	}
-
-	// Token is fresh.
-	if time.Now().Before(time.UnixMilli(creds.ExpiresAt)) {
+	// Token is valid: no expiry set, or not yet expired.
+	if creds.ExpiresAt == 0 || time.Now().Before(time.UnixMilli(creds.ExpiresAt)) {
 		return creds.AccessToken, nil
 	}
 
