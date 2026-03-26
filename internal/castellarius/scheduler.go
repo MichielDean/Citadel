@@ -93,6 +93,10 @@ type Castellarius struct {
 	rebaseAndPushFn func(ctx context.Context, sandboxDir string) error
 	ghMergeFn       func(ctx context.Context, sandboxDir, prURL string, autoMerge bool) error
 
+	// drainTimeout is the maximum duration to wait for in-flight sessions to
+	// signal an outcome after SIGTERM. Defaults to 5 minutes.
+	drainTimeout time.Duration
+
 	// Dispatch-loop detection — tracks per-droplet failure counts to detect and
 	// recover from tight loops where no agent session ever starts.
 	dispatchLoop *dispatchLoopTracker
@@ -151,6 +155,12 @@ func WithConfigPath(path string) Option {
 	return func(s *Castellarius) { s.cfgPath = path }
 }
 
+// WithDrainTimeout overrides the graceful-shutdown drain timeout. Primarily
+// used in tests to avoid multi-minute waits.
+func WithDrainTimeout(d time.Duration) Option {
+	return func(s *Castellarius) { s.drainTimeout = d }
+}
+
 // New creates a Castellarius from an AqueductConfig.
 // Workflows are loaded from each RepoConfig.WorkflowPath.
 // Each repo gets its own cistern.Client scoped by prefix.
@@ -172,6 +182,7 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 		logger:             slog.Default(),
 		pollInterval:       10 * time.Second,
 		heartbeatInterval:  30 * time.Second,
+		drainTimeout:       5 * time.Minute,
 		dbPath:             dbPath,
 		startupBinaryMtime: startupBinaryMtime,
 		supervised:         isSupervisedProcess(),
@@ -227,6 +238,10 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 		s.heartbeatInterval = d
 	}
 
+	if config.DrainTimeoutMinutes > 0 {
+		s.drainTimeout = time.Duration(config.DrainTimeoutMinutes) * time.Minute
+	}
+
 	for _, repo := range config.Repos {
 		wf, err := aqueduct.ParseWorkflow(repo.WorkflowPath)
 		if err != nil {
@@ -267,6 +282,7 @@ func NewFromParts(
 		logger:            slog.Default(),
 		pollInterval:      10 * time.Second,
 		heartbeatInterval: 30 * time.Second,
+		drainTimeout:      5 * time.Minute,
 		findPRFn:          defaultFindPR,
 		killSessionFn:     defaultKillSession,
 		rebaseAndPushFn:   defaultRebaseAndPush,
@@ -427,12 +443,95 @@ func (s *Castellarius) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("Aqueducts closed.")
-			return ctx.Err()
+			return s.drainInFlight()
 		case <-ticker.C:
 			s.tick(ctx)
 		}
 	}
+}
+
+// drainInFlight waits for all in-progress droplets (sessions with no outcome
+// yet) to signal before returning. It runs observe-only ticks — no new work is
+// dispatched during the drain. Three paths:
+//
+//   - Zero in-flight: exits immediately, logs "Aqueducts closed."
+//   - Clean drain:    all sessions complete within drainTimeout, logs "drain complete"
+//   - Timeout:        forces exit after drainTimeout, logs stuck IDs
+//
+// If stuckSessionIDs returns an error, the drain conservatively assumes sessions
+// are still running and keeps waiting until the timeout fires.
+//
+// Always returns context.Canceled so the caller (cmd layer) treats it as a
+// clean exit from a signal.
+func (s *Castellarius) drainInFlight() error {
+	ids, err := s.stuckSessionIDs()
+	if err != nil {
+		// Conservative: treat a query failure as sessions still running.
+		s.logger.Info("draining in-flight sessions before shutdown (count unknown due to query error)")
+	} else if len(ids) == 0 {
+		s.logger.Info("Aqueducts closed.")
+		return context.Canceled
+	} else {
+		s.logger.Info("draining in-flight sessions before shutdown", "sessions", len(ids))
+	}
+
+	deadline := time.NewTimer(s.drainTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(s.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline.C:
+			stuck, err := s.stuckSessionIDs()
+			var sessions, ids any = len(stuck), stuck
+			if err != nil {
+				sessions, ids = "unknown (query error)", "unavailable"
+			}
+			s.logger.Warn("drain timeout — forcing exit with sessions still running",
+				"sessions", sessions,
+				"ids", ids,
+			)
+			return context.Canceled
+		case <-ticker.C:
+			for _, repo := range s.config.Repos {
+				s.observeRepo(context.Background(), repo)
+			}
+			ids, err := s.stuckSessionIDs()
+			if err != nil {
+				// Conservative: keep draining on query error.
+				continue
+			}
+			if len(ids) == 0 {
+				s.logger.Info("drain complete")
+				return context.Canceled
+			}
+		}
+	}
+}
+
+// stuckSessionIDs returns the IDs of in-progress droplets with no outcome set.
+// Returns an error if any repo's client.List call fails; callers must treat
+// errors conservatively (assume sessions are still running).
+func (s *Castellarius) stuckSessionIDs() ([]string, error) {
+	var ids []string
+	for _, repo := range s.config.Repos {
+		client := s.clients[repo.Name]
+		items, err := client.List(repo.Name, "in_progress")
+		if err != nil {
+			s.logger.Warn("stuckSessionIDs: failed to list in-progress droplets",
+				"repo", repo.Name,
+				"err", err,
+			)
+			return nil, err
+		}
+		for _, item := range items {
+			if item.Outcome == "" {
+				ids = append(ids, item.ID)
+			}
+		}
+	}
+	return ids, nil
 }
 
 // logStartupCredentials logs which credential-related environment variables are
