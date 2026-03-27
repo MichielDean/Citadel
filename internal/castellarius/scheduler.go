@@ -1353,7 +1353,10 @@ func (s *Castellarius) respawnStalledDroplet(ctx context.Context, client Cistern
 		return
 	}
 
-	notes, _ := client.GetNotes(item.ID) // non-fatal; spawn without context notes
+	notes, err := client.GetNotes(item.ID)
+	if err != nil {
+		s.logger.Warn("heartbeat: GetNotes failed (continuing without notes)", "droplet", item.ID, "error", err)
+	}
 
 	req := CataractaeRequest{
 		Item:         item,
