@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-// TestArchPixelMap_Has14RowsOf28Cols verifies the pixel map has exactly 14 rows of 28 columns.
+// TestArchPixelMap_Has12RowsOf36Cols verifies the pixel map has exactly 12 rows of 36 columns.
 //
 // Given: the static archPixelMap constant
 // When:  its dimensions are inspected
 // Then:  it has archPillarH rows and archPillarW columns each
-func TestArchPixelMap_Has14RowsOf28Cols(t *testing.T) {
+func TestArchPixelMap_Has12RowsOf36Cols(t *testing.T) {
 	if len(archPixelMap) != archPillarH {
 		t.Errorf("archPixelMap has %d rows, want %d", len(archPixelMap), archPillarH)
 	}
@@ -21,14 +21,14 @@ func TestArchPixelMap_Has14RowsOf28Cols(t *testing.T) {
 	}
 }
 
-// TestArchPixelMap_Rows0to4_AreBlank verifies rows 0–4 are entirely blank.
+// TestArchPixelMap_Rows0to3_AreBlank verifies rows 0–3 are entirely blank.
 // These rows represent the space above the arch crown.
 //
-// Given: archPixelMap rows 0–4
+// Given: archPixelMap rows 0–3
 // When:  each cell is inspected
 // Then:  every cell is pxBlank
-func TestArchPixelMap_Rows0to4_AreBlank(t *testing.T) {
-	for r := 0; r < 5; r++ {
+func TestArchPixelMap_Rows0to3_AreBlank(t *testing.T) {
+	for r := 0; r < 4; r++ {
 		for c, px := range archPixelMap[r] {
 			if px != pxBlank {
 				t.Errorf("archPixelMap[%d][%d] = %q, want pxBlank (space above crown)", r, c, px)
@@ -37,127 +37,127 @@ func TestArchPixelMap_Rows0to4_AreBlank(t *testing.T) {
 	}
 }
 
-// TestArchPixelMap_Row5_IsFullWidthCrown verifies row 5 is full-width fill.
-// Row 5 represents the arch crown / road surface.
+// TestArchPixelMap_Row4_IsFullWidthCrown verifies row 4 is full-width fill.
+// Row 4 represents the arch crown / road surface.
 //
-// Given: archPixelMap row 5
+// Given: archPixelMap row 4
 // When:  each cell is inspected
-// Then:  all 28 cells are pxFill ('▒')
-func TestArchPixelMap_Row5_IsFullWidthCrown(t *testing.T) {
-	for c, px := range archPixelMap[5] {
+// Then:  all 36 cells are pxFill ('▒')
+func TestArchPixelMap_Row4_IsFullWidthCrown(t *testing.T) {
+	for c, px := range archPixelMap[4] {
 		if px != pxFill {
-			t.Errorf("archPixelMap[5][%d] = %q, want pxFill '▒' (arch crown)", c, px)
+			t.Errorf("archPixelMap[4][%d] = %q, want pxFill '▒' (arch crown)", c, px)
 		}
 	}
 }
 
-// TestArchPixelMap_Row6_ArchOpeningShape verifies row 6 encodes the arch opening.
-// Expected layout: 6 blank + 1 edge + 16 fill + 5 blank = 28 cols.
+// TestArchPixelMap_Row5_ArchOpeningShape verifies row 5 encodes the arch opening.
+// Expected layout: 8 blank + 1 edge + 19 fill + 8 blank = 36 cols.
+//
+// Given: archPixelMap row 5
+// When:  each cell group is inspected
+// Then:  columns 0–7 blank, column 8 edge, columns 9–27 fill, columns 28–35 blank
+func TestArchPixelMap_Row5_ArchOpeningShape(t *testing.T) {
+	row := archPixelMap[5]
+	for c := 0; c < 8; c++ {
+		if row[c] != pxBlank {
+			t.Errorf("archPixelMap[5][%d] = %q, want pxBlank (leading indent)", c, row[c])
+		}
+	}
+	if row[8] != pxEdge {
+		t.Errorf("archPixelMap[5][8] = %q, want pxEdge '░' (arch edge)", row[8])
+	}
+	for c := 9; c <= 27; c++ {
+		if row[c] != pxFill {
+			t.Errorf("archPixelMap[5][%d] = %q, want pxFill '▒' (arch fill)", c, row[c])
+		}
+	}
+	for c := 28; c <= 35; c++ {
+		if row[c] != pxBlank {
+			t.Errorf("archPixelMap[5][%d] = %q, want pxBlank (trailing)", c, row[c])
+		}
+	}
+}
+
+// TestArchPixelMap_Row6_ArchNarrowingShape verifies row 6 encodes a narrower arch opening.
+// Expected layout: 12 blank + 1 edge + 11 fill + 12 blank = 36 cols.
 //
 // Given: archPixelMap row 6
 // When:  each cell group is inspected
-// Then:  columns 0–5 blank, column 6 edge, columns 7–22 fill, columns 23–27 blank
-func TestArchPixelMap_Row6_ArchOpeningShape(t *testing.T) {
+// Then:  columns 0–11 blank, column 12 edge, columns 13–23 fill, columns 24–35 blank
+func TestArchPixelMap_Row6_ArchNarrowingShape(t *testing.T) {
 	row := archPixelMap[6]
-	for c := 0; c < 6; c++ {
+	for c := 0; c < 12; c++ {
 		if row[c] != pxBlank {
-			t.Errorf("archPixelMap[6][%d] = %q, want pxBlank (leading indent)", c, row[c])
+			t.Errorf("archPixelMap[6][%d] = %q, want pxBlank", c, row[c])
 		}
 	}
-	if row[6] != pxEdge {
-		t.Errorf("archPixelMap[6][6] = %q, want pxEdge '░' (arch edge)", row[6])
+	if row[12] != pxEdge {
+		t.Errorf("archPixelMap[6][12] = %q, want pxEdge '░'", row[12])
 	}
-	for c := 7; c <= 22; c++ {
+	for c := 13; c <= 23; c++ {
 		if row[c] != pxFill {
-			t.Errorf("archPixelMap[6][%d] = %q, want pxFill '▒' (arch fill)", c, row[c])
+			t.Errorf("archPixelMap[6][%d] = %q, want pxFill '▒'", c, row[c])
 		}
 	}
-	for c := 23; c <= 27; c++ {
+	for c := 24; c <= 35; c++ {
 		if row[c] != pxBlank {
-			t.Errorf("archPixelMap[6][%d] = %q, want pxBlank (trailing)", c, row[c])
+			t.Errorf("archPixelMap[6][%d] = %q, want pxBlank", c, row[c])
 		}
 	}
 }
 
-// TestArchPixelMap_Row7_ArchNarrowingShape verifies row 7 encodes a narrower arch opening.
-// Expected layout: 9 blank + 1 edge + 9 fill + 9 blank = 28 cols.
+// TestArchPixelMap_Row7_ArchNarrowestShape verifies row 7 encodes the narrowest arch section.
+// Expected layout: 13 blank + 1 edge + 9 fill + 13 blank = 36 cols.
 //
 // Given: archPixelMap row 7
 // When:  each cell group is inspected
-// Then:  columns 0–8 blank, column 9 edge, columns 10–18 fill, columns 19–27 blank
-func TestArchPixelMap_Row7_ArchNarrowingShape(t *testing.T) {
+// Then:  columns 0–12 blank, column 13 edge, columns 14–22 fill, columns 23–35 blank
+func TestArchPixelMap_Row7_ArchNarrowestShape(t *testing.T) {
 	row := archPixelMap[7]
-	for c := 0; c < 9; c++ {
+	for c := 0; c < 13; c++ {
 		if row[c] != pxBlank {
 			t.Errorf("archPixelMap[7][%d] = %q, want pxBlank", c, row[c])
 		}
 	}
-	if row[9] != pxEdge {
-		t.Errorf("archPixelMap[7][9] = %q, want pxEdge '░'", row[9])
+	if row[13] != pxEdge {
+		t.Errorf("archPixelMap[7][13] = %q, want pxEdge '░'", row[13])
 	}
-	for c := 10; c <= 18; c++ {
+	for c := 14; c <= 22; c++ {
 		if row[c] != pxFill {
 			t.Errorf("archPixelMap[7][%d] = %q, want pxFill '▒'", c, row[c])
 		}
 	}
-	for c := 19; c <= 27; c++ {
+	for c := 23; c <= 35; c++ {
 		if row[c] != pxBlank {
 			t.Errorf("archPixelMap[7][%d] = %q, want pxBlank", c, row[c])
 		}
 	}
 }
 
-// TestArchPixelMap_Row8_ArchNarrowingShape verifies row 8 encodes the narrowest arch section.
-// Expected layout: 10 blank + 1 edge + 7 fill + 10 blank = 28 cols.
+// TestArchPixelMap_Rows8to11_PierBodyShape verifies all pier body rows have the same shape.
+// Expected layout: 15 blank + 1 edge + 5 fill + 15 blank = 36 cols.
 //
-// Given: archPixelMap row 8
-// When:  each cell group is inspected
-// Then:  columns 0–9 blank, column 10 edge, columns 11–17 fill, columns 18–27 blank
-func TestArchPixelMap_Row8_ArchNarrowingShape(t *testing.T) {
-	row := archPixelMap[8]
-	for c := 0; c < 10; c++ {
-		if row[c] != pxBlank {
-			t.Errorf("archPixelMap[8][%d] = %q, want pxBlank", c, row[c])
-		}
-	}
-	if row[10] != pxEdge {
-		t.Errorf("archPixelMap[8][10] = %q, want pxEdge '░'", row[10])
-	}
-	for c := 11; c <= 17; c++ {
-		if row[c] != pxFill {
-			t.Errorf("archPixelMap[8][%d] = %q, want pxFill '▒'", c, row[c])
-		}
-	}
-	for c := 18; c <= 27; c++ {
-		if row[c] != pxBlank {
-			t.Errorf("archPixelMap[8][%d] = %q, want pxBlank", c, row[c])
-		}
-	}
-}
-
-// TestArchPixelMap_Rows9to13_PierBodyShape verifies all pier body rows have the same shape.
-// Expected layout: 12 blank + 1 edge + 4 fill + 11 blank = 28 cols.
-//
-// Given: archPixelMap rows 9–13
+// Given: archPixelMap rows 8–11
 // When:  each row's cells are inspected
-// Then:  columns 0–11 blank, column 12 edge, columns 13–16 fill, columns 17–27 blank
-func TestArchPixelMap_Rows9to13_PierBodyShape(t *testing.T) {
-	for r := 9; r <= 13; r++ {
+// Then:  columns 0–14 blank, column 15 edge, columns 16–20 fill, columns 21–35 blank
+func TestArchPixelMap_Rows8to11_PierBodyShape(t *testing.T) {
+	for r := 8; r <= 11; r++ {
 		row := archPixelMap[r]
-		for c := 0; c < 12; c++ {
+		for c := 0; c < 15; c++ {
 			if row[c] != pxBlank {
 				t.Errorf("archPixelMap[%d][%d] = %q, want pxBlank (pier indent)", r, c, row[c])
 			}
 		}
-		if row[12] != pxEdge {
-			t.Errorf("archPixelMap[%d][12] = %q, want pxEdge '░' (pier edge)", r, row[12])
+		if row[15] != pxEdge {
+			t.Errorf("archPixelMap[%d][15] = %q, want pxEdge '░' (pier edge)", r, row[15])
 		}
-		for c := 13; c <= 16; c++ {
+		for c := 16; c <= 20; c++ {
 			if row[c] != pxFill {
 				t.Errorf("archPixelMap[%d][%d] = %q, want pxFill '▒' (pier fill)", r, c, row[c])
 			}
 		}
-		for c := 17; c <= 27; c++ {
+		for c := 21; c <= 35; c++ {
 			if row[c] != pxBlank {
 				t.Errorf("archPixelMap[%d][%d] = %q, want pxBlank (pier trailing)", r, c, row[c])
 			}
@@ -165,66 +165,66 @@ func TestArchPixelMap_Rows9to13_PierBodyShape(t *testing.T) {
 	}
 }
 
-// TestRenderArchPillarRow_Row5_ContainsFillChar verifies that rendering row 5 produces output
+// TestRenderArchPillarRow_Row4_ContainsFillChar verifies that rendering row 4 produces output
 // containing fill characters ('▒').
 //
-// Given: row 5 of archPixelMap (full-width crown)
+// Given: row 4 of archPixelMap (full-width crown)
 // When:  renderArchPillarRow is called with active=false
 // Then:  the output contains '▒'
-func TestRenderArchPillarRow_Row5_ContainsFillChar(t *testing.T) {
-	got := renderArchPillarRow(5, false)
+func TestRenderArchPillarRow_Row4_ContainsFillChar(t *testing.T) {
+	got := renderArchPillarRow(4, false)
 	if !strings.Contains(got, "▒") {
-		t.Errorf("renderArchPillarRow(5, false): expected '▒' in output, got %q", got)
+		t.Errorf("renderArchPillarRow(4, false): expected '▒' in output, got %q", got)
 	}
 }
 
-// TestRenderArchPillarRow_Row5_Active_ContainsFillChar verifies that rendering row 5 with
+// TestRenderArchPillarRow_Row4_Active_ContainsFillChar verifies that rendering row 4 with
 // active=true also produces fill characters.
 //
-// Given: row 5 of archPixelMap
+// Given: row 4 of archPixelMap
 // When:  renderArchPillarRow is called with active=true
 // Then:  the output contains '▒'
-func TestRenderArchPillarRow_Row5_Active_ContainsFillChar(t *testing.T) {
-	got := renderArchPillarRow(5, true)
+func TestRenderArchPillarRow_Row4_Active_ContainsFillChar(t *testing.T) {
+	got := renderArchPillarRow(4, true)
 	if !strings.Contains(got, "▒") {
-		t.Errorf("renderArchPillarRow(5, true): expected '▒' in output, got %q", got)
+		t.Errorf("renderArchPillarRow(4, true): expected '▒' in output, got %q", got)
 	}
 }
 
-// TestRenderArchPillarRow_Row6_ContainsEdgeChar verifies that rendering row 6 produces output
+// TestRenderArchPillarRow_Row5_ContainsEdgeChar verifies that rendering row 5 produces output
 // containing an edge character ('░').
 //
-// Given: row 6 of archPixelMap (arch opening with one edge pixel at col 6)
+// Given: row 5 of archPixelMap (arch opening with one edge pixel at col 8)
 // When:  renderArchPillarRow is called
 // Then:  the output contains '░'
-func TestRenderArchPillarRow_Row6_ContainsEdgeChar(t *testing.T) {
-	got := renderArchPillarRow(6, false)
+func TestRenderArchPillarRow_Row5_ContainsEdgeChar(t *testing.T) {
+	got := renderArchPillarRow(5, false)
 	if !strings.Contains(got, "░") {
-		t.Errorf("renderArchPillarRow(6, false): expected '░' in output, got %q", got)
+		t.Errorf("renderArchPillarRow(5, false): expected '░' in output, got %q", got)
 	}
 }
 
-// TestRenderDroughtPillarRow_Row5_ContainsFillChar verifies that the drought renderer
-// produces fill characters for row 5.
+// TestRenderDroughtPillarRow_Row4_ContainsFillChar verifies that the drought renderer
+// produces fill characters for row 4.
 //
-// Given: row 5 of archPixelMap (full-width crown)
+// Given: row 4 of archPixelMap (full-width crown)
 // When:  renderDroughtPillarRow is called
 // Then:  the output contains '▒'
-func TestRenderDroughtPillarRow_Row5_ContainsFillChar(t *testing.T) {
-	got := renderDroughtPillarRow(5)
+func TestRenderDroughtPillarRow_Row4_ContainsFillChar(t *testing.T) {
+	got := renderDroughtPillarRow(4)
 	if !strings.Contains(got, "▒") {
-		t.Errorf("renderDroughtPillarRow(5): expected '▒' in output, got %q", got)
+		t.Errorf("renderDroughtPillarRow(4): expected '▒' in output, got %q", got)
 	}
 }
 
-// TestRenderDroughtPillarRow_Rows0to4_ProduceNoVisibleChars verifies that drought rendering
+// TestRenderDroughtPillarRow_Rows0to3_ProduceNoVisibleChars verifies that drought rendering
 // of blank rows produces only whitespace.
 //
-// Given: rows 0–4 of archPixelMap (blank above arch crown)
+// Given: rows 0–3 of archPixelMap (blank above arch crown)
 // When:  renderDroughtPillarRow is called for each
 // Then:  the output contains no non-space characters
-func TestRenderDroughtPillarRow_Rows0to4_ProduceNoVisibleChars(t *testing.T) {
-	for r := 0; r < 5; r++ {
+func TestRenderDroughtPillarRow_Rows0to3_ProduceNoVisibleChars(t *testing.T) {
+	for r := 0; r < 4; r++ {
 		got := renderDroughtPillarRow(r)
 		if strings.TrimSpace(got) != "" {
 			t.Errorf("renderDroughtPillarRow(%d): expected blank output, got %q", r, got)
@@ -232,18 +232,18 @@ func TestRenderDroughtPillarRow_Rows0to4_ProduceNoVisibleChars(t *testing.T) {
 	}
 }
 
-// TestRenderArchPillarRow_Rows0to4_ProduceNoVisibleChars verifies that rendering blank
+// TestRenderArchPillarRow_Rows0to3_ProduceNoVisibleChars verifies that rendering blank
 // rows above the crown produces only whitespace (with background color applied).
 //
-// Given: rows 0–4 of archPixelMap
+// Given: rows 0–3 of archPixelMap
 // When:  renderArchPillarRow is called for each
 // Then:  the output contains no non-space characters after stripping ANSI codes
 //
 // Note: archRoleBackground sets a black terminal background, so lipgloss emits ANSI
 // escape codes in color-enabled environments (e.g. CLICOLOR_FORCE=1). strings.TrimSpace
 // cannot strip escape codes, so we use stripANSI first.
-func TestRenderArchPillarRow_Rows0to4_ProduceNoVisibleChars(t *testing.T) {
-	for r := 0; r < 5; r++ {
+func TestRenderArchPillarRow_Rows0to3_ProduceNoVisibleChars(t *testing.T) {
+	for r := 0; r < 4; r++ {
 		got := stripANSI(renderArchPillarRow(r, false))
 		if strings.TrimSpace(got) != "" {
 			t.Errorf("renderArchPillarRow(%d, false): expected blank output, got %q", r, got)

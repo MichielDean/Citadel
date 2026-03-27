@@ -200,11 +200,11 @@ func TestDashboard_PeekSelect_InTmux_Success_ClearsPeekSelectMode(t *testing.T) 
 //	rows[2]     = lblLine
 //	rows[3]     = l1 (channel top)
 //	rows[4]     = l2 (channel water + wfExit when last step)
-//	rows[5..N]  = mipmap arch lines (22 lines for width=0 → 60x22 mipmap)
+//	rows[5..N]  = mipmap arch lines (12 lines for width=0 → 36x12 mipmap)
 //
 // Given: a CataractaeInfo with a droplet assigned to the last step and a zero-width model
 // When:  tuiAqueductRow is called at frame 0
-// Then:  total rows == 27 (5 header + 22 mipmap lines for width=0)
+// Then:  total rows == 17 (5 header + 12 mipmap lines for width=0)
 //
 //	and all mipmap rows (rows[5:]) are non-empty
 func TestTuiAqueductRow_MipmapArch_ReplacesOldPillarRows(t *testing.T) {
@@ -216,15 +216,15 @@ func TestTuiAqueductRow_MipmapArch_ReplacesOldPillarRows(t *testing.T) {
 		Step:      "merge", // last step → isLastStep = true
 		Steps:     steps,
 	}
-	// Zero-width model → selectArchMipmap(0) returns 60x22 mipmap (22 lines).
+	// Zero-width model → selectArchMipmap(0) returns 36x12 mipmap (12 lines).
 	m := dashboardTUIModel{}
 	rows := m.tuiAqueductRow(ch, 0)
 
-	const wantHeaderRows = 5 // nameLine + infoLine + lblLine + l1 + l2
-	const wantMipmapLines = 22 // 60x22 mipmap: 22 visual lines after cursor-seq strip
+	const wantHeaderRows = 5   // nameLine + infoLine + lblLine + l1 + l2
+	const wantMipmapLines = 12 // 36x12 mipmap: 12 visual lines after cursor-seq strip
 	wantTotal := wantHeaderRows + wantMipmapLines
 	if len(rows) != wantTotal {
-		t.Fatalf("tuiAqueductRow returned %d rows, want %d (5 header + 22 mipmap)", len(rows), wantTotal)
+		t.Fatalf("tuiAqueductRow returned %d rows, want %d (5 header + 12 mipmap)", len(rows), wantTotal)
 	}
 
 	// All mipmap rows must be non-empty (pixel art content present).
@@ -454,7 +454,9 @@ func TestTuiFlowGraphRow_InfoLine_IncludesTitle(t *testing.T) {
 
 // TestSelectArchMipmap_ReturnsCorrectLevelForWidth verifies that selectArchMipmap
 // picks the mipmap level whose width is closest to the available slot width,
-// using the thresholds: width >= 90 → 100x38; width >= 70 → 80x30; else → 60x22.
+// using the thresholds:
+//
+//	width >= 90 → 100x38; width >= 70 → 80x30; width >= 50 → 60x22; else → 36x12.
 //
 // Given: various terminal widths
 // When:  selectArchMipmap is called
@@ -472,8 +474,11 @@ func TestSelectArchMipmap_ReturnsCorrectLevelForWidth(t *testing.T) {
 		{80, 30, "width 80 >= 70 → 80x30 (30 lines)"},
 		{70, 30, "width == 70 → 80x30 (30 lines)"},
 		{69, 22, "width 69 < 70 → 60x22 (22 lines)"},
-		{60, 22, "width 60 < 70 → 60x22 (22 lines)"},
-		{0, 22, "width 0 < 70 → 60x22 (22 lines)"},
+		{60, 22, "width 60 >= 50 → 60x22 (22 lines)"},
+		{50, 22, "width == 50 → 60x22 (22 lines)"},
+		{49, 12, "width 49 < 50 → 36x12 (12 lines)"},
+		{36, 12, "width 36 < 50 → 36x12 (12 lines)"},
+		{0, 12, "width 0 < 50 → 36x12 (12 lines)"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -489,20 +494,26 @@ func TestSelectArchMipmap_ReturnsCorrectLevelForWidth(t *testing.T) {
 	}
 }
 
-// TestSelectArchMipmap_EachLevelReturnsDistinctContent verifies that the three
+// TestSelectArchMipmap_EachLevelReturnsDistinctContent verifies that all four
 // mipmap levels are distinct strings (i.e., the embed loaded different files).
 //
-// Given: the three boundary widths that select different levels
+// Given: the four boundary widths that select different levels
 // When:  selectArchMipmap is called for each
-// Then:  all three returned strings are non-empty and pairwise distinct
+// Then:  all four returned strings are non-empty and pairwise distinct
 func TestSelectArchMipmap_EachLevelReturnsDistinctContent(t *testing.T) {
 	large := selectArchMipmap(90)  // 100x38
 	medium := selectArchMipmap(70) // 80x30
-	small := selectArchMipmap(0)   // 60x22
+	small := selectArchMipmap(50)  // 60x22
+	xsmall := selectArchMipmap(0)  // 36x12
 
-	for _, s := range []string{large, medium, small} {
+	for name, s := range map[string]string{
+		"large (100x38)": large,
+		"medium (80x30)": medium,
+		"small (60x22)":  small,
+		"xsmall (36x12)": xsmall,
+	} {
 		if s == "" {
-			t.Fatal("selectArchMipmap returned empty string for at least one level")
+			t.Errorf("selectArchMipmap returned empty string for %s", name)
 		}
 	}
 	if large == medium {
@@ -511,7 +522,16 @@ func TestSelectArchMipmap_EachLevelReturnsDistinctContent(t *testing.T) {
 	if medium == small {
 		t.Error("medium (80x30) and small (60x22) mipmaps are identical — embed may be wrong")
 	}
+	if small == xsmall {
+		t.Error("small (60x22) and xsmall (36x12) mipmaps are identical — embed may be wrong")
+	}
+	if large == xsmall {
+		t.Error("large (100x38) and xsmall (36x12) mipmaps are identical — embed may be wrong")
+	}
 	if large == small {
 		t.Error("large (100x38) and small (60x22) mipmaps are identical — embed may be wrong")
+	}
+	if medium == xsmall {
+		t.Error("medium (80x30) and xsmall (36x12) mipmaps are identical — embed may be wrong")
 	}
 }
