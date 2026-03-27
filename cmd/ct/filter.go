@@ -61,13 +61,14 @@ Persist final result:
 
 Use --output-format json for scriptable output (session_id + proposals).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		preset := resolveFilterPreset(filterRepo)
+
 		if filterResume != "" {
 			if filterFile {
 				// --resume --file: finalize and persist to DB.
 				if filterRepo == "" {
 					return fmt.Errorf("--repo is required with --file")
 				}
-				preset := resolveFilterPreset(filterRepo)
 				result, err := invokeFilterResume(preset, filterResume, filterFinalizePrompt)
 				if err != nil {
 					return err
@@ -84,9 +85,7 @@ Use --output-format json for scriptable output (session_id + proposals).`,
 			if len(args) == 0 {
 				return fmt.Errorf("feedback argument required: ct filter --resume <id> '<feedback>'")
 			}
-			feedback := strings.Join(args, " ")
-			preset := resolveFilterPreset(filterRepo)
-			result, err := invokeFilterResume(preset, filterResume, feedback)
+			result, err := invokeFilterResume(preset, filterResume, strings.Join(args, " "))
 			if err != nil {
 				return err
 			}
@@ -97,7 +96,6 @@ Use --output-format json for scriptable output (session_id + proposals).`,
 		if filterTitle == "" {
 			return fmt.Errorf("--title is required (or use --resume to continue an existing session)")
 		}
-		preset := resolveFilterPreset(filterRepo)
 		result, err := invokeFilterNew(preset, filterTitle, filterDescription)
 		if err != nil {
 			return err
@@ -133,7 +131,6 @@ func invokeFilterResume(preset provider.ProviderPreset, sessionID, message strin
 // If the agent does not support --output-format json, it falls back to parsing
 // the raw output as proposals (session_id will be empty in that case).
 func callFilterAgent(preset provider.ProviderPreset, extraArgs []string, prompt string) (filterSessionResult, error) {
-	// Validate required env vars.
 	for _, key := range preset.EnvPassthrough {
 		if os.Getenv(key) == "" {
 			return filterSessionResult{}, fmt.Errorf("%s is not set", key)
@@ -176,7 +173,6 @@ func callFilterAgent(preset provider.ProviderPreset, extraArgs []string, prompt 
 		return filterSessionResult{}, fmt.Errorf("agent exec failed: %w", err)
 	}
 
-	// Parse the outer JSON envelope to extract session_id and result text.
 	var envelope claudeJSONOutput
 	if err := json.Unmarshal(out, &envelope); err != nil {
 		// Fallback: the preset may not support --output-format json; try raw.
