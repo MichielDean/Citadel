@@ -14,7 +14,7 @@ import (
 	"github.com/MichielDean/cistern/internal/cistern"
 )
 
-// Pixel-art arch mipmaps — pre-rendered ANSI art at three sizes.
+// Pixel-art arch mipmaps — pre-rendered ANSI art at four sizes.
 // selectArchMipmap picks the level whose width is closest to the available slot.
 
 //go:embed assets/arch_mipmaps/arch_100x38.ansi
@@ -25,6 +25,9 @@ var archMipmap80x30 string
 
 //go:embed assets/arch_mipmaps/arch_60x22.ansi
 var archMipmap60x22 string
+
+//go:embed assets/arch_mipmaps/arch_36x12.ansi
+var archMipmap36x12 string
 
 // archMipmapStripper removes chafa's cursor-visibility escape sequences
 // (\x1b[?25l hide-cursor and \x1b[?25h show-cursor) from embedded mipmap files.
@@ -41,14 +44,18 @@ func archMipmapWidth(availableWidth int) int {
 	if availableWidth >= 70 {
 		return 80
 	}
-	return 60
+	if availableWidth >= 50 {
+		return 60
+	}
+	return 36
 }
 
 // selectArchMipmap returns the ANSI arch mipmap whose width best fits availableWidth,
 // with cursor-control sequences stripped.
 //   - width >= 90  → 100x38 mipmap (37 visual lines)
 //   - width >= 70  → 80x30 mipmap  (30 visual lines)
-//   - width < 70   → 60x22 mipmap  (22 visual lines)
+//   - width >= 50  → 60x22 mipmap  (22 visual lines)
+//   - width < 50   → 36x12 mipmap  (12 visual lines)
 func selectArchMipmap(availableWidth int) string {
 	var raw string
 	switch archMipmapWidth(availableWidth) {
@@ -56,8 +63,10 @@ func selectArchMipmap(availableWidth int) string {
 		raw = archMipmap100x38
 	case 80:
 		raw = archMipmap80x30
-	default:
+	case 60:
 		raw = archMipmap60x22
+	default:
+		raw = archMipmap36x12
 	}
 	return archMipmapStripper.Replace(raw)
 }
@@ -513,9 +522,9 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 // viewDroughtArch renders a single unlabeled dry pillar arch centered in the terminal.
 // Called when all aqueducts are idle (drought state). Shows:
 //   - "drought" label centered above the arch in dim styling
-//   - One 28-char-wide pillar rendered with dim grey (no water channel, no waterfall, no step labels)
+//   - One 36-char-wide pillar rendered with dim grey (no water channel, no waterfall, no step labels)
 //
-// Returns 15 lines: 1 drought label + 14 pillar rows.
+// Returns 13 lines: 1 drought label + 12 pillar rows.
 func (m dashboardTUIModel) viewDroughtArch() []string {
 	leftPad := (m.width - archPillarW) / 2
 	if leftPad < 0 {
@@ -594,7 +603,7 @@ func (m dashboardTUIModel) viewPeekSelectOverlay() string {
 
 // tuiAqueductRow renders a single aqueduct as a pixel art arch diagram.
 // Layout (top to bottom): name → info → step labels → channel top (▀) → channel water → mipmap arch.
-// Total lines: 5 header rows + mipmap height (22/30/37 depending on terminal width).
+// Total lines: 5 header rows + mipmap height (12/22/30/37 depending on terminal width).
 //
 // Water flows only to the active step — columns beyond it show a dry channel.
 // Idle aqueducts (no active droplet) show no water at all.

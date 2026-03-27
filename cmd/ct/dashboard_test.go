@@ -897,13 +897,13 @@ func TestTuiAqueductRow_WaterFillsOnlyToActiveStep(t *testing.T) {
 
 	const (
 		prefixLen = 14
-		pillarW   = 28
+		pillarW   = 36
 		nSteps    = 3
 		chanW     = nSteps * pillarW
 		innerW    = chanW - 2
 	)
 	// Both cases are mid-pipeline (not the last step), so wfExit is absent.
-	const expectedRowLen = prefixLen + 1 + innerW + 1 // 98
+	const expectedRowLen = prefixLen + 1 + innerW + 1 // 122
 
 	cases := []struct {
 		name            string
@@ -913,7 +913,7 @@ func TestTuiAqueductRow_WaterFillsOnlyToActiveStep(t *testing.T) {
 		elapsed         time.Duration
 	}{
 		{
-			// activeIdx=0: wetInnerW=(1*28-1)=27, infoStr with "1m 0s" is 29 chars —
+			// activeIdx=0: wetInnerW=(1*36-1)=35, infoStr with "1m 0s" is 29 chars —
 			// exercises the truncation path in buildChanWater.
 			name:            "first step active (activeIdx=0)",
 			step:            "implement",
@@ -922,7 +922,7 @@ func TestTuiAqueductRow_WaterFillsOnlyToActiveStep(t *testing.T) {
 			elapsed:         60 * time.Second,
 		},
 		{
-			// activeIdx=1: wetInnerW=(2*28-1)=55, dryInnerW=27.
+			// activeIdx=1: wetInnerW=(2*36-1)=71, dryInnerW=35.
 			name:            "second step active (activeIdx=1)",
 			step:            "review",
 			activeIdx:       1,
@@ -955,7 +955,7 @@ func TestTuiAqueductRow_WaterFillsOnlyToActiveStep(t *testing.T) {
 			}
 
 			// Visual layout (no waterfall for mid-pipeline steps):
-			//   prefix(14) + "█"(1) + inner(82) + "█"(1)
+			//   prefix(14) + "█"(1) + inner(106) + "█"(1)
 			//   wetInnerW = (activeIdx+1)*pillarW - 1  (off-by-one corrected)
 			wetInnerW := (tc.activeIdx+1)*pillarW - 1
 			dryInnerW := innerW - wetInnerW
@@ -999,7 +999,7 @@ func TestTuiAqueductRow_IdleAqueductHasNoWater(t *testing.T) {
 
 	const (
 		prefixLen = 14
-		pillarW   = 28
+		pillarW   = 36
 		chanW     = 3 * pillarW
 		innerW    = chanW - 2
 	)
@@ -1097,13 +1097,13 @@ func TestTuiAqueductRow_MipmapArchLinesHaveExpectedCount(t *testing.T) {
 
 // --- TestViewDroughtArch — drought display ---
 
-// TestViewDroughtArch_LineCount verifies viewDroughtArch returns exactly 15 lines:
-// 1 drought label + 14 pillar rows (no channel water, no waterfall, no step labels).
+// TestViewDroughtArch_LineCount verifies viewDroughtArch returns exactly 13 lines:
+// 1 drought label + 12 pillar rows (no channel water, no waterfall, no step labels).
 func TestViewDroughtArch_LineCount(t *testing.T) {
 	m := newDashboardTUIModel("", "")
 	m.width = 80
 	lines := m.viewDroughtArch()
-	const wantLines = 15 // 1 label + 14 pillar rows
+	const wantLines = 13 // 1 label + 12 pillar rows
 	if len(lines) != wantLines {
 		t.Errorf("viewDroughtArch() returned %d lines, want %d", len(lines), wantLines)
 	}
@@ -1119,41 +1119,41 @@ func TestViewDroughtArch_LabelContainsDrought(t *testing.T) {
 	}
 }
 
-// TestViewDroughtArch_CrownRowContainsBlocks verifies pillar row 5 (lines[6])
-// contains exactly 28 consecutive ▒ characters.
+// TestViewDroughtArch_CrownRowContainsBlocks verifies pillar row 4 (lines[5])
+// contains exactly 36 consecutive ▒ characters.
 func TestViewDroughtArch_CrownRowContainsBlocks(t *testing.T) {
 	m := newDashboardTUIModel("", "")
 	m.width = 80
 	lines := m.viewDroughtArch()
 
-	if len(lines) < 7 {
+	if len(lines) < 6 {
 		t.Fatalf("not enough lines: got %d", len(lines))
 	}
 
-	// lines[0] = drought label; lines[1..14] = pillar rows 0..13.
-	// Pillar row 5 (crown) = lines[6].
-	crownLine := stripANSITest(lines[6])
+	// lines[0] = drought label; lines[1..12] = pillar rows 0..11.
+	// Pillar row 4 (crown) = lines[5].
+	crownLine := stripANSITest(lines[5])
 
-	const pillarW = 28
+	const pillarW = 36
 	if want := strings.Repeat("▒", pillarW); !strings.Contains(crownLine, want) {
 		t.Errorf("drought crown row should contain %d consecutive ▒ chars, got %q", pillarW, crownLine)
 	}
 }
 
 // TestViewDroughtArch_PierBodyRowHasCorrectStructure verifies a pier body row
-// (lines[10], corresponding to pillar row 9) has the expected 12sp+░+4▒+11sp pattern.
+// (lines[9], corresponding to pillar row 8) has the expected 15sp+░+5▒+15sp pattern.
 func TestViewDroughtArch_PierBodyRowHasCorrectStructure(t *testing.T) {
 	const termWidth = 80
-	const pillarW   = 28
-	const leftPad   = (termWidth - pillarW) / 2 // = 26
+	const pillarW   = 36
+	const leftPad   = (termWidth - pillarW) / 2 // = 22
 
 	m := newDashboardTUIModel("", "")
 	m.width = termWidth
 	lines := m.viewDroughtArch()
 
-	// lines[0] = drought label, lines[1..14] = pillar rows 0..13.
-	// Pillar row 9 (first pier body) = lines[10].
-	pierLine := stripANSITest(lines[10])
+	// lines[0] = drought label, lines[1..12] = pillar rows 0..11.
+	// Pillar row 8 (first pier body) = lines[9].
+	pierLine := stripANSITest(lines[9])
 	runes := []rune(pierLine)
 
 	if len(runes) < leftPad+pillarW {
@@ -1161,23 +1161,23 @@ func TestViewDroughtArch_PierBodyRowHasCorrectStructure(t *testing.T) {
 	}
 	content := runes[leftPad : leftPad+pillarW]
 
-	// Expected structure: 12 spaces + ░ + 4 ▒ + 11 spaces.
-	for i := 0; i < 12; i++ {
+	// Expected structure: 15 spaces + ░ + 5 ▒ + 15 spaces.
+	for i := 0; i < 15; i++ {
 		if content[i] != ' ' {
 			t.Errorf("pier row content[%d] = %q, want ' '", i, content[i])
 			break
 		}
 	}
-	if content[12] != '░' {
-		t.Errorf("pier row content[12] = %q, want '░'", content[12])
+	if content[15] != '░' {
+		t.Errorf("pier row content[15] = %q, want '░'", content[15])
 	}
-	for i := 13; i < 17; i++ {
+	for i := 16; i < 21; i++ {
 		if content[i] != '▒' {
 			t.Errorf("pier row content[%d] = %q, want '▒'", i, content[i])
 			break
 		}
 	}
-	for i := 17; i < 28; i++ {
+	for i := 21; i < 36; i++ {
 		if content[i] != ' ' {
 			t.Errorf("pier row content[%d] = %q, want ' '", i, content[i])
 			break
@@ -1401,14 +1401,14 @@ func TestTuiAqueductRow_WaterfallOnlyOnLastStep(t *testing.T) {
 
 	const (
 		prefixLen = 14
-		pillarW   = 28
+		pillarW   = 36
 		nSteps    = 3
 		chanW     = nSteps * pillarW
 		innerW    = chanW - 2
 		wfExitLen = 4 // "░▒▓▓" — visible chars in wfExit
 	)
-	const rowLenWithWF    = prefixLen + 1 + innerW + 1 + wfExitLen // 102
-	const rowLenWithoutWF = prefixLen + 1 + innerW + 1             // 98
+	const rowLenWithWF    = prefixLen + 1 + innerW + 1 + wfExitLen // 126
+	const rowLenWithoutWF = prefixLen + 1 + innerW + 1             // 122
 
 	cases := []struct {
 		name      string
