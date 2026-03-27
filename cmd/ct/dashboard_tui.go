@@ -695,18 +695,8 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	}
 
 	// Waterfall brightness rotates with frame so ▓ appears to fall.
-	wfA := func(sub int) lipgloss.Style {
-		switch (sub + frame) % 3 {
-		case 0:
-			return wfBright
-		case 1:
-			return wfMid
-		default:
-			return wfDim
-		}
-	}
-
-	wfExit := wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓")
+	wfAccent := []lipgloss.Style{wfBright, wfMid, wfDim}[frame%3]
+	wfExit := wfDim.Render("░") + wfMid.Render("▒") + wfAccent.Render("▓▓")
 
 	// Mipmap arch: select the mipmap that fits within one pillar slot (archPillarW),
 	// and center it under the active step's slot. If no step is active, center
