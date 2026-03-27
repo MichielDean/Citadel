@@ -592,17 +592,9 @@ func (m dashboardTUIModel) viewPeekSelectOverlay() string {
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }
 
-// tuiAqueductRow renders a single aqueduct as a durdraw pillar diagram.
-// Layout (top to bottom): name → info → step labels → channel top (▀) → channel water → 9 pillar rows.
-// Total: 14 lines (1 name + 1 info + 1 label + 2 channel + 9 pillar).
-//
-// Pillar row layout (28 chars wide):
-//
-//	row 5:   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  (arch crown / road)
-//	row 6:         ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒       (arch opening widens)
-//	row 7:            ░▒▒▒▒▒▒▒▒▒            (arch narrowing)
-//	row 8:             ░▒▒▒▒▒▒▒             (arch narrowing)
-//	rows 9–13:           ░▒▒▒▒              (pier body)
+// tuiAqueductRow renders a single aqueduct as a pixel art arch diagram.
+// Layout (top to bottom): name → info → step labels → channel top (▀) → channel water → mipmap arch.
+// Total lines: 5 header rows + mipmap height (22/30/37 depending on terminal width).
 //
 // Water flows only to the active step — columns beyond it show a dry channel.
 // Idle aqueducts (no active droplet) show no water at all.
@@ -740,9 +732,10 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 
 	// Mipmap arch: select the pre-rendered pixel art arch for the available width,
 	// center it in the terminal, and use its lines in place of the ASCII pillar rows.
+	mipmapW := archMipmapWidth(m.width)
 	mipmap := selectArchMipmap(m.width)
 	mipmapLines := strings.Split(strings.TrimRight(mipmap, "\n"), "\n")
-	leftPad := (m.width - archMipmapWidth(m.width)) / 2
+	leftPad := (m.width - mipmapW) / 2
 	if leftPad < 0 {
 		leftPad = 0
 	}
