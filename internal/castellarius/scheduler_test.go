@@ -2381,6 +2381,159 @@ func TestHeartbeatRepo_StaleDebounce_PrunedWhenDropletNoLongerInProgress(t *test
 	}
 }
 
+// TestHeartbeatRepo_StallWithAssignee_SpawnsSession verifies that when a stall
+// is detected and the droplet has an assignee, runner.Spawn is called so the
+// session can resume. session.Spawn() internally detects prior Claude session
+// files and uses --continue when they exist (or spawns fresh when they don't),
+// so the heartbeat just needs to call Spawn unconditionally.
+//
+// This covers both acceptance paths:
+//   - prior session → session.Spawn selects --continue
+//   - no prior session → session.Spawn spawns fresh
+func TestHeartbeatRepo_StallWithAssignee_SpawnsSession(t *testing.T) {
+	// Mock tmux as alive so liveness check passes through to stall detector.
+	orig := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isTmuxAliveFn = orig })
+
+	client := newMockClient()
+	runner := newMockRunner(client)
+
+	item := &cistern.Droplet{
+		ID:                "stall-respawn",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	// Stall note must still be written.
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+
+	// Spawn must have been called exactly once.
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if len(calls) != 1 {
+		t.Fatalf("expected runner.Spawn called once, got %d calls", len(calls))
+	}
+
+	// Spawn request must reference the correct item and step.
+	req := calls[0]
+	if req.Item.ID != item.ID {
+		t.Errorf("spawn req item ID = %q, want %q", req.Item.ID, item.ID)
+	}
+	if req.Step.Name != "implement" {
+		t.Errorf("spawn req step = %q, want %q", req.Step.Name, "implement")
+	}
+	if req.AqueductName != "alpha" {
+		t.Errorf("spawn req aqueduct = %q, want %q", req.AqueductName, "alpha")
+	}
+
+	// Status and assignee must be unchanged — no client.Assign was called.
+	if item.Status != "in_progress" {
+		t.Errorf("item status = %q, want in_progress", item.Status)
+	}
+	if item.Assignee != "alpha" {
+		t.Errorf("item assignee = %q, want alpha", item.Assignee)
+	}
+}
+
+// TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn verifies that when a
+// stall is detected but the droplet has no assignee, the stall note is written
+// but runner.Spawn is NOT called (there is no session to resume).
+func TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn(t *testing.T) {
+	client := newMockClient()
+	runner := newMockRunner(client)
+
+	item := &cistern.Droplet{
+		ID:                "stall-no-assignee",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	// Stall note must still be written.
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+
+	// Spawn must NOT have been called.
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if len(calls) != 0 {
+		t.Errorf("expected runner.Spawn not called for no-assignee droplet, got %d calls", len(calls))
+	}
+}
+
+// TestHeartbeatRepo_SpawnFailure_ClearsDebounce verifies that when respawnStalledDroplet
+// returns an error (Spawn fails), the debounce entry is deleted so the next heartbeat
+// re-detects the stall and retries the spawn.
+func TestHeartbeatRepo_SpawnFailure_ClearsDebounce(t *testing.T) {
+	// Mock tmux as alive so liveness check passes through to stall detector.
+	orig := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isTmuxAliveFn = orig })
+
+	client := newMockClient()
+	runner := newMockRunner(client)
+	runner.err = fmt.Errorf("tmux spawn failed")
+
+	item := &cistern.Droplet{
+		ID:                "stall-spawn-fail",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	// First tick: stalled → note written → Spawn fails → debounce must be cleared.
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+	if _, armed := sched.lastStallNoted[item.ID]; armed {
+		t.Error("expected debounce cleared after Spawn failure, but lastStallNoted is still set")
+	}
+
+	// Second tick: stall re-detected → second note written → Spawn called again.
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 2 {
+		t.Errorf("expected 2 stall notes after retry tick, got %d", len(client.attached))
+	}
+}
+
 // --- worktree lifecycle logging tests ---
 
 // TestPrepareDropletWorktree_LogsWorktreeCreated verifies that prepareDropletWorktree
