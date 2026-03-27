@@ -303,14 +303,8 @@ func TestHeartbeatRepo(t *testing.T) {
 			sched.heartbeatRepo(context.Background(), sched.config.Repos[0])
 			client.mu.Lock()
 			defer client.mu.Unlock()
-			got := 0
-			for _, n := range client.attached {
-				if n.id == tc.item.ID {
-					got++
-				}
-			}
-			if got != tc.wantNotes {
-				t.Errorf("stall notes = %d, want %d", got, tc.wantNotes)
+			if len(client.attached) != tc.wantNotes {
+				t.Errorf("stall notes = %d, want %d", len(client.attached), tc.wantNotes)
 			}
 		})
 	}

@@ -1218,6 +1218,7 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 	}
 
 	threshold := stallThresholdDuration(s.config)
+	logDir := s.resolveSessionLogRoot()
 
 	for _, item := range items {
 		// Items with outcomes are handled by the observe phase — skip them.
@@ -1228,7 +1229,6 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 		// Evaluate three activity signals.
 		noteSig, noteLabel := latestNoteSignal(client, item.ID)
 		worktreeSig, worktreeLabel := latestWorktreeSignal(s.sandboxRoot, repo.Name, item.ID)
-		logDir := s.resolveSessionLogRoot()
 		logSig, logLabel := sessionLogSignal(logDir, repo.Name, item.Assignee)
 
 		maxSig := latestTime(noteSig, worktreeSig, logSig)
