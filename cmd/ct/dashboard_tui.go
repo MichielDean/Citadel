@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,41 @@ import (
 
 	"github.com/MichielDean/cistern/internal/cistern"
 )
+
+// Pixel-art arch mipmaps — pre-rendered ANSI art at three sizes.
+// selectArchMipmap picks the level whose width is closest to the available slot.
+
+//go:embed assets/arch_mipmaps/arch_100x38.ansi
+var archMipmap100x38 string
+
+//go:embed assets/arch_mipmaps/arch_80x30.ansi
+var archMipmap80x30 string
+
+//go:embed assets/arch_mipmaps/arch_60x22.ansi
+var archMipmap60x22 string
+
+// archMipmapStripper removes chafa's cursor-visibility escape sequences
+// (\x1b[?25l hide-cursor and \x1b[?25h show-cursor) from embedded mipmap files.
+// These sequences are terminal control signals, not visual content; bubbletea
+// manages cursor visibility independently.
+var archMipmapStripper = strings.NewReplacer("\x1b[?25l", "", "\x1b[?25h", "")
+
+// selectArchMipmap returns the ANSI arch mipmap whose width best fits availableWidth,
+// with cursor-control sequences stripped.
+//   - width >= 90  → 100x38 mipmap (37 visual lines)
+//   - width >= 70  → 80x30 mipmap  (30 visual lines)
+//   - width < 70   → 60x22 mipmap  (22 visual lines)
+func selectArchMipmap(availableWidth int) string {
+	var raw string
+	if availableWidth >= 90 {
+		raw = archMipmap100x38
+	} else if availableWidth >= 70 {
+		raw = archMipmap80x30
+	} else {
+		raw = archMipmap60x22
+	}
+	return archMipmapStripper.Replace(raw)
+}
 
 // insideTmux reports whether the process is running inside a tmux session.
 // Replaced in tests to control environment without requiring a real tmux session.
@@ -683,42 +719,32 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		}
 	}
 
-	wfRows := [14]string{
-		wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		wfDim.Render("░") + wfA(1).Render("▓") + wfMid.Render("▒"),
-		" " + wfMid.Render("▒") + wfA(2).Render("▓") + wfMid.Render("▒"),
-		" " + wfDim.Render("░") + wfA(0).Render("▓") + wfMid.Render("▒"),
-		"  " + wfA(1).Render("▓") + wfMid.Render("▒"),
-		"  " + wfA(2).Render("▓") + wfMid.Render("▒"),
-		"  " + wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		wfDim.Render("░≈") + wfMid.Render("▒▒") + wfA(1).Render("▓▓") + wfMid.Render("▒▒") + wfDim.Render("≈░"),
-		wfDim.Render("≈░") + wfMid.Render("▒▒") + wfA(2).Render("▓▓") + wfMid.Render("▒▒") + wfDim.Render("░≈"),
-		" " + wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		" " + wfDim.Render("░") + wfMid.Render("▒") + wfA(1).Render("▓") + wfMid.Render("▒") + wfDim.Render("░"),
-		"  " + wfDim.Render("░") + wfA(2).Render("▓") + wfDim.Render("░"),
-		"  " + wfMid.Render("▒") + wfA(0).Render("▓") + wfMid.Render("▒"),
-		"  " + wfDim.Render("░") + wfA(1).Render("▒") + wfDim.Render("░"),
-	}
-
 	wfExit := wfDim.Render("░") + wfMid.Render("▒") + wfA(0).Render("▓▓")
 	l2 := indent + archRoleChannelWall.Render("█") + water + archRoleChannelWall.Render("█")
 	if isLastStep {
 		l2 += wfExit
 	}
 
-	// Build 9 arch lines: tile one pillar column per step using the static pixel map,
-	// then append the waterfall column when the droplet is on the final step.
+	// Mipmap arch: select the pre-rendered pixel art arch for the available width,
+	// center it in the terminal, and use its lines in place of the ASCII pillar rows.
+	mipmap := selectArchMipmap(m.width)
+	mipmapLines := strings.Split(strings.TrimRight(mipmap, "\n"), "\n")
+	var mipmapDisplayW int
+	if m.width >= 90 {
+		mipmapDisplayW = 100
+	} else if m.width >= 70 {
+		mipmapDisplayW = 80
+	} else {
+		mipmapDisplayW = 60
+	}
+	leftPad := (m.width - mipmapDisplayW) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	padStr := strings.Repeat(" ", leftPad)
 	var archLines []string
-	for r := 5; r < 14; r++ {
-		var sb strings.Builder
-		sb.WriteString(indent)
-		for _, step := range steps {
-			sb.WriteString(renderArchPillarRow(r, isActive(step)))
-		}
-		if isLastStep {
-			sb.WriteString(wfRows[r-5])
-		}
-		archLines = append(archLines, sb.String())
+	for _, line := range mipmapLines {
+		archLines = append(archLines, padStr+line)
 	}
 
 	// Label line: step names centered within pillarW, active step bold+green.
