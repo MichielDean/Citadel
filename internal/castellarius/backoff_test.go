@@ -9,7 +9,7 @@ import (
 // TestQuickExitTracker_ComputeBackoff_ExponentialRamp verifies the doubling
 // sequence: threshold, 2×, 4×, 8×… up to maxBackoff.
 func TestQuickExitTracker_ComputeBackoff_ExponentialRamp(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	tests := []struct {
 		n    int
@@ -19,9 +19,9 @@ func TestQuickExitTracker_ComputeBackoff_ExponentialRamp(t *testing.T) {
 		{2, 60 * time.Second},
 		{3, 2 * time.Minute},
 		{4, 4 * time.Minute},
-		{5, 8 * time.Minute},
-		{6, 16 * time.Minute},
-		{7, 30 * time.Minute}, // 32m would exceed max — capped
+		{5, 5 * time.Minute}, // 8m would exceed max — capped
+		{6, 5 * time.Minute},
+		{7, 5 * time.Minute},
 	}
 
 	for _, tt := range tests {
@@ -50,7 +50,7 @@ func TestQuickExitTracker_ComputeBackoff_CapsAtMax(t *testing.T) {
 // consecutive-exit counts (shift > 62) do not produce wrapped/negative values
 // and always return maxBackoff instead.
 func TestQuickExitTracker_ComputeBackoff_OverflowProtection(t *testing.T) {
-	maxBackoff := 30 * time.Minute
+	maxBackoff := 5 * time.Minute
 	tracker := newQuickExitTracker(30*time.Second, maxBackoff)
 
 	for _, n := range []int{63, 64, 100, 1000} {
@@ -66,7 +66,7 @@ func TestQuickExitTracker_ComputeBackoff_OverflowProtection(t *testing.T) {
 
 // TestQuickExitTracker_IsQuickExit verifies the threshold boundary.
 func TestQuickExitTracker_IsQuickExit_ThresholdBoundary(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	if !tracker.isQuickExit(0) {
 		t.Error("0 duration should be a quick exit")
@@ -85,7 +85,7 @@ func TestQuickExitTracker_IsQuickExit_ThresholdBoundary(t *testing.T) {
 // TestQuickExitTracker_RecordQuickExit_SetsExponentialBackoff verifies that
 // each successive quick exit doubles the backoff delay.
 func TestQuickExitTracker_RecordQuickExit_SetsExponentialBackoff(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// First exit: 30s backoff.
 	delay1, justDegraded1 := tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -113,7 +113,7 @@ func TestQuickExitTracker_RecordQuickExit_SetsExponentialBackoff(t *testing.T) {
 // currentBackoff returns a positive value right after a quick exit, and zero
 // for droplets with no recorded exits.
 func TestQuickExitTracker_CurrentBackoff_ReflectsActiveWindow(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	if remaining := tracker.currentBackoff("unknown"); remaining != 0 {
 		t.Errorf("unknown droplet: want 0, got %v", remaining)
@@ -129,7 +129,7 @@ func TestQuickExitTracker_CurrentBackoff_ReflectsActiveWindow(t *testing.T) {
 // TestQuickExitTracker_CurrentBackoff_ReturnsZeroWhenExpired verifies that an
 // expired backoff is treated as inactive.
 func TestQuickExitTracker_CurrentBackoff_ReturnsZeroWhenExpired(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Inject an already-expired backoff directly.
 	tracker.mu.Lock()
@@ -144,7 +144,7 @@ func TestQuickExitTracker_CurrentBackoff_ReturnsZeroWhenExpired(t *testing.T) {
 
 // TestQuickExitTracker_ConsecutiveExits checks the exit counter.
 func TestQuickExitTracker_ConsecutiveExits_TracksCount(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	if n := tracker.consecutiveExits("drop1"); n != 0 {
 		t.Errorf("unknown droplet: want 0, got %d", n)
@@ -159,7 +159,7 @@ func TestQuickExitTracker_ConsecutiveExits_TracksCount(t *testing.T) {
 
 // TestQuickExitTracker_ResetDroplet_ClearsPerDropletState verifies reset.
 func TestQuickExitTracker_ResetDroplet_ClearsPerDropletState(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	tracker.recordQuickExit("drop1", "claude", "alpha")
 	tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -179,7 +179,7 @@ func TestQuickExitTracker_ResetDroplet_ClearsPerDropletState(t *testing.T) {
 // TestQuickExitTracker_IndependentDroplets confirms that per-droplet state is
 // isolated — resetting one droplet does not affect others.
 func TestQuickExitTracker_IndependentDroplets(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	tracker.recordQuickExit("drop1", "claude", "alpha")
 	tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -204,7 +204,7 @@ func TestQuickExitTracker_IndependentDroplets(t *testing.T) {
 // TestQuickExitTracker_ProviderDegradation_DetectedAtThreshold verifies that
 // the provider is flagged when ≥3 quick exits come from ≥2 distinct aqueducts.
 func TestQuickExitTracker_ProviderDegradation_DetectedAtThreshold(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Two exits from the same aqueduct — not enough distinct aqueducts.
 	tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -226,7 +226,7 @@ func TestQuickExitTracker_ProviderDegradation_DetectedAtThreshold(t *testing.T) 
 // TestQuickExitTracker_ProviderDegradation_RequiresMultipleAqueducts confirms
 // that three exits from a single aqueduct alone do not trigger degradation.
 func TestQuickExitTracker_ProviderDegradation_RequiresMultipleAqueducts(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	for i := range 3 {
 		_, justDegraded := tracker.recordQuickExit(fmt.Sprintf("drop%d", i), "claude", "alpha")
@@ -242,7 +242,7 @@ func TestQuickExitTracker_ProviderDegradation_RequiresMultipleAqueducts(t *testi
 // TestQuickExitTracker_ProviderDegradation_MaxBackoffApplied verifies that
 // once the provider degrades, the droplet that triggered it receives maxBackoff.
 func TestQuickExitTracker_ProviderDegradation_MaxBackoffApplied(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// First two exits from alpha — not yet degraded.
 	delay1, _ := tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -256,15 +256,15 @@ func TestQuickExitTracker_ProviderDegradation_MaxBackoffApplied(t *testing.T) {
 	if !justDegraded {
 		t.Fatal("expected justDegraded=true on triggering exit")
 	}
-	if delay3 != 30*time.Minute {
-		t.Errorf("on degradation: want maxBackoff 30m, got %v", delay3)
+	if delay3 != 5*time.Minute {
+		t.Errorf("on degradation: want maxBackoff 5m, got %v", delay3)
 	}
 }
 
 // TestQuickExitTracker_ProviderDegradation_AlreadyDegradedUsesMaxBackoff
 // verifies that new exits when provider is already degraded receive maxBackoff.
 func TestQuickExitTracker_ProviderDegradation_AlreadyDegradedUsesMaxBackoff(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Trigger degradation.
 	tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -276,15 +276,15 @@ func TestQuickExitTracker_ProviderDegradation_AlreadyDegradedUsesMaxBackoff(t *t
 	if justDegraded {
 		t.Error("provider was already degraded — justDegraded should be false")
 	}
-	if delay != 30*time.Minute {
-		t.Errorf("already-degraded: want maxBackoff 30m, got %v", delay)
+	if delay != 5*time.Minute {
+		t.Errorf("already-degraded: want maxBackoff 5m, got %v", delay)
 	}
 }
 
 // TestQuickExitTracker_FastForwardToMaxBackoff verifies that fast-forward
 // extends a short backoff to the full max.
 func TestQuickExitTracker_FastForwardToMaxBackoff_ExtendsShortBackoff(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	tracker.recordQuickExit("drop1", "claude", "alpha")
 	initial := tracker.currentBackoff("drop1")
@@ -294,18 +294,18 @@ func TestQuickExitTracker_FastForwardToMaxBackoff_ExtendsShortBackoff(t *testing
 
 	tracker.fastForwardToMaxBackoff("drop1")
 	remaining := tracker.currentBackoff("drop1")
-	if remaining < 29*time.Minute {
-		t.Errorf("after fast-forward: expected ~30m remaining, got %v", remaining)
+	if remaining < 4*time.Minute {
+		t.Errorf("after fast-forward: expected ~5m remaining, got %v", remaining)
 	}
 }
 
 // TestQuickExitTracker_FastForwardToMaxBackoff_NoOpWhenAlreadyAtMax confirms
 // that a droplet already at max backoff is not modified.
 func TestQuickExitTracker_FastForwardToMaxBackoff_NoOpWhenAlreadyAtMax(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	tracker.mu.Lock()
-	maxUntil := time.Now().Add(30 * time.Minute)
+	maxUntil := time.Now().Add(5 * time.Minute)
 	tracker.dropletBackoffUntil["drop1"] = maxUntil
 	tracker.mu.Unlock()
 
@@ -313,7 +313,7 @@ func TestQuickExitTracker_FastForwardToMaxBackoff_NoOpWhenAlreadyAtMax(t *testin
 
 	remaining := tracker.currentBackoff("drop1")
 	// Should still be ≤ maxBackoff (not extended beyond it).
-	if remaining > 30*time.Minute {
+	if remaining > 5*time.Minute {
 		t.Errorf("fast-forward should not exceed maxBackoff, got %v", remaining)
 	}
 }
@@ -321,7 +321,7 @@ func TestQuickExitTracker_FastForwardToMaxBackoff_NoOpWhenAlreadyAtMax(t *testin
 // TestQuickExitTracker_ProviderRecovery_ClearsOnFirstSuccess verifies that the
 // first successful session completion clears provider degradation.
 func TestQuickExitTracker_ProviderRecovery_ClearsOnFirstSuccess(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Trigger degradation.
 	tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -345,7 +345,7 @@ func TestQuickExitTracker_ProviderRecovery_ClearsOnFirstSuccess(t *testing.T) {
 // TestQuickExitTracker_ProviderRecovery_ReturnsOtherProviderUntouched checks
 // that recovering one provider does not affect others.
 func TestQuickExitTracker_ProviderRecovery_ReturnsOtherProviderUntouched(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Degrade both providers.
 	tracker.recordQuickExit("drop1", "claude", "alpha")
@@ -370,7 +370,7 @@ func TestQuickExitTracker_ProviderRecovery_ReturnsOtherProviderUntouched(t *test
 // TestQuickExitTracker_ProviderDegradation_StaleEventsIgnored verifies that
 // events outside providerDegradedWindow are pruned and do not count.
 func TestQuickExitTracker_ProviderDegradation_StaleEventsIgnored(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Inject stale events (outside providerDegradedWindow) directly.
 	staleTime := time.Now().Add(-10 * time.Minute)
@@ -395,7 +395,7 @@ func TestQuickExitTracker_ProviderDegradation_StaleEventsIgnored(t *testing.T) {
 // TestQuickExitTracker_ShouldLogAndMarkProviderDegraded_RateLimits verifies
 // that the log-rate guard allows exactly one message per interval.
 func TestQuickExitTracker_ShouldLogAndMarkProviderDegraded_RateLimits(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// First call with no prior entry: should permit logging.
 	if !tracker.shouldLogAndMarkProviderDegraded("claude") {
@@ -411,7 +411,7 @@ func TestQuickExitTracker_ShouldLogAndMarkProviderDegraded_RateLimits(t *testing
 // TestQuickExitTracker_DifferentProviders_Isolated confirms that events for
 // one provider do not affect another provider's state.
 func TestQuickExitTracker_DifferentProviders_Isolated(t *testing.T) {
-	tracker := newQuickExitTracker(30*time.Second, 30*time.Minute)
+	tracker := newQuickExitTracker(30*time.Second, 5*time.Minute)
 
 	// Degrade claude.
 	tracker.recordQuickExit("drop1", "claude", "alpha")
