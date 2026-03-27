@@ -314,8 +314,8 @@ func TestDispatch_DropletsWithDegradedProvider_FastForwardedToMax(t *testing.T) 
 
 	// The droplet should now be at max backoff.
 	remaining := sched.quickExitBackoff.currentBackoff("degrade-drop")
-	if remaining < 29*time.Minute {
-		t.Errorf("degraded provider: expected ~30m backoff, got %v", remaining)
+	if remaining < 4*time.Minute {
+		t.Errorf("degraded provider: expected ~5m backoff, got %v", remaining)
 	}
 }
 
@@ -416,7 +416,7 @@ func TestNewFromParts_ReadsBackoffConfig(t *testing.T) {
 }
 
 // TestNewFromParts_DefaultsWhenConfigZero verifies that zero config values fall
-// back to package defaults (30s threshold, 30m max backoff).
+// back to package defaults (30s threshold, 5m max backoff).
 func TestNewFromParts_DefaultsWhenConfigZero(t *testing.T) {
 	config := testConfig()
 	// Leave QuickExitThresholdSeconds and MaxBackoffMinutes at zero.

@@ -12,7 +12,7 @@ const (
 	defaultQuickExitThreshold = 30 * time.Second
 
 	// defaultMaxBackoff is the upper bound for per-droplet exponential backoff.
-	defaultMaxBackoff = 30 * time.Minute
+	defaultMaxBackoff = 5 * time.Minute
 
 	// providerDegradedWindow is the rolling window within which quick-exit
 	// events are counted when detecting a provider-wide incident.
