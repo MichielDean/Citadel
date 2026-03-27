@@ -523,12 +523,14 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 }
 
 // viewDroughtArch renders a single unlabeled dry pillar arch centered in the terminal.
-// Called when all aqueducts are idle (drought state). Shows:
-//   - "drought" label centered above the arch in dim styling
-//   - One 36-char-wide pillar rendered with dim grey (no water channel, no waterfall, no step labels)
+// Called when all aqueducts are idle (drought state). Uses the same 36x12 pixel-art
+// mipmap as the active arch, rendered in dim styling.
 //
-// Returns 13 lines: 1 drought label + 12 pillar rows.
+// Returns 1 + mipmapLines lines: drought label + mipmap rows.
 func (m dashboardTUIModel) viewDroughtArch() []string {
+	mipmap := selectArchMipmap(archPillarW)
+	mipmapLines := strings.Split(strings.TrimRight(mipmap, "\n"), "\n")
+
 	leftPad := (m.width - archPillarW) / 2
 	if leftPad < 0 {
 		leftPad = 0
@@ -537,10 +539,10 @@ func (m dashboardTUIModel) viewDroughtArch() []string {
 
 	droughtLabel := tuiStyleDim.Render(tuiPadCenter("drought", m.width))
 
-	lines := make([]string, 0, archPillarH+1)
+	lines := make([]string, 0, len(mipmapLines)+1)
 	lines = append(lines, droughtLabel)
-	for r := 0; r < archPillarH; r++ {
-		lines = append(lines, indent+renderDroughtPillarRow(r))
+	for _, line := range mipmapLines {
+		lines = append(lines, tuiStyleDim.Render(indent+line))
 	}
 	return lines
 }
