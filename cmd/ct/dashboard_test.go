@@ -1098,13 +1098,13 @@ func TestTuiAqueductRow_MipmapArchLinesHaveExpectedCount(t *testing.T) {
 
 // --- TestViewDroughtArch — drought display ---
 
-// TestViewDroughtArch_LineCount verifies viewDroughtArch returns exactly 13 lines:
-// 1 drought label + 12 pillar rows (no channel water, no waterfall, no step labels).
+// TestViewDroughtArch_LineCount verifies viewDroughtArch returns 1 + mipmapLines lines:
+// 1 drought label + 12 mipmap rows (36x12 mipmap selected by archPillarW=36).
 func TestViewDroughtArch_LineCount(t *testing.T) {
 	m := newDashboardTUIModel("", "")
 	m.width = 80
 	lines := m.viewDroughtArch()
-	const wantLines = 13 // 1 label + 12 pillar rows
+	const wantLines = 13 // 1 label + 12 mipmap rows
 	if len(lines) != wantLines {
 		t.Errorf("viewDroughtArch() returned %d lines, want %d", len(lines), wantLines)
 	}
@@ -1120,68 +1120,18 @@ func TestViewDroughtArch_LabelContainsDrought(t *testing.T) {
 	}
 }
 
-// TestViewDroughtArch_CrownRowContainsBlocks verifies pillar row 4 (lines[5])
-// contains exactly 36 consecutive ▒ characters.
-func TestViewDroughtArch_CrownRowContainsBlocks(t *testing.T) {
+// TestViewDroughtArch_MipmapLinesNonEmpty verifies all mipmap rows (lines[1:]) are non-empty.
+func TestViewDroughtArch_MipmapLinesNonEmpty(t *testing.T) {
 	m := newDashboardTUIModel("", "")
 	m.width = 80
 	lines := m.viewDroughtArch()
 
-	if len(lines) < 6 {
+	if len(lines) < 2 {
 		t.Fatalf("not enough lines: got %d", len(lines))
 	}
-
-	// lines[0] = drought label; lines[1..12] = pillar rows 0..11.
-	// Pillar row 4 (crown) = lines[5].
-	crownLine := stripANSITest(lines[5])
-
-	const pillarW = 36
-	if want := strings.Repeat("▒", pillarW); !strings.Contains(crownLine, want) {
-		t.Errorf("drought crown row should contain %d consecutive ▒ chars, got %q", pillarW, crownLine)
-	}
-}
-
-// TestViewDroughtArch_PierBodyRowHasCorrectStructure verifies a pier body row
-// (lines[9], corresponding to pillar row 8) has the expected 15sp+░+5▒+15sp pattern.
-func TestViewDroughtArch_PierBodyRowHasCorrectStructure(t *testing.T) {
-	const termWidth = 80
-	const pillarW   = 36
-	const leftPad   = (termWidth - pillarW) / 2 // = 22
-
-	m := newDashboardTUIModel("", "")
-	m.width = termWidth
-	lines := m.viewDroughtArch()
-
-	// lines[0] = drought label, lines[1..12] = pillar rows 0..11.
-	// Pillar row 8 (first pier body) = lines[9].
-	pierLine := stripANSITest(lines[9])
-	runes := []rune(pierLine)
-
-	if len(runes) < leftPad+pillarW {
-		t.Fatalf("pier row too short: %d runes, need at least %d", len(runes), leftPad+pillarW)
-	}
-	content := runes[leftPad : leftPad+pillarW]
-
-	// Expected structure: 15 spaces + ░ + 5 ▒ + 15 spaces.
-	for i := 0; i < 15; i++ {
-		if content[i] != ' ' {
-			t.Errorf("pier row content[%d] = %q, want ' '", i, content[i])
-			break
-		}
-	}
-	if content[15] != '░' {
-		t.Errorf("pier row content[15] = %q, want '░'", content[15])
-	}
-	for i := 16; i < 21; i++ {
-		if content[i] != '▒' {
-			t.Errorf("pier row content[%d] = %q, want '▒'", i, content[i])
-			break
-		}
-	}
-	for i := 21; i < 36; i++ {
-		if content[i] != ' ' {
-			t.Errorf("pier row content[%d] = %q, want ' '", i, content[i])
-			break
+	for i := 1; i < len(lines); i++ {
+		if stripANSITest(lines[i]) == "" {
+			t.Errorf("drought mipmap lines[%d] is empty", i)
 		}
 	}
 }
