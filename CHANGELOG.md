@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Drought hooks: add 30s timeout to git fetch, auto-deploy skills and cataractae files (ci-mbo2j)
+
+**git_sync enhancements:**
+- Added 30-second timeout to `git fetch origin` to prevent stalled networks from blocking RunDroughtHooks indefinitely
+- Now auto-deploys `skills/` from origin/main into `~/.cistern/skills/` alongside workflow YAML
+- Now auto-deploys cataractae source files (`PERSONA.md`, `INSTRUCTIONS.md`) from origin/main
+- Added validation: warns if `git_sync` is not the first drought hook (required so fresh roles and skills are available to subsequent hooks)
+- Added missing skills detector: logs prominent warnings during each drought cycle when a workflow references a skill not installed locally
+
+**db_vacuum behavior change:**
+- Changed from `VACUUM` to `PRAGMA wal_checkpoint(TRUNCATE)` — reclaims space without exclusive lock, safe to run while agents are active
+- Previous `VACUUM` would always deadlock against Castellarius's own connection pool in WAL mode
+
+**Other drought enhancements:**
+- Binary and cistern.yaml mtime tracking: Castellarius now detects on-disk config changes and signals restart
+- Config change detection prevents stale cached configuration
+- In-process hot-reload applies workflow changes in unsupervised mode (binary or config updates still require restart)
+- worktree_prune now runs in `_primary` clone directory (safer, more consistent)
+
+**New drought hook param structure:**
+- `RunDroughtHooks` signature changed from many positional args to `DroughtHookParams` struct for clarity and forward compatibility
+
 ### Update docs and CHANGELOG for complexity renumbering breaking change (ci-9f2js)
 - Removed remaining `trivial` references from user-facing documentation (README CLI reference)
 - Added migration guide and `**BREAKING CHANGE**` marker to the ci-9mbco CHANGELOG entry

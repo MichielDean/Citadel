@@ -263,13 +263,15 @@ drought_hooks:
 
 | Action | What it does |
 |---|---|
-| `git_sync` | Fetches `origin/main` and deploys `aqueduct.yaml` + `cataractae/<role>/PERSONA.md` + `cataractae/<role>/INSTRUCTIONS.md` to `~/.cistern/`. Skips files that are already up to date. |
+| `git_sync` | Fetches `origin/main` (with 30s timeout) and deploys `aqueduct.yaml`, `cataractae/<role>/PERSONA.md`, `cataractae/<role>/INSTRUCTIONS.md`, and `skills/` to `~/.cistern/`. Skips files that are already up to date. **Must be the first drought hook** so roles and skills are available to subsequent hooks. |
 | `cataractae_generate` | Regenerates the provider-specific instructions file (`CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`) for each cataractae from its `PERSONA.md` + `INSTRUCTIONS.md`. Run after `git_sync` to pick up new source files. |
-| `worktree_prune` | Runs `git worktree prune` on each repo's primary clone to remove stale worktree registrations. |
-| `db_vacuum` | Compacts the SQLite cistern database. |
+| `worktree_prune` | Runs `git worktree prune` on the repo's primary clone to remove stale worktree registrations. |
+| `db_vacuum` | Flushes the SQLite WAL file back into the main database using `PRAGMA wal_checkpoint(TRUNCATE)`. This reclaims space without requiring an exclusive lock, making it safe to run while agents are active. |
 | `shell` | Runs an arbitrary shell command. Use for custom maintenance. |
 
 Protocols fire once on the `flowing → idle` transition, not on every tick. Safe to add your own.
+
+**Note on `git_sync` positioning:** The `git_sync` hook must come before `cataractae_generate` and any skill-referencing hooks. It deploys fresh role definitions and skills from `origin/main`; subsequent hooks depend on these being up to date. The Castellarius logs a warning if `git_sync` is not first.
 
 ## Installation
 
