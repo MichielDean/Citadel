@@ -107,12 +107,7 @@ func (cc ComplexityConfig) SkipCataractaeForLevel(level int) []string {
 
 // RequireHumanForLevel returns whether a human gate is required for a given complexity level.
 func (cc ComplexityConfig) RequireHumanForLevel(level int) bool {
-	switch level {
-	case 3:
-		return cc.Critical.RequireHuman
-	default:
-		return false
-	}
+	return level == 3 && cc.Critical.RequireHuman
 }
 
 // Workflow is a named sequence of cataractae parsed from a YAML file.
