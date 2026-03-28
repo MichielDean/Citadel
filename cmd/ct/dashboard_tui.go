@@ -612,9 +612,10 @@ func (m dashboardTUIModel) viewAqueductProgress(ch CataractaeInfo) string {
 		if i > 0 {
 			raised := (i - 1) < activeIdx
 			if raised {
-				// Raised: ][ lifts to top row, bottom is unbroken.
+				// Raised: ][ lifts to top row; bottom still needs gateW chars of
+				// fill so the two rows stay column-aligned.
 				topRow.WriteString(gateStyle.Render("]["))
-				// No characters written to botRow here — seamless continuation.
+				botRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterFull)).Render(strings.Repeat("█", gateW)))
 			} else {
 				// Closed: nothing on top, ][ in the channel.
 				topRow.WriteString("  ")
