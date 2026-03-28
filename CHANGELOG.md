@@ -34,6 +34,14 @@
 - Useful for monitoring: external scripts can read the health file to detect Castellarius stalls or check polling activity
 - Write errors are logged but do not fail the tick—Castellarius continues even if the health file write fails
 
+### Validate --repo flag case-insensitively in ct droplet add and ct filter (ci-jdj7m)
+- Added `resolveCanonicalRepo()` helper function that validates repo names case-insensitively against configured repos using `strings.EqualFold`
+- When a user provides `--repo portfoliowebsite`, it now matches and normalizes to the configured canonical name `PortfolioWebsite`
+- Both `ct droplet add --repo` and `ct filter --repo` now canonicalize the repo name before proceeding
+- Error messages for unknown repos list all configured repo names for clarity: `unknown repo portfoliowebsite — configured repos are: PortfolioWebsite, AnotherProject`
+- Fixes an issue in `ct filter --repo` where the wrong-case repo name would silently fall back to the default Claude provider instead of using repo-specific provider overrides
+- Updated README to document case-insensitive repo name validation and added `ct filter` command to the CLI reference section
+
 ### Update docs and CHANGELOG for complexity renumbering breaking change (ci-9f2js)
 - Removed remaining `trivial` references from user-facing documentation (README CLI reference)
 - Added migration guide and `**BREAKING CHANGE**` marker to the ci-9mbco CHANGELOG entry

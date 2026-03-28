@@ -61,6 +61,16 @@ Persist final result:
 
 Use --output-format json for scriptable output (session_id + proposals).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Canonicalize repo name before passing to resolveFilterPreset so that
+		// repo-specific provider overrides are resolved correctly even when the
+		// user supplies a wrong-case name (e.g. "portfoliowebsite" → "PortfolioWebsite").
+		if filterRepo != "" {
+			canonical, err := resolveCanonicalRepo(filterRepo)
+			if err != nil {
+				return err
+			}
+			filterRepo = canonical
+		}
 		preset := resolveFilterPreset(filterRepo)
 
 		if filterResume != "" {
@@ -69,6 +79,7 @@ Use --output-format json for scriptable output (session_id + proposals).`,
 				if filterRepo == "" {
 					return fmt.Errorf("--repo is required with --file")
 				}
+				// filterRepo is already canonical; use it directly.
 				result, err := invokeFilterResume(preset, filterResume, filterFinalizePrompt)
 				if err != nil {
 					return err
