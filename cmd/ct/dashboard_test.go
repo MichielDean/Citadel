@@ -49,12 +49,6 @@ cataractae:
 	}
 
 	// Config referencing two operators named "virgo" and "marcia".
-	fontLine := ""
-	if fontFamily != "" {
-		// Wrap in YAML double-quoted string; escape backslash and double-quote.
-		escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(fontFamily)
-		fontLine = "\ndashboard_font_family: \"" + escaped + "\""
-	}
 	cfgContent := `repos:
   - name: myrepo
     url: https://example.com/repo
@@ -65,7 +59,12 @@ cataractae:
       - marcia
     prefix: mr
 max_cataractae: 4
-` + fontLine + "\n"
+`
+	if fontFamily != "" {
+		// Wrap in YAML double-quoted string; escape backslash and double-quote.
+		escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(fontFamily)
+		cfgContent += "dashboard_font_family: \"" + escaped + "\"\n"
+	}
 	cfgPath := filepath.Join(dir, "cistern.yaml")
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
 		t.Fatal(err)
