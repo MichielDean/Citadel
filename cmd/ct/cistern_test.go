@@ -260,6 +260,191 @@ func TestComplexityName(t *testing.T) {
 	}
 }
 
+// writeTestConfig writes a minimal valid cistern.yaml with the given repo names
+// to a temp directory and returns the config file path.
+func writeTestConfig(t *testing.T, repoNames ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cistern.yaml")
+	var sb strings.Builder
+	sb.WriteString("repos:\n")
+	for _, name := range repoNames {
+		sb.WriteString("  - name: " + name + "\n")
+		sb.WriteString("    cataractae: 1\n")
+	}
+	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+		t.Fatalf("writeTestConfig: %v", err)
+	}
+	return path
+}
+
+// TestResolveCanonicalRepo_ExactMatch verifies that an exact-case input returns the
+// configured name unchanged.
+// Given config with "PortfolioWebsite",
+// When resolveCanonicalRepo("PortfolioWebsite") is called,
+// Then "PortfolioWebsite" is returned with no error.
+func TestResolveCanonicalRepo_ExactMatch(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	got, err := resolveCanonicalRepo("PortfolioWebsite")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "PortfolioWebsite" {
+		t.Errorf("got %q, want %q", got, "PortfolioWebsite")
+	}
+}
+
+// TestResolveCanonicalRepo_CaseInsensitiveMatch verifies that a lower-case input
+// matches and returns the configured (canonical) name.
+// Given config with "PortfolioWebsite",
+// When resolveCanonicalRepo("portfoliowebsite") is called,
+// Then "PortfolioWebsite" is returned.
+func TestResolveCanonicalRepo_CaseInsensitiveMatch(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	got, err := resolveCanonicalRepo("portfoliowebsite")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "PortfolioWebsite" {
+		t.Errorf("got %q, want %q", got, "PortfolioWebsite")
+	}
+}
+
+// TestResolveCanonicalRepo_UpperCaseMatch verifies that an all-caps input matches
+// and returns the canonical name.
+func TestResolveCanonicalRepo_UpperCaseMatch(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	got, err := resolveCanonicalRepo("PORTFOLIOWEBSITE")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "PortfolioWebsite" {
+		t.Errorf("got %q, want %q", got, "PortfolioWebsite")
+	}
+}
+
+// TestResolveCanonicalRepo_UnknownRepo_ReturnsError verifies that an input not
+// matching any configured repo returns an error listing configured repos.
+// Given config with "PortfolioWebsite" and "OtherRepo",
+// When resolveCanonicalRepo("nonexistent") is called,
+// Then an error mentioning "unknown repo nonexistent" and both configured names is returned.
+func TestResolveCanonicalRepo_UnknownRepo_ReturnsError(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite", "OtherRepo")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	_, err := resolveCanonicalRepo("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown repo nonexistent") {
+		t.Errorf("error %q does not mention 'unknown repo nonexistent'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "PortfolioWebsite") {
+		t.Errorf("error %q does not list configured repo 'PortfolioWebsite'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "OtherRepo") {
+		t.Errorf("error %q does not list configured repo 'OtherRepo'", err.Error())
+	}
+}
+
+// TestResolveCanonicalRepo_NoConfig_PassesThrough verifies that when no config
+// is available the input is returned unchanged without error.
+// Given no config file at CT_CONFIG path,
+// When resolveCanonicalRepo("anyrepo") is called,
+// Then "anyrepo" is returned unchanged with no error.
+func TestResolveCanonicalRepo_NoConfig_PassesThrough(t *testing.T) {
+	t.Setenv("CT_CONFIG", filepath.Join(t.TempDir(), "nonexistent.yaml"))
+
+	got, err := resolveCanonicalRepo("anyrepo")
+	if err != nil {
+		t.Fatalf("expected passthrough with no config, got error: %v", err)
+	}
+	if got != "anyrepo" {
+		t.Errorf("got %q, want %q", got, "anyrepo")
+	}
+}
+
+// TestDropletAddCmd_NormalizesRepoCase verifies that droplet add with a wrong-case
+// repo name stores the droplet using the canonical (configured) name.
+// Given config with "PortfolioWebsite",
+// When droplet add --repo portfoliowebsite --title "..." is called,
+// Then the droplet is stored with repo = "PortfolioWebsite".
+func TestDropletAddCmd_NormalizesRepoCase(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	db := filepath.Join(t.TempDir(), "test.db")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", db)
+
+	addTitle = "Test droplet"
+	addRepo = "portfoliowebsite"
+	addComplexity = "1"
+	addFilter = false
+	addYes = false
+	addDescription = ""
+	addPriority = 1
+	addDependsOn = nil
+	defer func() {
+		addTitle = ""
+		addRepo = ""
+		addComplexity = ""
+		addPriority = 0
+		addDependsOn = nil
+	}()
+
+	if err := dropletAddCmd.RunE(dropletAddCmd, nil); err != nil {
+		t.Fatalf("droplet add: unexpected error: %v", err)
+	}
+
+	c, err := cistern.New(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	items, err := c.List("PortfolioWebsite", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected droplet stored with canonical repo name 'PortfolioWebsite', got none")
+	}
+}
+
+// TestDropletAddCmd_UnknownRepo_ReturnsError verifies that droplet add with a repo
+// name not found in the config returns a clear error and exits non-zero.
+// Given config with "PortfolioWebsite",
+// When droplet add --repo nonexistent is called,
+// Then an error mentioning "unknown repo nonexistent" is returned.
+func TestDropletAddCmd_UnknownRepo_ReturnsError(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", filepath.Join(t.TempDir(), "test.db"))
+
+	addTitle = "Test droplet"
+	addRepo = "nonexistent"
+	addComplexity = "1"
+	addFilter = false
+	defer func() {
+		addTitle = ""
+		addRepo = ""
+		addComplexity = ""
+	}()
+
+	err := dropletAddCmd.RunE(dropletAddCmd, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown repo nonexistent") {
+		t.Errorf("error %q does not mention 'unknown repo nonexistent'", err.Error())
+	}
+}
+
 func TestDropletStats_EmptyDB(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")

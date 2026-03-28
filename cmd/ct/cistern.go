@@ -60,29 +60,33 @@ var dropletAddCmd = &cobra.Command{
 		if addRepo == "" {
 			return fmt.Errorf("--repo is required")
 		}
+		repo, err := resolveCanonicalRepo(addRepo)
+		if err != nil {
+			return err
+		}
 
 		if addFilter {
 			userPrompt := "Title: " + addTitle
 			if addDescription != "" {
 				userPrompt += "\nDescription: " + addDescription
 			}
-			preset := resolveFilterPreset(addRepo)
+			preset := resolveFilterPreset(repo)
 			proposals, err := runNonInteractive(preset, filterSystemPrompt, userPrompt)
 			if err != nil {
 				return err
 			}
-			c, err := cistern.New(resolveDBPath(), inferPrefix(addRepo))
+			c, err := cistern.New(resolveDBPath(), inferPrefix(repo))
 			if err != nil {
 				return err
 			}
 			defer c.Close()
 			if addYes {
-				return runFilterNonInteractive(c, proposals, addRepo, addPriority)
+				return runFilterNonInteractive(c, proposals, repo, addPriority)
 			}
-			return runFilterInteractive(c, proposals, addRepo, addPriority)
+			return runFilterInteractive(c, proposals, repo, addPriority)
 		}
 
-		c, err := cistern.New(resolveDBPath(), inferPrefix(addRepo))
+		c, err := cistern.New(resolveDBPath(), inferPrefix(repo))
 		if err != nil {
 			return err
 		}
@@ -92,7 +96,7 @@ var dropletAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		item, err := c.Add(addRepo, addTitle, addDescription, addPriority, cx, addDependsOn...)
+		item, err := c.Add(repo, addTitle, addDescription, addPriority, cx, addDependsOn...)
 		if err != nil {
 			return err
 		}
@@ -119,6 +123,27 @@ func resolveFilterPreset(repo string) provider.ProviderPreset {
 		}
 	}
 	return provider.ProviderPreset{}
+}
+
+// resolveCanonicalRepo looks up input against configured repo names case-insensitively
+// and returns the canonical (configured) name on a match. If the config cannot be
+// loaded, input is returned unchanged (validation is skipped). If the config loads
+// but no repo matches, an error is returned listing the configured repo names.
+func resolveCanonicalRepo(input string) (string, error) {
+	cfgPath := resolveConfigPath()
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		// No config available; cannot validate — pass through unchanged.
+		return input, nil
+	}
+	names := make([]string, 0, len(cfg.Repos))
+	for _, r := range cfg.Repos {
+		if strings.EqualFold(r.Name, input) {
+			return r.Name, nil
+		}
+		names = append(names, r.Name)
+	}
+	return "", fmt.Errorf("unknown repo %s — configured repos are: %s", input, strings.Join(names, ", "))
 }
 
 // --- cistern list ---

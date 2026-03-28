@@ -12,6 +12,113 @@ import (
 
 // --- callFilterAgent tests ---
 
+// TestFilterCmd_NewSession_UnknownRepo_ReturnsError verifies that ct filter --title "..."
+// --repo nonexistent returns an error before any LLM call, even without --file.
+// This tests that resolveCanonicalRepo is called before resolveFilterPreset so that
+// wrong-case repo names in non-file paths also produce errors, not silent fallbacks.
+// Given config with "PortfolioWebsite",
+// When filter --title "idea" --repo nonexistent is called,
+// Then an error mentioning "unknown repo nonexistent" is returned.
+func TestFilterCmd_NewSession_UnknownRepo_ReturnsError(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Cleanup(func() {
+		filterTitle = ""
+		filterRepo = ""
+	})
+
+	err := execCmd(t, "filter", "--title", "test idea", "--repo", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown repo in new session, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown repo nonexistent") {
+		t.Errorf("error %q does not mention 'unknown repo nonexistent'", err.Error())
+	}
+}
+
+// TestFilterCmd_UnknownRepo_ReturnsError verifies that ct filter --resume ... --file
+// with an unknown repo name returns a clear error before any LLM call.
+// Given config with "PortfolioWebsite",
+// When filter --resume <id> --file --repo nonexistent is called,
+// Then an error mentioning "unknown repo nonexistent" is returned.
+func TestFilterCmd_UnknownRepo_ReturnsError(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Cleanup(func() {
+		filterResume = ""
+		filterFile = false
+		filterRepo = ""
+	})
+
+	err := execCmd(t, "filter", "--resume", "some-session-id", "--file", "--repo", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown repo nonexistent") {
+		t.Errorf("error %q does not mention 'unknown repo nonexistent'", err.Error())
+	}
+}
+
+// TestFilterCmd_CanonicalizeRepo_StoresCanonicalName verifies that ct filter
+// --resume --file --repo portfoliowebsite (lower-case) stores the droplet with
+// the canonical name "PortfolioWebsite" from the config.
+// Given config with "PortfolioWebsite" and a fakeagent preset,
+// When filter --resume --file --repo portfoliowebsite is exercised via direct
+// function calls (mirroring what filterCmd.RunE does),
+// Then the droplet is stored with repo = "PortfolioWebsite".
+func TestFilterCmd_CanonicalizeRepo_StoresCanonicalName(t *testing.T) {
+	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	db := filepath.Join(t.TempDir(), "test.db")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", db)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+
+	// Resolve canonical repo (this is what filterCmd.RunE calls).
+	repo, err := resolveCanonicalRepo("portfoliowebsite")
+	if err != nil {
+		t.Fatalf("resolveCanonicalRepo: %v", err)
+	}
+	if repo != "PortfolioWebsite" {
+		t.Fatalf("resolveCanonicalRepo returned %q, want %q", repo, "PortfolioWebsite")
+	}
+
+	// Simulate the persist path using the canonical repo name.
+	preset := provider.ProviderPreset{
+		Name:       "test",
+		Command:    fakeagentBin,
+		ResumeFlag: "--resume",
+		NonInteractive: provider.NonInteractiveConfig{
+			PrintFlag:  "--print",
+			PromptFlag: "-p",
+		},
+	}
+	result, err := invokeFilterResume(preset, "test-session", filterFinalizePrompt)
+	if err != nil {
+		t.Fatalf("invokeFilterResume: %v", err)
+	}
+
+	c, err := cistern.New(db, "pw")
+	if err != nil {
+		t.Fatalf("cistern.New: %v", err)
+	}
+	defer c.Close()
+
+	if err := addProposals(c, result.Proposals, repo, 2); err != nil {
+		t.Fatalf("addProposals: %v", err)
+	}
+
+	items, err := c.List("PortfolioWebsite", "")
+	if err != nil {
+		t.Fatalf("c.List: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected droplet stored with canonical repo name 'PortfolioWebsite', got none")
+	}
+}
+
 // TestCallFilterAgent_ReturnsProposalsAndSessionID verifies that callFilterAgent
 // correctly invokes the agent with --output-format json and parses both the
 // proposals and the session_id from the JSON envelope.

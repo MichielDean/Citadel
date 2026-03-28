@@ -64,7 +64,7 @@ full:      implement → simplify → adversarial-review → qa → docs        
 critical:  implement → simplify → adversarial-review → qa → security-review → docs → [human gate] → delivery → done
 ```
 
-Filtration is an optional pre-intake step (`--filter`) that refines vague ideas before they enter the pipeline.
+Filtration is an optional pre-intake step that refines vague ideas before they enter the pipeline. Use `ct droplet add --filter` to filtrate while adding, or `ct filter` to refine ideas standalone before deciding to add them.
 
 1. **Implement** (`implement`) — Reads the droplet description, implements the feature, writes tests, commits. Verifies every concrete deliverable from the description exists in the commit before signaling pass.
 
@@ -143,6 +143,8 @@ repos:
       - virgo
       - marcia
 ```
+
+Repo names are validated case-insensitively — `ct droplet add --repo myproject` and `ct droplet add --repo MYPROJECT` both map to the canonical name `myproject` in the config.
 
 Aqueduct names are **concurrency slots** — they control how many droplets run in parallel per repo. Each active droplet gets its own isolated git worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/` on branch `feat/<droplet-id>`. Worktrees are created when a droplet enters the `implement` step and removed once it reaches a terminal state (`done`, `blocked`, `escalated`, or `human`).
 
@@ -465,6 +467,13 @@ ct aqueduct status             Aqueduct definitions: repos and their cataractae 
 ct aqueduct validate           Validate cistern.yaml and all referenced workflow files
 ct aqueduct inspect            JSON snapshot of current Cistern state
 ct aqueduct inspect --table    Human-readable table instead of JSON
+
+# Filtration — refine ideas before adding droplets
+ct filter --title 'rough idea'                          Start a new filtration session
+ct filter --title 'idea' --description '...'           New session with description
+ct filter --resume <id> 'feedback'                      Continue refining a session
+ct filter --resume <id> --file --repo <repo>           Persist refined session to cistern
+ct filter --output-format json                         Machine-readable output (with --title or --resume)
 
 # Droplets — manage work items
 ct droplet add --title "..." --repo myproject                     Add a droplet
