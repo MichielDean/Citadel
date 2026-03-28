@@ -76,7 +76,7 @@ Filtration is an optional pre-intake step that refines vague ideas before they e
 
 2. **Simplify** (`simplify`) — Refines the implementation for clarity, consistency, and maintainability without changing behaviour. Runs on all branches with new commits since `origin/main`.
 
-3. **Adversarial Review** (`adversarial-review`) — Receives *only the diff* — no codebase access, no author context. First verifies all required deliverables are present in the diff (Phase 0), then checks for bugs, security issues, missing tests, and logic errors. Context isolation enforced at the infrastructure level.
+3. **Adversarial Review** (`adversarial-review`) — Reviews a diff with full codebase access. Checks for bugs, security issues, missing tests, logic errors, and orphaned code (unreferenced files, imports, or type values left behind by deletions). Also looks for duplicate implementations, broken contracts, and pattern violations in the broader codebase.
 
 4. **QA** (`qa`) — Active verification with full codebase access: runs tests, checks each deliverable exists via `grep`, verifies CLI flags, checks mirror file consistency. Recirculates to implement on any failure.
 
