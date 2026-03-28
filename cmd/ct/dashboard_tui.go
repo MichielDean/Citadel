@@ -645,13 +645,13 @@ func (m dashboardTUIModel) viewIdleAqueductRow(ch CataractaeInfo) string {
 	const repoW = 18
 	name := padRight(ch.Name, nameW)
 	repo := padRight(ch.RepoName, repoW)
-	status := tuiStyleDim.Render("·  idle")
+	status := "·  idle"
 	if ch.DropletID != "" {
 		status = tuiStyleGreen.Render("▶  " + ch.Step)
 	}
 	return fmt.Sprintf("  %s  %s  %s",
 		name,
-		tuiStyleDim.Render(repo),
+		repo,
 		status,
 	)
 }
