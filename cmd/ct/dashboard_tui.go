@@ -462,21 +462,41 @@ func (m dashboardTUIModel) viewStatusBar() string {
 }
 
 // viewAqueductArches renders the dashboard aqueduct section.
-//
-// Active aqueducts (flowing droplet): full arch diagram each, stacked vertically.
-// Drought (all idle): one centered arch with "drought" label above it.
-// In both cases, a compact list of all aqueduct names and their status is shown below.
+// Active aqueducts first (with blank line between each), then all idle ones below.
 func (m dashboardTUIModel) viewAqueductArches() []string {
 	if len(m.data.Cataractae) == 0 {
 		return []string{"  No aqueducts configured"}
 	}
 
-	// One unified row per aqueduct: active ones show the segmented bar inline,
-	// idle ones show a simple name + status line. No drought state, no sections.
-	var lines []string
+	var active, idle []CataractaeInfo
 	for _, ch := range m.data.Cataractae {
-		lines = append(lines, m.viewAqueductRow(ch))
+		if ch.DropletID != "" {
+			active = append(active, ch)
+		} else {
+			idle = append(idle, ch)
+		}
 	}
+
+	var lines []string
+
+	// Active aqueducts: progress bar with a blank line between each for breathing room.
+	for i, ch := range active {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, m.viewAqueductProgress(ch))
+	}
+
+	// Blank separator between active and idle sections.
+	if len(active) > 0 && len(idle) > 0 {
+		lines = append(lines, "")
+	}
+
+	// Idle aqueducts: compact single-line rows at the bottom.
+	for _, ch := range idle {
+		lines = append(lines, m.viewIdleAqueductRow(ch))
+	}
+
 	return lines
 }
 
@@ -594,7 +614,7 @@ func (m dashboardTUIModel) viewAqueductProgress(ch CataractaeInfo) string {
 	elapsed := formatElapsed(ch.Elapsed)
 	header := fmt.Sprintf("%s%s  %s  %s", indent, name, ch.DropletID, elapsed)
 
-	return header + "\n" + lblRow.String() + "\n" + barRow.String()
+	return header + "\n" + lblRow.String() + "\n" + barRow.String() + "\n"
 }
 
 // pipelineLabel returns the pipeline steps as "step1 → step2 → ..." with the
