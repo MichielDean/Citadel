@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
-	"github.com/MichielDean/cistern/internal/oauth"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -42,6 +40,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		_, err := exec.LookPath("claude")
 		return err
 	}, nil) && ok
+
+	ok = checkWithFix("claude CLI authenticated", claudeAuthStatusFn, nil) && ok
 
 	ok = checkWithFix("git installed", func() error {
 		_, err := exec.LookPath("git")
@@ -193,7 +193,6 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 	seenSkills := map[string]bool{}
 	seenBinaries := map[string]bool{}
 	seenEnvVars := map[string]bool{}
-	usesClaude := false
 
 	for _, repo := range cfg.Repos {
 		wfPath := repo.WorkflowPath
@@ -204,9 +203,6 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 		// Resolve the effective provider preset for this repo.
 		preset, presErr := cfg.ResolveProvider(repo.Name)
 		if presErr == nil {
-			if preset.Name == "claude" {
-				usesClaude = true
-			}
 			// Check 1: provider binary present (deduplicated by command across repos).
 			if !seenBinaries[preset.Command] {
 				seenBinaries[preset.Command] = true
@@ -352,26 +348,6 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 
 	// Check 12: Stalled droplets (warnings only — does not affect ok).
 	checkStalledDroplets(dbPath)
-
-	// Check 13: Claude OAuth token expiry.
-	// Skipped when no configured repo uses the claude provider.
-	if usesClaude {
-		oauthOk := checkOAuthTokenExpiry(home)
-		if !oauthOk && doctorFix {
-			if err := fixOAuthToken(home); err != nil {
-				fmt.Printf("  fix failed: %v\n", err)
-			} else {
-				fmt.Printf("↻ Claude OAuth token: refreshed\n")
-				oauthOk = checkOAuthTokenExpiry(home)
-			}
-		}
-		ok = oauthOk && ok
-
-		// Check 14: Service env ANTHROPIC_API_KEY matches current credentials token.
-		// fixOAuthToken (above) updates env.conf when --fix is set, so re-running the
-		// freshness check here reflects the updated state.
-		ok = checkServiceTokenFreshness(home) && ok
-	}
 
 	return ok
 }
@@ -776,13 +752,15 @@ func checkStalledDroplets(dbPath string) {
 	}
 }
 
-// doctorOAuthHTTPDo is the HTTP transport used by fixOAuthToken.
-// Replaced in tests with a test server client.
-var doctorOAuthHTTPDo func(*http.Request) (*http.Response, error) = http.DefaultClient.Do
-
-// doctorOAuthTokenURL is the OAuth token endpoint used by fixOAuthToken.
-// Replaced in tests with a test server URL.
-var doctorOAuthTokenURL = oauth.DefaultTokenURL
+// claudeAuthStatusFn runs "claude auth status" and returns an error on non-zero exit.
+// Replaced in tests with a stub.
+var claudeAuthStatusFn = func() error {
+	out, err := exec.Command("claude", "auth", "status").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", out)
+	}
+	return nil
+}
 
 // execCommandFn wraps exec.Command to allow injection in tests.
 var execCommandFn = exec.Command
@@ -791,110 +769,6 @@ var execCommandFn = exec.Command
 // It is a variable to allow injection in tests.
 var checkSystemdEnvFn = func(serviceName string) ([]byte, error) {
 	return exec.Command("systemctl", "--user", "show", serviceName, "--property=Environment").Output()
-}
-
-// fixOAuthToken refreshes the Claude OAuth access token using the stored refresh
-// token and writes the new access token to ~/.claude/.credentials.json and the
-// service env.conf. It then reloads the systemd service so the new token takes effect.
-func fixOAuthToken(home string) error {
-	creds := oauth.Read(home)
-	if creds == nil {
-		return fmt.Errorf("cannot read credentials — run 'claude' interactively to authenticate")
-	}
-	if creds.RefreshToken == "" {
-		return fmt.Errorf("no refresh token available — run 'claude' interactively to re-authenticate")
-	}
-
-	result, err := oauth.Refresh(creds.RefreshToken, doctorOAuthTokenURL, doctorOAuthHTTPDo)
-	if err != nil {
-		return fmt.Errorf("OAuth refresh failed: %w", err)
-	}
-
-	if err := oauth.WriteAccessToken(home, result.AccessToken, result.ExpiresAt); err != nil {
-		return fmt.Errorf("write credentials: %w", err)
-	}
-
-	envConfPath := filepath.Join(home, ".config", "systemd", "user",
-		"cistern-castellarius.service.d", "env.conf")
-	if _, statErr := os.Stat(envConfPath); statErr == nil {
-		if err := oauth.UpdateEnvConf(envConfPath, result.AccessToken); err != nil {
-			return fmt.Errorf("update env.conf: %w", err)
-		}
-		// Reload the systemd unit so the new token takes effect.
-		if out, err := execCommandFn("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
-			return fmt.Errorf("systemctl daemon-reload: %w: %s", err, out)
-		}
-		if out, err := execCommandFn("systemctl", "--user", "restart", "cistern-castellarius").CombinedOutput(); err != nil {
-			return fmt.Errorf("systemctl restart: %w: %s", err, out)
-		}
-	}
-
-	return nil
-}
-
-// checkOAuthTokenExpiry reports whether the Claude OAuth token is fresh,
-// expiring within 24h (warning), or expired (fail).
-// Skipped silently when the credentials file is absent or has no expiry.
-func checkOAuthTokenExpiry(home string) bool {
-	creds := oauth.Read(home)
-	if creds == nil || creds.ExpiresAt == 0 {
-		return true
-	}
-
-	expiresAt := time.UnixMilli(creds.ExpiresAt)
-	now := time.Now()
-
-	if now.After(expiresAt) {
-		fmt.Printf("✗ Claude OAuth token: expired %s ago — run 'claude' interactively to refresh\n",
-			now.Sub(expiresAt).Truncate(time.Minute))
-		return false
-	}
-
-	remaining := expiresAt.Sub(now)
-	if remaining < 24*time.Hour {
-		fmt.Printf("⚠ Claude OAuth token: expiring in %s — run 'claude' interactively to refresh\n",
-			remaining.Truncate(time.Minute))
-		return true
-	}
-
-	fmt.Printf("✓ Claude OAuth token: fresh (expires %s)\n", expiresAt.Format(time.RFC3339))
-	return true
-}
-
-// checkServiceTokenFreshness compares the ANTHROPIC_API_KEY in the systemd
-// service drop-in against the current OAuth access token.
-// Skipped silently when either file is absent or ANTHROPIC_API_KEY is not set.
-func checkServiceTokenFreshness(home string) bool {
-	envConfPath := filepath.Join(home, ".config", "systemd", "user",
-		"cistern-castellarius.service.d", "env.conf")
-	envData, err := os.ReadFile(envConfPath)
-	if err != nil {
-		return true // no drop-in — skip silently
-	}
-
-	var serviceToken string
-	for _, line := range strings.Split(string(envData), "\n") {
-		if after, ok := strings.CutPrefix(strings.TrimSpace(line), "Environment=ANTHROPIC_API_KEY="); ok {
-			serviceToken = after
-			break
-		}
-	}
-	if serviceToken == "" {
-		return true
-	}
-
-	creds := oauth.Read(home)
-	if creds == nil || creds.AccessToken == "" {
-		return true
-	}
-
-	if serviceToken != creds.AccessToken {
-		fmt.Printf("✗ service ANTHROPIC_API_KEY: stale — update env.conf with the current token and restart\n")
-		return false
-	}
-
-	fmt.Printf("✓ service ANTHROPIC_API_KEY: matches current credentials\n")
-	return true
 }
 
 // checkCisternEnvPermissions prints a warning if ~/.cistern/env is readable by
