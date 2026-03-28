@@ -3,18 +3,14 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
-	"github.com/MichielDean/cistern/internal/oauth"
 )
 
 // --- TestDoctorCmd_FixFlagRegistered ---
@@ -1150,316 +1146,29 @@ func TestInferLLMProviderFromPreset_KnownPresets(t *testing.T) {
 	}
 }
 
-// --- checkOAuthTokenExpiry tests ---
+// --- claudeAuthStatusFn (claude CLI authenticated) tests ---
 
-func writeCredentials(t *testing.T, home string, expiresAtMs int64, accessToken string) {
-	t.Helper()
-	claudeDir := filepath.Join(home, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		t.Fatalf("mkdir .claude: %v", err)
-	}
-	content := fmt.Sprintf(`{"claudeAiOauth":{"accessToken":%q,"expiresAt":%d}}`, accessToken, expiresAtMs)
-	if err := os.WriteFile(filepath.Join(claudeDir, ".credentials.json"), []byte(content), 0o644); err != nil {
-		t.Fatalf("write credentials: %v", err)
-	}
-}
+func TestClaudeAuthenticated_ExitZero_PassesCheck(t *testing.T) {
+	orig := claudeAuthStatusFn
+	t.Cleanup(func() { claudeAuthStatusFn = orig })
+	claudeAuthStatusFn = func() error { return nil }
 
-func TestCheckOAuthTokenExpiry_FreshToken_ReturnsTrue(t *testing.T) {
-	home := t.TempDir()
-	// Token expiring in 48 hours — well within fresh range.
-	expiresAt := time.Now().Add(48 * time.Hour).UnixMilli()
-	writeCredentials(t, home, expiresAt, "tok-fresh")
-
-	result := checkOAuthTokenExpiry(home)
-	if !result {
-		t.Error("expected true for a fresh OAuth token")
+	got := checkWithFix("claude CLI authenticated", claudeAuthStatusFn, nil)
+	if !got {
+		t.Error("expected checkWithFix to return true when claude auth status exits 0")
 	}
 }
 
-func TestCheckOAuthTokenExpiry_ExpiringSoon_ReturnsTrue(t *testing.T) {
-	home := t.TempDir()
-	// Token expiring in 12 hours — within 24h warn window but not expired.
-	expiresAt := time.Now().Add(12 * time.Hour).UnixMilli()
-	writeCredentials(t, home, expiresAt, "tok-soon")
-
-	result := checkOAuthTokenExpiry(home)
-	if !result {
-		t.Error("expected true (warning only) when token expires within 24h")
-	}
-}
-
-func TestCheckOAuthTokenExpiry_ExpiredToken_ReturnsFalse(t *testing.T) {
-	home := t.TempDir()
-	// Token that expired 1 hour ago.
-	expiresAt := time.Now().Add(-1 * time.Hour).UnixMilli()
-	writeCredentials(t, home, expiresAt, "tok-expired")
-
-	result := checkOAuthTokenExpiry(home)
-	if result {
-		t.Error("expected false for an already-expired OAuth token")
-	}
-}
-
-func TestCheckOAuthTokenExpiry_MissingFile_SkipsSilently(t *testing.T) {
-	home := t.TempDir()
-	// No .credentials.json — should return true (not a failure).
-	result := checkOAuthTokenExpiry(home)
-	if !result {
-		t.Error("expected true when credentials file is absent (skip silently)")
-	}
-}
-
-func TestCheckOAuthTokenExpiry_MalformedJSON_SkipsSilently(t *testing.T) {
-	home := t.TempDir()
-	claudeDir := filepath.Join(home, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(claudeDir, ".credentials.json"), []byte("not-json{{{"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
+func TestClaudeAuthenticated_NonZeroExit_FailsCheck(t *testing.T) {
+	orig := claudeAuthStatusFn
+	t.Cleanup(func() { claudeAuthStatusFn = orig })
+	claudeAuthStatusFn = func() error {
+		return fmt.Errorf("Not logged in")
 	}
 
-	result := checkOAuthTokenExpiry(home)
-	if !result {
-		t.Error("expected true (skip silently) when credentials JSON is malformed")
-	}
-}
-
-func TestCheckOAuthTokenExpiry_ZeroExpiresAt_SkipsSilently(t *testing.T) {
-	home := t.TempDir()
-	writeCredentials(t, home, 0, "tok-noexpiry")
-
-	result := checkOAuthTokenExpiry(home)
-	if !result {
-		t.Error("expected true (skip silently) when expiresAt is zero")
-	}
-}
-
-// --- checkServiceTokenFreshness tests ---
-
-func writeEnvConf(t *testing.T, home, apiKey string) {
-	t.Helper()
-	dropInDir := filepath.Join(home, ".config", "systemd", "user",
-		"cistern-castellarius.service.d")
-	if err := os.MkdirAll(dropInDir, 0o755); err != nil {
-		t.Fatalf("mkdir drop-in dir: %v", err)
-	}
-	content := fmt.Sprintf("[Service]\nEnvironment=ANTHROPIC_API_KEY=%s\n", apiKey)
-	if err := os.WriteFile(filepath.Join(dropInDir, "env.conf"), []byte(content), 0o644); err != nil {
-		t.Fatalf("write env.conf: %v", err)
-	}
-}
-
-func TestCheckServiceTokenFreshness_MatchingTokens_ReturnsTrue(t *testing.T) {
-	home := t.TempDir()
-	token := "sk-ant-matching-token"
-	writeEnvConf(t, home, token)
-	writeCredentials(t, home, time.Now().Add(48*time.Hour).UnixMilli(), token)
-
-	result := checkServiceTokenFreshness(home)
-	if !result {
-		t.Error("expected true when service env token matches credentials token")
-	}
-}
-
-func TestCheckServiceTokenFreshness_StaleToken_ReturnsFalse(t *testing.T) {
-	home := t.TempDir()
-	writeEnvConf(t, home, "sk-ant-old-token")
-	writeCredentials(t, home, time.Now().Add(48*time.Hour).UnixMilli(), "sk-ant-new-token")
-
-	result := checkServiceTokenFreshness(home)
-	if result {
-		t.Error("expected false when service env token differs from credentials token")
-	}
-}
-
-func TestCheckServiceTokenFreshness_NoEnvConf_SkipsSilently(t *testing.T) {
-	home := t.TempDir()
-	// No env.conf — skip silently.
-	result := checkServiceTokenFreshness(home)
-	if !result {
-		t.Error("expected true (skip silently) when env.conf is absent")
-	}
-}
-
-func TestCheckServiceTokenFreshness_NoAPIKeyInConf_SkipsSilently(t *testing.T) {
-	home := t.TempDir()
-	dropInDir := filepath.Join(home, ".config", "systemd", "user",
-		"cistern-castellarius.service.d")
-	if err := os.MkdirAll(dropInDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	// env.conf without ANTHROPIC_API_KEY.
-	if err := os.WriteFile(filepath.Join(dropInDir, "env.conf"), []byte("[Service]\nEnvironment=PATH=/usr/bin\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	result := checkServiceTokenFreshness(home)
-	if !result {
-		t.Error("expected true (skip silently) when env.conf has no ANTHROPIC_API_KEY")
-	}
-}
-
-func TestCheckServiceTokenFreshness_NoCredentialsFile_SkipsSilently(t *testing.T) {
-	home := t.TempDir()
-	writeEnvConf(t, home, "sk-ant-some-token")
-	// No credentials file.
-
-	result := checkServiceTokenFreshness(home)
-	if !result {
-		t.Error("expected true (skip silently) when credentials file is absent")
-	}
-}
-
-// --- fixOAuthToken tests ---
-
-// writeCredentialsWithRefresh writes a credentials file that includes a refresh token.
-func writeCredentialsWithRefresh(t *testing.T, home, accessToken, refreshToken string, expiresAtMs int64) {
-	t.Helper()
-	claudeDir := filepath.Join(home, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		t.Fatalf("mkdir .claude: %v", err)
-	}
-	content := fmt.Sprintf(
-		`{"claudeAiOauth":{"accessToken":%q,"refreshToken":%q,"expiresAt":%d}}`,
-		accessToken, refreshToken, expiresAtMs,
-	)
-	if err := os.WriteFile(filepath.Join(claudeDir, ".credentials.json"), []byte(content), 0o600); err != nil {
-		t.Fatalf("write credentials: %v", err)
-	}
-}
-
-// startFakeOAuthServer starts an httptest server that returns a successful
-// token refresh response with the given new access token and expiresIn seconds.
-func startFakeOAuthServer(t *testing.T, newToken string, expiresIn int) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"access_token":%q,"expires_in":%d}`, newToken, expiresIn)
-	}))
-}
-
-func TestFixOAuthToken_Success_WritesNewToken(t *testing.T) {
-	home := t.TempDir()
-	expiredAt := time.Now().Add(-1 * time.Hour).UnixMilli()
-	writeCredentialsWithRefresh(t, home, "tok-old", "tok-refresh", expiredAt)
-
-	srv := startFakeOAuthServer(t, "tok-new", 3600)
-	defer srv.Close()
-
-	// Inject test server.
-	origURL := doctorOAuthTokenURL
-	origHTTP := doctorOAuthHTTPDo
-	t.Cleanup(func() {
-		doctorOAuthTokenURL = origURL
-		doctorOAuthHTTPDo = origHTTP
-	})
-	doctorOAuthTokenURL = srv.URL
-	doctorOAuthHTTPDo = srv.Client().Do
-
-	if err := fixOAuthToken(home); err != nil {
-		t.Fatalf("fixOAuthToken: %v", err)
-	}
-
-	// Verify credentials file was updated.
-	creds := oauth.Read(home)
-	if creds == nil {
-		t.Fatal("expected non-nil credentials after fix")
-	}
-	if creds.AccessToken != "tok-new" {
-		t.Errorf("AccessToken = %q, want tok-new", creds.AccessToken)
-	}
-	if creds.RefreshToken != "tok-refresh" {
-		t.Errorf("RefreshToken = %q, want tok-refresh (must be preserved)", creds.RefreshToken)
-	}
-}
-
-func TestFixOAuthToken_Success_UpdatesEnvConf(t *testing.T) {
-	home := t.TempDir()
-	expiredAt := time.Now().Add(-1 * time.Hour).UnixMilli()
-	writeCredentialsWithRefresh(t, home, "tok-old", "tok-refresh", expiredAt)
-	writeEnvConf(t, home, "tok-old")
-
-	srv := startFakeOAuthServer(t, "tok-new", 3600)
-	defer srv.Close()
-
-	origURL := doctorOAuthTokenURL
-	origHTTP := doctorOAuthHTTPDo
-	t.Cleanup(func() {
-		doctorOAuthTokenURL = origURL
-		doctorOAuthHTTPDo = origHTTP
-	})
-	doctorOAuthTokenURL = srv.URL
-	doctorOAuthHTTPDo = srv.Client().Do
-
-	// Stub out systemctl so we don't need a real systemd.
-	origExecCommand := execCommandFn
-	t.Cleanup(func() { execCommandFn = origExecCommand })
-	execCommandFn = func(name string, args ...string) *exec.Cmd {
-		// Return a no-op command for systemctl calls.
-		if name == "systemctl" {
-			return exec.Command("true")
-		}
-		return exec.Command(name, args...)
-	}
-
-	if err := fixOAuthToken(home); err != nil {
-		t.Fatalf("fixOAuthToken: %v", err)
-	}
-
-	envConfPath := filepath.Join(home, ".config", "systemd", "user",
-		"cistern-castellarius.service.d", "env.conf")
-	data, err := os.ReadFile(envConfPath)
-	if err != nil {
-		t.Fatalf("read env.conf: %v", err)
-	}
-	if !strings.Contains(string(data), "tok-new") {
-		t.Errorf("env.conf not updated with new token: %s", data)
-	}
-	if strings.Contains(string(data), "tok-old") {
-		t.Errorf("env.conf still contains old token: %s", data)
-	}
-}
-
-func TestFixOAuthToken_NoCredentials_ReturnsError(t *testing.T) {
-	home := t.TempDir()
-	// No credentials file.
-	if err := fixOAuthToken(home); err == nil {
-		t.Error("expected error when credentials file is absent")
-	}
-}
-
-func TestFixOAuthToken_NoRefreshToken_ReturnsError(t *testing.T) {
-	home := t.TempDir()
-	// Credentials without refresh token.
-	writeCredentials(t, home, time.Now().Add(-1*time.Hour).UnixMilli(), "tok-old")
-
-	if err := fixOAuthToken(home); err == nil {
-		t.Error("expected error when refresh token is absent")
-	}
-}
-
-func TestFixOAuthToken_RefreshHTTPError_ReturnsError(t *testing.T) {
-	home := t.TempDir()
-	writeCredentialsWithRefresh(t, home, "tok-old", "tok-refresh", time.Now().Add(-1*time.Hour).UnixMilli())
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, `{"error":"invalid_grant"}`)
-	}))
-	defer srv.Close()
-
-	origURL := doctorOAuthTokenURL
-	origHTTP := doctorOAuthHTTPDo
-	t.Cleanup(func() {
-		doctorOAuthTokenURL = origURL
-		doctorOAuthHTTPDo = origHTTP
-	})
-	doctorOAuthTokenURL = srv.URL
-	doctorOAuthHTTPDo = srv.Client().Do
-
-	if err := fixOAuthToken(home); err == nil {
-		t.Error("expected error when OAuth refresh returns HTTP 401")
+	got := checkWithFix("claude CLI authenticated", claudeAuthStatusFn, nil)
+	if got {
+		t.Error("expected checkWithFix to return false when claude auth status exits non-zero")
 	}
 }
 

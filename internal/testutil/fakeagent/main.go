@@ -105,6 +105,12 @@ func main() {
 	flag.String("resume", "", "")
 	flag.Parse()
 
+	// Handle "claude auth status" command (no --print, args = ["auth", "status"]).
+	// In the test environment, always return success (exit 0), analogous to the gh CLI stub.
+	if len(flag.Args()) == 2 && flag.Args()[0] == "auth" && flag.Args()[1] == "status" {
+		return // Exit 0 (success)
+	}
+
 	mode := os.Getenv("FAKEAGENT_MODE")
 
 	// Interactive mode: optionally dump environment variables for env-hygiene integration tests.
