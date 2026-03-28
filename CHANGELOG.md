@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Adversarial reviewer: full codebase access, orphaned code check (ci-hvskp)
+
+The adversarial reviewer cataractae now has full repository access to catch issues invisible from the diff alone. This enables checks for orphaned code, duplicate implementations, broken contracts, and pattern violations.
+
+**Key changes:**
+- Reviewer receives full repository (no longer diff-only with context isolation)
+- New **Orphaned code check**: when the diff deletes files, imports, or union type values, the reviewer scans related files for anything now unreferenced — files importing deleted symbols, union values no longer produced by any live code path, and test files whose subject no longer exists
+- Refactored reviewer role definition: split monolithic `CLAUDE.md` into separate `PERSONA.md` (role description) and `INSTRUCTIONS.md` (review protocol and checklist) for clarity and maintainability
+- Review checklist now includes: orphaned code, duplicate implementations, broken contracts, pattern violations, and missed context alongside existing security and logic checks
+
 ### Remove skip_cataractae — always run the full pipeline (ci-8ot9m)
 
 All droplets now flow through the same 7-step pipeline regardless of complexity level. Complexity no longer gates which cataractae execute — it exclusively gates human approval before delivery.
