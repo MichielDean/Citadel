@@ -877,11 +877,15 @@ func TestViewAqueductProgress_PipelineContainsAllSteps(t *testing.T) {
 	}
 	result := m.viewAqueductProgress(ch)
 	stripped := stripANSITest(result)
-	if !strings.Contains(stripped, "→") {
-		t.Errorf("progress row should contain pipeline separator →, got: %q", stripped)
-	}
+	// Segmented bar: all step names appear as labels, separated by segment brackets
 	if !strings.Contains(stripped, "implement") {
 		t.Errorf("progress row should contain all steps, got: %q", stripped)
+	}
+	if !strings.Contains(stripped, "deliver") {
+		t.Errorf("progress row should contain all steps, got: %q", stripped)
+	}
+	if !strings.Contains(stripped, "[") {
+		t.Errorf("progress row should contain segment brackets, got: %q", stripped)
 	}
 }
 

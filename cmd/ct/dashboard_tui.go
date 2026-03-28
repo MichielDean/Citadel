@@ -478,69 +478,118 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 //
 //	  virgo  cistern  ci-abc12  implement  5m 23s
 //	  [████████████░░░░░░░░░░░░░░░░░░░░░░░░░]  3/7
+// viewAqueductProgress renders an active aqueduct as a segmented pipeline bar.
+// Each cataracta gets its own labelled segment. Completed = filled teal,
+// active = animated water gradient, future = dim empty.
+//
+// Example (7 steps, active on step 3):
+//
+//	  virgo  ci-abc12  3m 45s
+//	  implement  review    qa       security  docs     simplify  delivery
+//	  [████████][████████][▒░░░░░░][░░░░░░░░][░░░░░░░░][░░░░░░░░][░░░░░░░░]
 func (m dashboardTUIModel) viewAqueductProgress(ch CataractaeInfo) string {
-	g := tuiStyleGreen
+	g   := tuiStyleGreen
 	dim := tuiStyleDim
 
-	// Water gradient: deep teal → bright cyan
-	const waterA = "#1a7a96" // deep water (empty)
-	const waterB = "#a8eeff" // bright surface (filled)
+	steps := ch.Steps
+	if len(steps) == 0 {
+		steps = []string{"—"}
+	}
+	n := len(steps)
 
-	w := m.width - 4 // 4 = left indent
-	if w < 20 {
-		w = 20
+	// Available width for the segmented bar (full terminal minus indent).
+	indent := "  "
+	avail := m.width - len([]rune(indent))
+	if avail < 20 {
+		avail = 20
 	}
 
-	// Header line: name  droplet  elapsed
+	// Each segment: [████] with 1-char gap between segments.
+	// Total chars: n*segW + (n-1)*1 = avail → segW = (avail - n + 1) / n
+	segW := (avail - n + 1) / n
+	if segW < 3 {
+		segW = 3
+	}
+
+	// Active step index (0-based).
+	activeIdx := -1
+	for i, s := range steps {
+		if s == ch.Step && ch.DropletID != "" {
+			activeIdx = i
+			break
+		}
+	}
+
+	// Water colors.
+	const (
+		waterFull  = "#1a8fa8" // completed segments
+		waterDark  = "#0a3545" // empty segments
+	)
+	waterGradA := "#1a7a96"
+	waterGradB := "#a8eeff"
+
+	// Label row: each step name centered over its segment.
+	var lblRow strings.Builder
+	lblRow.WriteString(indent)
+	for i, s := range steps {
+		if i > 0 {
+			lblRow.WriteRune(' ') // gap between segments
+		}
+		lbl := s
+		if len([]rune(lbl)) > segW {
+			lbl = string([]rune(lbl)[:segW-1]) + "…"
+		}
+		centered := padOrTruncCenter(lbl, segW)
+		if i == activeIdx {
+			lblRow.WriteString(g.Bold(true).Render(centered))
+		} else if i < activeIdx {
+			lblRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterFull)).Render(centered))
+		} else {
+			lblRow.WriteString(dim.Render(centered))
+		}
+	}
+
+	// Bar row: segments joined by single space.
+	var barRow strings.Builder
+	barRow.WriteString(indent)
+	for i := range steps {
+		if i > 0 {
+			barRow.WriteRune(' ')
+		}
+		barRow.WriteRune('[')
+		for j := 0; j < segW-2; j++ { // -2 for [ and ]
+			if i < activeIdx {
+				// Completed: solid teal fill
+				barRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterFull)).Render("█"))
+			} else if i == activeIdx {
+				// Active: water gradient, animated leading edge
+				filled := segW - 2 // inner width
+				halfFilled := (filled * (m.frame % (filled + 1))) / filled
+				if j < halfFilled {
+					t := float64(j) / float64(filled)
+					color := interpolateHex(waterGradA, waterGradB, t)
+					barRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("█"))
+				} else if j == halfFilled {
+					edge := []string{"░", "▒", "▓"}[m.frame%3]
+					barRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterGradA)).Render(edge))
+				} else {
+					barRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterDark)).Render("░"))
+				}
+			} else {
+				// Future: dim empty
+				barRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterDark)).Render("░"))
+			}
+		}
+		barRow.WriteRune(']')
+	}
+
+	// Header: name  droplet  elapsed
 	const nameW = 10
 	name := g.Render(padRight(ch.Name, nameW))
 	elapsed := dim.Render(formatElapsed(ch.Elapsed))
-	header := fmt.Sprintf("  %s  %s  %s", name, dim.Render(ch.DropletID), elapsed)
+	header := fmt.Sprintf("%s%s  %s  %s", indent, name, dim.Render(ch.DropletID), elapsed)
 
-	// Progress bar: fixed width, water colors
-	barW := 48
-	if barW > w-8 {
-		barW = w - 8
-	}
-	if barW < 10 {
-		barW = 10
-	}
-	total := ch.TotalCataractae
-	if total <= 0 {
-		total = len(ch.Steps)
-	}
-	if total <= 0 {
-		total = 1
-	}
-	pct := float64(ch.CataractaeIndex) / float64(total)
-	if pct > 1 {
-		pct = 1
-	}
-
-	// Build bar manually with water gradient chars
-	filled := int(pct * float64(barW))
-	var bar strings.Builder
-	bar.WriteString("  ")
-	for i := 0; i < barW; i++ {
-		if i < filled {
-			// Gradient: interpolate from waterA to waterB
-			t := float64(i) / float64(barW)
-			color := interpolateHex(waterA, waterB, t)
-			bar.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("█"))
-		} else if i == filled {
-			// Animated leading edge — cycles ░▒▓ with frame
-			edge := []string{"░", "▒", "▓"}[m.frame%3]
-			bar.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterA)).Render(edge))
-		} else {
-			bar.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#0a3545")).Render("░"))
-		}
-	}
-	bar.WriteString(fmt.Sprintf("  %s", dim.Render(fmt.Sprintf("%d/%d", ch.CataractaeIndex, total))))
-
-	// Step label: show active step bold, rest dim, truncated to terminal width
-	stepLabel := pipelineLabel(ch, m.width-2, g, dim)
-
-	return header + "\n" + bar.String() + "\n" + "  " + stepLabel
+	return header + "\n" + lblRow.String() + "\n" + barRow.String()
 }
 
 // pipelineLabel returns the pipeline steps as "step1 → step2 → ..." with the
