@@ -59,7 +59,7 @@ func TestDashboardWebMux_RootServesDefaultFontFamily_WhenNotConfigured(t *testin
 
 func TestDashboardWebMux_RootInjectsDashboardFontFamily_WhenConfigured(t *testing.T) {
 	customFont := "'Berkeley Mono', monospace"
-	mux := newDashboardMux(tempCfgWithFontFamily(t, "'Berkeley Mono', monospace"), tempDB(t))
+	mux := newDashboardMux(tempCfgWithFontFamily(t, customFont), tempDB(t))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
