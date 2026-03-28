@@ -468,6 +468,28 @@ func captureInitOutput(t *testing.T) string {
 	return buf.String()
 }
 
+func TestInit_WritesCisternYAML_ContainsDashboardFontFamily(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	initForce = false
+
+	if err := initCmd.RunE(initCmd, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	configFile := filepath.Join(home, ".cistern", "cistern.yaml")
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		t.Fatalf("cistern.yaml not created: %v", err)
+	}
+
+	const wantFont = "Liberation Mono, DejaVu Sans Mono, Menlo, Consolas, monospace"
+	if !strings.Contains(string(data), wantFont) {
+		t.Errorf("cistern.yaml does not contain expected dashboard_font_family value %q; content:\n%s", wantFont, string(data))
+	}
+}
+
 func TestInit_NextStepsMessage_DoesNotMentionAnthropicAPIKey(t *testing.T) {
 	output := captureInitOutput(t)
 	if strings.Contains(output, "ANTHROPIC_API_KEY") {

@@ -49,3 +49,5 @@ drought_hooks:
   #   action: shell
   #   command: "echo idle >> ~/.cistern/drought.log"
   #   timeout_seconds: 5
+
+dashboard_font_family: 'Liberation Mono, DejaVu Sans Mono, Menlo, Consolas, monospace'

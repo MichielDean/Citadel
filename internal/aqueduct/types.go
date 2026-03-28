@@ -226,4 +226,8 @@ type AqueductConfig struct {
 	// three progress signals (newest note, worktree mtime, session log mtime)
 	// before a droplet is considered stalled. Defaults to 45 when absent or 0.
 	StallThresholdMinutes int `yaml:"stall_threshold_minutes,omitempty"`
+
+	// DashboardFontFamily is the CSS font-family string used by the Cistern
+	// dashboard UI. Defaults to a monospace stack when empty.
+	DashboardFontFamily string `yaml:"dashboard_font_family,omitempty"`
 }
