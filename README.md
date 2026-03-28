@@ -359,6 +359,10 @@ stall_threshold_minutes: 45
 quick_exit_threshold_seconds: 30
 max_backoff_minutes: 30
 
+# Dashboard UI: CSS font-family string used by the web and TUI dashboards
+# Omit to default to a sensible monospace font stack for terminal rendering
+dashboard_font_family: 'Liberation Mono, DejaVu Sans Mono, Menlo, Consolas, monospace'
+
 # Rate limit: protect the delivery cataractae API endpoint
 # Omit to use defaults (60 req/min per IP, 120 req/min per token)
 # rate_limit:
