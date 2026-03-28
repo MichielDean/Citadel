@@ -853,7 +853,7 @@ func (m dashboardTUIModel) viewCurrentFlow() []string {
 				text := firstMeaningfulLine(note.Content)
 				text  = truncate(text, maxW-30)
 				lines = append(lines,
-					fmt.Sprintf("    › %s  %s  %s", who, tuiStyleFooter.Render(text), when),
+					fmt.Sprintf("    › %s  %s  %s", who, text, when),
 				)
 			}
 		}
