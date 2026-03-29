@@ -21,7 +21,111 @@ const (
 	architectiRestartCastellariusFactor = 5 // lastTickAt must exceed this multiple of pollInterval
 	architectiSessionTimeout           = 10 * time.Minute
 	maxActionsPerRun                   = 1000 // cap total actions per invocation for defense-in-depth
+
+	// architectiQueueCap is the capacity of the serial in-memory queue.
+	// Sized generously to accommodate transient bursts of stagnant transitions.
+	architectiQueueCap = 64
+
+	// architectiDefaultMaxFilesPerRun is used when no ArchitectiConfig is present.
+	architectiDefaultMaxFilesPerRun = 10
+
+	// architectiStuckRoutingThreshold is the number of consecutive Assign
+	// failures before a stuck-routing droplet is enqueued for Architecti.
+	architectiStuckRoutingThreshold = 3
+
+	// architectiInvocationNotePrefix is the content prefix written to a
+	// droplet's notes when it is enqueued for Architecti. Used as a dedup
+	// guard: if a note with this prefix already exists for the droplet,
+	// tryEnqueueArchitecti skips the droplet without re-enqueueing.
+	architectiInvocationNotePrefix = "[architecti] enqueued:"
 )
+
+// architectiConfigOrDefault returns the ArchitectiConfig from scheduler
+// configuration, falling back to built-in defaults when nil.
+func (s *Castellarius) architectiConfigOrDefault() aqueduct.ArchitectiConfig {
+	if s.config.Architecti != nil {
+		return *s.config.Architecti
+	}
+	return aqueduct.ArchitectiConfig{MaxFilesPerRun: architectiDefaultMaxFilesPerRun}
+}
+
+// tryEnqueueArchitecti attempts to enqueue droplet for Architecti processing.
+// It is a no-op when an invocation note already exists for the droplet,
+// providing the one-to-one guarantee: each bad-state transition triggers at
+// most one Architecti invocation.
+//
+// The invocation note is written BEFORE the droplet is sent to the queue so
+// that subsequent poll cycles — and restarts — can detect the enqueue without
+// reading the channel.
+func (s *Castellarius) tryEnqueueArchitecti(client CisternClient, droplet *cistern.Droplet) {
+	if s.architectiQueue == nil {
+		return
+	}
+	notes, err := client.GetNotes(droplet.ID)
+	if err != nil {
+		s.logger.Error("architecti: enqueue check: get notes failed",
+			"droplet", droplet.ID, "error", err)
+		return
+	}
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			s.logger.Debug("architecti: already enqueued — skipping", "droplet", droplet.ID)
+			return
+		}
+	}
+	// Write the invocation note before sending to the queue (crash-safe).
+	noteContent := architectiInvocationNotePrefix + " " + droplet.Status
+	if err := client.AddNote(droplet.ID, "architecti", noteContent); err != nil {
+		s.logger.Error("architecti: write invocation note failed",
+			"droplet", droplet.ID, "error", err)
+		return
+	}
+	select {
+	case s.architectiQueue <- droplet:
+		s.logger.Info("architecti: enqueued", "droplet", droplet.ID, "status", droplet.Status)
+	default:
+		s.logger.Warn("architecti: queue full — droplet not enqueued", "droplet", droplet.ID)
+	}
+}
+
+// startArchitectiQueue starts the single background goroutine that drains the
+// serial Architecti queue. It processes one droplet at a time: reads from the
+// buffered channel, deduplicates within the current queue contents (race
+// between enqueue and note write), calls runArchitectiFn, then reads the next.
+// The goroutine exits when ctx is cancelled.
+func (s *Castellarius) startArchitectiQueue(ctx context.Context) {
+	s.architectiWg.Add(1)
+	go func() {
+		defer s.architectiWg.Done()
+		// seen deduplicates duplicate IDs within the in-flight queue.
+		// Note-based dedup in tryEnqueueArchitecti prevents most duplicates;
+		// seen handles the narrow race between note write and queue send.
+		seen := make(map[string]struct{})
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case droplet, ok := <-s.architectiQueue:
+				if !ok {
+					return
+				}
+				if _, dup := seen[droplet.ID]; dup {
+					s.logger.Debug("architecti: drainer: duplicate — skipping", "droplet", droplet.ID)
+					continue
+				}
+				seen[droplet.ID] = struct{}{}
+				cfg := s.architectiConfigOrDefault()
+				if err := s.runArchitectiFn(ctx, droplet, cfg); err != nil {
+					s.logger.Error("architecti: run failed",
+						"droplet", droplet.ID, "error", err)
+				}
+				// Do not delete from seen: if the same ID appears again in
+				// the queue (narrow race), it must be discarded. The note-based
+				// dedup in tryEnqueueArchitecti prevents future re-enqueues.
+			}
+		}
+	}()
+}
 
 // architectiAction is a single action output by the Architecti agent.
 type architectiAction struct {
@@ -201,7 +305,6 @@ func (s *Castellarius) buildArchitectiSnapshot(ctx context.Context, trigger *cis
 	// --- Configuration ---
 	sb.WriteString("## Configuration\n")
 	fmt.Fprintf(&sb, "- MaxFilesPerRun: %d\n", config.MaxFilesPerRun)
-	fmt.Fprintf(&sb, "- ThresholdMinutes: %d\n", config.ThresholdMinutes)
 	fmt.Fprintf(&sb, "- Poll interval: %s\n\n", s.pollInterval)
 
 	return sb.String(), repoByDroplet

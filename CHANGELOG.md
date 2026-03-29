@@ -203,34 +203,39 @@ Five action keybindings are now available in the detail panel view without leavi
 
 All actions dispatch directly to `cistern.Client` methods without spawning CLI subcommands. After any action completes, the detail view re-fetches and displays updated droplet state. Destructive actions (cancel, escalate) show an inline confirmation overlay. Text-entry actions (restart, add-note, set-step) open a single-line text input overlay.
 
-### Architecti: autonomous diagnosis trigger for stagnant droplets (ci-khkml)
+### Architecti: state-machine trigger with serial queue, one-to-one guarantee (ci-lsn6b)
 
-The Castellarius now supports automatic invocation of the Architecti autonomous diagnosis agent when droplets become stagnant or blocked.
+The Architecti trigger mechanism has been replaced: instead of a heartbeat polling `threshold_minutes`, the Castellarius now enqueues droplets at the moment of each stagnant/blocked state transition with a strict one-to-one guarantee.
 
-**Configuration:**
+**Trigger mechanism:**
+- When `observeRepo` transitions a droplet to stagnant (no-route escalation, terminal blocked/human/escalate), it immediately calls `tryEnqueueArchitecti`
+- Before enqueueing, the scheduler checks for an existing `[architecti] enqueued:` note. If one exists, it skips — no re-enqueue
+- If none exists, the invocation note is written **before** the droplet is placed in the queue (crash-safe guarantee)
+- Subsequent poll cycles that see the same stagnant droplet skip it via the note check
+- Stuck-routing droplets (in_progress with outcome but Assign failing repeatedly) are enqueued after `architectiStuckRoutingThreshold` consecutive failures
 
-Add an `architecti` section to `~/.cistern/cistern.yaml`:
+**Serial queue:**
+- A single buffered in-memory channel (capacity 64) holds pending droplets
+- A single background goroutine drains it serially — one invocation at a time, no concurrent Architecti runs
+- Duplicate droplet IDs in the queue (narrow race between note write and channel send) are discarded by the drainer
+
+**Restart behavior:**
+- On restart the queue starts empty; droplets with existing invocation notes are skipped at the note-check step — no re-invocation
+
+**Config removal:**
+- `threshold_minutes` and `enabled` removed from `ArchitectiConfig` and `cistern.yaml`
+- Architecti is always active; no enable flag or threshold required
+- Optional `architecti:` section remains for tuning `max_files_per_run` (default: 10)
 
 ```yaml
+# Optional — omit to use defaults
 architecti:
-  enabled: true
-  threshold_minutes: 30
   max_files_per_run: 100
 ```
 
-**Key fields:**
-- `enabled`: Activates the architecti trigger. When false, no diagnosis goroutines are spawned. Default: false (disabled)
-- `threshold_minutes`: Minimum duration (in minutes) a droplet must remain stagnant or blocked before Architecti is invoked. Must be non-negative
-- `max_files_per_run`: Maximum number of files Architecti may examine per invocation. Must be positive
+### Architecti: autonomous diagnosis trigger for stagnant droplets (ci-khkml)
 
-**Behavior:**
-- When a droplet is marked stagnant or blocked, the Castellarius heartbeat checks `architecti.enabled` and the droplet's inactivity duration
-- If inactivity exceeds `threshold_minutes`, a goroutine is spawned to invoke Architecti with the droplet configuration
-- In-flight invocations are tracked per droplet to prevent double-spawning the same diagnostician
-- Diagnostician goroutines participate in graceful shutdown: the drain timeout budget is split between in-flight Architecti goroutines and session drains
-- Architecti invocations are logged and tracked in-memory until the droplet terminal state
-
-**Omit the section entirely to disable Architecti** — this is the default state for all Cistern instances. Existing configs continue to work unchanged.
+The Castellarius now supports automatic invocation of the Architecti autonomous diagnosis agent when droplets become stagnant or blocked.
 
 ### Adversarial reviewer: full codebase access, orphaned code check (ci-hvskp)
 

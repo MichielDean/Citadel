@@ -133,19 +133,27 @@ type Castellarius struct {
 	// is enabled. Defaults to s.runArchitecti; injectable for testing.
 	runArchitectiFn func(context.Context, *cistern.Droplet, aqueduct.ArchitectiConfig) error
 
-	// architectiInFlight tracks droplet IDs for which runArchitecti is currently
-	// executing. Used to prevent double-spawn. Protected by architectiInFlightMu.
-	architectiInFlight   map[string]struct{}
-	architectiInFlightMu sync.Mutex
+	// architectiQueue is the serial in-memory queue for Architecti invocations.
+	// Stagnant/blocked transitions enqueue droplets here; a single background
+	// goroutine drains it serially — one droplet at a time. Buffered to avoid
+	// blocking observeRepo. Always non-nil after construction.
+	architectiQueue chan *cistern.Droplet
 
-	// architectiWg tracks in-flight architecti goroutines for graceful shutdown.
-	// drainInFlight waits on this before returning.
+	// architectiWg tracks the Architecti queue drainer goroutine for graceful
+	// shutdown. drainInFlight waits on this before returning.
 	architectiWg sync.WaitGroup
 
 	// architectiRunning is a global singleton guard: at most one Architecti
 	// session runs at a time across all droplets. Set before spawning, cleared
 	// on exit. When true, new triggers skip execution.
 	architectiRunning atomic.Bool
+
+	// architectiStuckRouting tracks consecutive routing-failure counts per
+	// droplet ID. When a droplet's in_progress outcome cannot be advanced
+	// (Assign error), the counter increments. At threshold the droplet is
+	// enqueued for Architecti. Protected by architectiStuckRoutingMu.
+	architectiStuckRouting   map[string]int
+	architectiStuckRoutingMu sync.Mutex
 
 	// architectiRestarts tracks the most recent restart action per droplet ID
 	// to enforce the 24h rate limit (at most 1 restart per droplet per 24h).
@@ -260,10 +268,11 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 		killSessionFn:      defaultKillSession,
 		rebaseAndPushFn:    defaultRebaseAndPush,
 		ghMergeFn:          defaultGhMerge,
-		dispatchLoop:       newDispatchLoopTracker(),
-		lastStallNoted:     make(map[string]time.Time),
-		architectiInFlight: make(map[string]struct{}),
-		architectiRestarts: make(map[string]time.Time),
+		dispatchLoop:           newDispatchLoopTracker(),
+		lastStallNoted:         make(map[string]time.Time),
+		architectiQueue:        make(chan *cistern.Droplet, architectiQueueCap),
+		architectiStuckRouting: make(map[string]int),
+		architectiRestarts:     make(map[string]time.Time),
 	}
 	s.runArchitectiFn = s.runArchitecti
 	s.architectiExecFn = s.defaultArchitectiExec
@@ -358,10 +367,11 @@ func NewFromParts(
 		killSessionFn:     defaultKillSession,
 		rebaseAndPushFn:   defaultRebaseAndPush,
 		ghMergeFn:         defaultGhMerge,
-		dispatchLoop:       newDispatchLoopTracker(),
-		lastStallNoted:     make(map[string]time.Time),
-		architectiInFlight: make(map[string]struct{}),
-		architectiRestarts: make(map[string]time.Time),
+		dispatchLoop:           newDispatchLoopTracker(),
+		lastStallNoted:         make(map[string]time.Time),
+		architectiQueue:        make(chan *cistern.Droplet, architectiQueueCap),
+		architectiStuckRouting: make(map[string]int),
+		architectiRestarts:     make(map[string]time.Time),
 	}
 	s.runArchitectiFn = s.runArchitecti
 	s.architectiExecFn = s.defaultArchitectiExec
@@ -440,6 +450,10 @@ func (s *Castellarius) Run(ctx context.Context) error {
 
 	s.recoverInProgress()
 
+	// Start the serial Architecti queue drainer. It runs for the lifetime of
+	// the scheduler and processes one droplet at a time.
+	s.startArchitectiQueue(ctx)
+
 	if s.cleanupInterval > 0 {
 		go func() {
 			ticker := time.NewTicker(s.cleanupInterval)
@@ -505,7 +519,6 @@ func (s *Castellarius) Run(ctx context.Context) error {
 						}
 					}()
 					s.heartbeatInProgress(ctx)
-					s.heartbeatArchitecti(ctx)
 					s.checkHungDrought()
 				}()
 			}
@@ -928,6 +941,8 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 			if err := client.Escalate(item.ID, reason); err != nil {
 				s.logger.Error("observe: escalate failed", "droplet", item.ID, "error", err)
 			}
+			// Stagnant transition: enqueue for Architecti (note-based dedup prevents repeat).
+			s.tryEnqueueArchitecti(client, item)
 			continue
 		}
 
@@ -939,6 +954,10 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		if isTerminal(next) {
 			cleanupBranch()
 			s.handleTerminal(client, item.ID, next, step.Name)
+			// Blocked/human/escalate terminals become stagnant: enqueue for Architecti.
+			if strings.ToLower(next) != "done" {
+				s.tryEnqueueArchitecti(client, item)
+			}
 			continue
 		}
 
@@ -946,6 +965,20 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		// The feature branch is kept so the next cycle can resume incrementally.
 		if err := client.Assign(item.ID, "", next); err != nil {
 			s.logger.Error("observe: advance step failed", "droplet", item.ID, "next", next, "error", err)
+			// Track consecutive routing failures. When the threshold is reached
+			// the item is treated as stuck-routing and enqueued for Architecti.
+			s.architectiStuckRoutingMu.Lock()
+			s.architectiStuckRouting[item.ID]++
+			count := s.architectiStuckRouting[item.ID]
+			s.architectiStuckRoutingMu.Unlock()
+			if count >= architectiStuckRoutingThreshold {
+				s.tryEnqueueArchitecti(client, item)
+			}
+		} else {
+			// Successful advance: clear any stuck-routing counter for this droplet.
+			s.architectiStuckRoutingMu.Lock()
+			delete(s.architectiStuckRouting, item.ID)
+			s.architectiStuckRoutingMu.Unlock()
 		}
 	}
 
@@ -1531,78 +1564,6 @@ func (s *Castellarius) respawnStalledDroplet(ctx context.Context, client Cistern
 		return err
 	}
 	return nil
-}
-
-// heartbeatArchitecti checks stagnant and blocked droplets and, when architecti
-// is enabled and the droplet has been idle longer than the configured threshold,
-// spawns a goroutine invoking runArchitectiFn. At most one goroutine runs per
-// droplet at a time; the in-flight set is cleared when the goroutine returns.
-func (s *Castellarius) heartbeatArchitecti(ctx context.Context) {
-	if s.config.Architecti == nil || !s.config.Architecti.Enabled {
-		return
-	}
-	cfg := *s.config.Architecti
-	threshold := time.Duration(cfg.ThresholdMinutes) * time.Minute
-
-	for _, repo := range s.config.Repos {
-		if ctx.Err() != nil {
-			return
-		}
-		client, ok := s.clients[repo.Name]
-		if !ok {
-			continue
-		}
-		for _, status := range []string{"stagnant", "blocked"} {
-			items, err := client.List(repo.Name, status)
-			if err != nil {
-				s.logger.Error("heartbeat: architecti: list failed",
-					"repo", repo.Name, "status", status, "error", err)
-				continue
-			}
-			for _, item := range items {
-				if time.Since(item.UpdatedAt) <= threshold {
-					continue
-				}
-				s.architectiInFlightMu.Lock()
-				if _, inFlight := s.architectiInFlight[item.ID]; inFlight {
-					s.architectiInFlightMu.Unlock()
-					continue
-				}
-				s.architectiInFlight[item.ID] = struct{}{}
-				s.architectiInFlightMu.Unlock()
-
-				s.logger.Info("heartbeat: architecti: spawning",
-					"repo", repo.Name,
-					"droplet", item.ID,
-					"status", item.Status,
-					"idle", time.Since(item.UpdatedAt).Round(time.Second).String(),
-				)
-				s.architectiWg.Add(1)
-				go func(ctx context.Context, d cistern.Droplet, c aqueduct.ArchitectiConfig) {
-					defer func() {
-						if r := recover(); r != nil {
-							stack := debug.Stack()
-							s.logger.Error("heartbeat: architecti: panic recovered",
-								"droplet", d.ID,
-								"panic", r,
-								"stack", string(stack),
-							)
-						}
-					}()
-					defer s.architectiWg.Done()
-					defer func() {
-						s.architectiInFlightMu.Lock()
-						delete(s.architectiInFlight, d.ID)
-						s.architectiInFlightMu.Unlock()
-					}()
-					if err := s.runArchitectiFn(ctx, &d, c); err != nil {
-						s.logger.Error("heartbeat: architecti: run failed",
-							"droplet", d.ID, "error", err)
-					}
-				}(ctx, *item, cfg)
-			}
-		}
-	}
 }
 
 // stallThresholdDuration returns the configured stall threshold, defaulting to 45 minutes.
