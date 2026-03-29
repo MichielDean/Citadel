@@ -387,8 +387,9 @@ func (c *Client) Assign(id, worker, step string) error {
 	return checkRowsAffected(res, id)
 }
 
-// SetAssignedAqueduct records the aqueduct that first claimed this droplet.
-// It is only written once — if assigned_aqueduct is already set this is a no-op.
+// SetAssignedAqueduct records the aqueduct operator currently holding this
+// droplet. Only updates when the field is currently empty; CloseItem, Cancel,
+// and Escalate clear it as part of their terminal-state transitions.
 func (c *Client) SetAssignedAqueduct(id, aqueductName string) error {
 	_, err := c.db.Exec(
 		`UPDATE droplets SET assigned_aqueduct = ? WHERE id = ? AND (assigned_aqueduct = '' OR assigned_aqueduct IS NULL)`,
