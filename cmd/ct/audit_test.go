@@ -432,6 +432,9 @@ func TestInvokeAuditAgent_PassesAddDirFlag(t *testing.T) {
 	if !strings.Contains(argsStr, "--allowedTools") {
 		t.Error("expected --allowedTools flag in agent args")
 	}
+	if !strings.Contains(argsStr, "Glob,Grep,Read") {
+		t.Error("expected --allowedTools value 'Glob,Grep,Read' in agent args — write tools must not be granted")
+	}
 }
 
 // TestInvokeAuditAgent_ErrorEnvelope_ReturnsError verifies that invokeAuditAgent
@@ -491,6 +494,33 @@ func TestInvokeAuditAgent_MissingEnvVar_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestInvokeAuditAgent_AgentExitFailure verifies that invokeAuditAgent returns a
+// descriptive error when the agent binary exits with a non-zero status code.
+// Given a preset pointing at failagent (always exits 1 with a known stderr message),
+// When invokeAuditAgent is called,
+// Then an error is returned containing the exit code and the stderr text.
+func TestInvokeAuditAgent_AgentExitFailure(t *testing.T) {
+	failagentBin := buildTestBin(t, "failagent", "github.com/MichielDean/cistern/internal/testutil/failagent")
+	repoPath := t.TempDir()
+
+	preset := provider.ProviderPreset{
+		Name:    "test-fail",
+		Command: failagentBin,
+		NonInteractive: provider.NonInteractiveConfig{
+			PrintFlag:  "--print",
+			PromptFlag: "-p",
+		},
+	}
+
+	_, err := invokeAuditAgent(preset, repoPath, "")
+	if err == nil {
+		t.Fatal("expected error when agent exits non-zero, got nil")
+	}
+	if !strings.Contains(err.Error(), "exit 1") && !strings.Contains(err.Error(), "agent crashed") {
+		t.Errorf("error %q does not mention exit code or stderr text", err.Error())
+	}
+}
+
 // --- auditRunCmd flag tests ---
 
 // TestAuditRunCmd_MissingRepo_ReturnsError verifies that ct audit run without
@@ -540,6 +570,37 @@ func TestAuditRunCmd_UnknownRepo_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown repo nonexistent") {
 		t.Errorf("error %q does not mention 'unknown repo nonexistent'", err.Error())
+	}
+}
+
+// TestAuditRunCmd_WorktreeNotFound verifies that ct audit run returns a clear error
+// when the repository worktree does not exist on disk.
+// Given a config with "TestRepo" and HOME set to a temp dir without the _primary dir,
+// When ct audit run --repo TestRepo is executed,
+// Then an error containing 'worktree not found' is returned.
+func TestAuditRunCmd_WorktreeNotFound(t *testing.T) {
+	fakeagentBin := buildTestBin(t, "fakeauditagent", "github.com/MichielDean/cistern/internal/testutil/fakeauditagent")
+	// HOME points at a temp dir that has no .cistern/sandboxes/TestRepo/_primary
+	home := t.TempDir()
+	db := filepath.Join(t.TempDir(), "test.db")
+	cfgPath := writeTestConfigWithAgent(t, "TestRepo", fakeagentBin)
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", db)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("HOME", home)
+	t.Cleanup(func() {
+		auditRunRepo = ""
+		auditRunDryRun = false
+		auditRunModel = ""
+		auditRunPriority = 1
+	})
+
+	err := execCmd(t, "audit", "run", "--repo", "TestRepo")
+	if err == nil {
+		t.Fatal("expected error when worktree does not exist, got nil")
+	}
+	if !strings.Contains(err.Error(), "worktree not found") {
+		t.Errorf("error %q does not mention 'worktree not found'", err.Error())
 	}
 }
 
