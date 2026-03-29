@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Delivery: pre-PR merge-base guard to skip unnecessary rebases (ci-zzqy7)
+
+The delivery cataractae now checks whether a branch is already based on the latest `origin/main` before attempting to rebase. This prevents unnecessary rebases and their associated risks.
+
+**Key changes:**
+- **Merge-base guard**: before rebasing, compares `git merge-base HEAD origin/main` with `git rev-parse origin/main`
+- **Skip when aligned**: if the branch's merge-base equals the current origin/main tip, the branch is already based on the latest code — rebase is skipped
+- **Rebase when needed**: if merge-base and origin tip differ, rebases onto origin/main to prevent stale-branch PR conflicts
+- **Fail-safe**: if either check fails (e.g., network issue), falls back to unconditional rebase
+- **Conflict handling**: rebase conflicts abort cleanly and recirculate to implement; stashed worktree files (CONTEXT.md, .claude/) are restored in all paths
+- **Acceptance criteria**: (1) stale branch rebases cleanly and creates correct PR, (2) conflicted branch fails loudly with diagnostic instead of creating bad PR, (3) branch already on latest main is unaffected (no spurious rebase)
+
 ### Adversarial reviewer: full codebase access, orphaned code check (ci-hvskp)
 
 The adversarial reviewer cataractae now has full repository access to catch issues invisible from the diff alone. This enables checks for orphaned code, duplicate implementations, broken contracts, and pattern violations.

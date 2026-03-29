@@ -65,11 +65,11 @@ tmux send-keys -t filtration "/tmp/add-droplet.sh" Enter
 
 ### Complexity Matrix
 
-| Level | Code | Stages skipped |
-|-------|------|---------------|
-| standard | 1 | review, qa |
-| full | 2 | none (default) |
-| critical | 3 | none + human approval required |
+| Level | Code | Human Approval Required |
+|-------|------|------------------------|
+| standard | 1 | No — auto-merges after delivery |
+| full | 2 | No — auto-merges after delivery (default) |
+| critical | 3 | Yes — pauses for `ct droplet approve <id>` before delivery |
 
 ### Droplet Signaling (Terminal Outcomes)
 
