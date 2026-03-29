@@ -122,6 +122,7 @@ elif [ -z "$CHECKS" ]; then
   echo "No CI checks configured — proceeding to merge"
 else
   echo "$CHECKS"
+  # Wait for all checks to pass before merging.
 fi
 ```
 
@@ -133,7 +134,7 @@ Before entering the fix loop, initialize an associative array keyed by check nam
 declare -A CHECK_ATTEMPTS  # key = check name, value = number of fix attempts made
 ```
 
-Each time you take any action to fix a specific failing check — including a `gh run rerun` — increment `CHECK_ATTEMPTS["<check_name>"]`. The counter is per check name, not per push. A rerun is not a free retry: it counts as attempt 1, and if the same check fails again after the rerun, that is attempt 2 and triggers recirculation.
+Each time you take any action to fix a specific failing check — including a `gh run rerun` — increment `CHECK_ATTEMPTS["<check_name>"]`. The counter is per check name, not per push. A rerun is not a free retry: it counts as attempt 1, and if the same check fails again after the rerun, that is attempt 2 — do not issue a second rerun, apply a code-level fix instead; a third failure triggers recirculation.
 
 ### Failure classification
 
@@ -173,46 +174,22 @@ Repeat until no counter-exempt issues remain, then proceed to the fix loop.
 For each recirculate-eligible failing check:
 
 1. Increment `CHECK_ATTEMPTS["<check_name>"]`
-2. If `CHECK_ATTEMPTS["<check_name>"] > 2`, recirculate — see **Recirculate path** below. Do NOT attempt a third fix.
-3. If `CHECK_ATTEMPTS["<check_name>"] <= 2`, apply the appropriate fix and push:
+2. If `CHECK_ATTEMPTS["<check_name>"] > 2`, recirculate — see **Recirculate path** below.
+3. Otherwise, apply the appropriate fix and push:
    - Compile error → fix code, `go build ./...`, commit, push
    - Test failure → fix test or code, `go test ./...`, commit, push
-   - Flaky test → `gh run rerun <run_id>` and wait for result (**this counts as attempt 1; a second failure of the same check after rerun counts as attempt 2 and triggers recirculation**)
+   - Flaky test → `gh run rerun <run_id>` and wait for result (**this counts as attempt 1; if the same check fails again after the rerun, that is attempt 2 — do not issue a second rerun, apply a code-level fix instead; a third failure triggers recirculation**)
 
 After each fix commit:
 ```bash
 git add -A -- ':!CONTEXT.md' && git commit -m "fix: <specific issue>" && git push
-```
-For reruns: no commit or push needed.
-
-If a check fails again after **2 fix attempts**, classify the failure:
-
-**Infrastructure failure** — identifiable by patterns such as "address already in use", "connection refused", "container failed to start", "service not available", or similar environment/port/service errors. Go stagnant:
-```bash
-ct droplet block $DROPLET_ID --notes "$(cat <<'EOF'
-CI blocked by infrastructure failure: <check name> — <error snippet>
-$PR_URL
-EOF
-)"
-```
-
-**Code-level failure** — test assertion errors, API mismatches, schema errors, compile errors, or anything the implementer can fix in code. Recirculate:
-```bash
-ct droplet recirculate $DROPLET_ID --notes "$(cat <<'EOF'
-**Check:** <check name>
-**Error:** <relevant error snippet from CI logs, ≤10 lines>
-**Attempt 1:** <what was tried>
-**Attempt 2:** <what was tried>
-**Recommended fix:** <specific guidance for the implementer>
-EOF
-)"
 ```
 
 Wait for the check to complete, then return to step 1 of the loop for any remaining failures.
 
 ### Recirculate path
 
-When `CHECK_ATTEMPTS["<check_name>"] >= 2`, stop and recirculate with a structured diagnostic. All five fields are required — do not recirculate with a partial note.
+When `CHECK_ATTEMPTS["<check_name>"] > 2`, stop and recirculate with a structured diagnostic. All five fields are required — do not recirculate with a partial note.
 
 ```bash
 ct droplet recirculate $DROPLET_ID --notes "$(cat <<'EOF'
@@ -266,6 +243,6 @@ ct droplet block $DROPLET_ID --notes "Cannot merge: <exact reason> — $PR_URL"
 - Never signal pass until gh pr view confirms state == "MERGED"
 - Never discard branch additions in conflicts — always keep both sides
 - go build + go test must pass before every push
-- Fix CI failures yourself; after 2 failed fix attempts on the same check, recirculate (code-level failures) or block (infrastructure failures) — do not loop indefinitely
+- Fix CI, conflicts, and review comments yourself — do not recirculate for routine failures
 - Recirculate after 2 failed fix attempts on the same code-level CI check (see Step 4 recirculate path)
 - Recirculate only for code-level failures — never recirculate for infrastructure/stagnant failures (block instead)

@@ -141,7 +141,7 @@ Before entering the fix loop, initialize an associative array keyed by check nam
 declare -A CHECK_ATTEMPTS  # key = check name, value = number of fix attempts made
 ```
 
-Each time you take any action to fix a specific failing check — including a `gh run rerun` — increment `CHECK_ATTEMPTS["<check_name>"]`. The counter is per check name, not per push. A rerun is not a free retry: it counts as attempt 1, and if the same check fails again after the rerun, that is attempt 2 and triggers recirculation.
+Each time you take any action to fix a specific failing check — including a `gh run rerun` — increment `CHECK_ATTEMPTS["<check_name>"]`. The counter is per check name, not per push. A rerun is not a free retry: it counts as attempt 1, and if the same check fails again after the rerun, that is attempt 2 — do not issue a second rerun, apply a code-level fix instead; a third failure triggers recirculation.
 
 ### Failure classification
 
@@ -181,11 +181,11 @@ Repeat until no counter-exempt issues remain, then proceed to the fix loop.
 For each recirculate-eligible failing check:
 
 1. Increment `CHECK_ATTEMPTS["<check_name>"]`
-2. If `CHECK_ATTEMPTS["<check_name>"] >= 2`, recirculate — see **Recirculate path** below.
+2. If `CHECK_ATTEMPTS["<check_name>"] > 2`, recirculate — see **Recirculate path** below.
 3. Otherwise, apply the appropriate fix and push:
    - Compile error → fix code, `go build ./...`, commit, push
    - Test failure → fix test or code, `go test ./...`, commit, push
-   - Flaky test → `gh run rerun <run_id>` and wait for result (**this counts as attempt 1; a second failure of the same check after rerun counts as attempt 2 and triggers recirculation**)
+   - Flaky test → `gh run rerun <run_id>` and wait for result (**this counts as attempt 1; if the same check fails again after the rerun, that is attempt 2 — do not issue a second rerun, apply a code-level fix instead; a third failure triggers recirculation**)
 
 After each fix commit:
 ```bash
@@ -196,7 +196,7 @@ Wait for the check to complete, then return to step 1 of the loop for any remain
 
 ### Recirculate path
 
-When `CHECK_ATTEMPTS["<check_name>"] >= 2`, stop and recirculate with a structured diagnostic. All five fields are required — do not recirculate with a partial note.
+When `CHECK_ATTEMPTS["<check_name>"] > 2`, stop and recirculate with a structured diagnostic. All five fields are required — do not recirculate with a partial note.
 
 ```bash
 ct droplet recirculate $DROPLET_ID --notes "$(cat <<'EOF'
