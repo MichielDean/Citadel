@@ -813,6 +813,67 @@ func TestCallFilterAgent_WithAddDir_PassesDirFlag(t *testing.T) {
 	}
 }
 
+// TestFilterCmd_WithRepo_ForwardsAddDirToAgent verifies the end-to-end path:
+// filterCmd.RunE → filterRepo != "" → repoPath computed → invokeFilterNew →
+// callFilterAgent → --add-dir <repoPath> forwarded to the agent subprocess.
+// Given a config with fakeagent as the preset command and testRepo in repos,
+// When ct filter --title "..." --repo testRepo is called with FAKEAGENT_ARGS_FILE set,
+// Then the captured subprocess args must contain --add-dir and the expected path.
+func TestFilterCmd_WithRepo_ForwardsAddDirToAgent(t *testing.T) {
+	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
+	dir := t.TempDir()
+
+	// Config that overrides the claude preset command to point at fakeagent
+	// and registers testRepo so resolveCanonicalRepo succeeds.
+	cfgPath := filepath.Join(dir, "cistern.yaml")
+	cfgContent := fmt.Sprintf("provider:\n  command: %s\nrepos:\n  - name: testRepo\n    cataractae: 1\n", fakeagentBin)
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("WriteFile config: %v", err)
+	}
+
+	argsFile := filepath.Join(dir, "args.txt")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", filepath.Join(dir, "test.db"))
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("FAKEAGENT_ARGS_FILE", argsFile)
+	// Reset globals that may be polluted by prior tests.
+	filterTitle = ""
+	filterResume = ""
+	filterFile = false
+	filterRepo = ""
+	filterSkipContext = false
+	t.Cleanup(func() {
+		filterTitle = ""
+		filterResume = ""
+		filterFile = false
+		filterRepo = ""
+		filterSkipContext = false
+	})
+
+	if err := execCmd(t, "filter", "--title", "test idea", "--repo", "testRepo", "--skip-context"); err != nil {
+		t.Fatalf("filter --repo testRepo: unexpected error: %v", err)
+	}
+
+	captured, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading args file: %v", err)
+	}
+	args := string(captured)
+
+	if !strings.Contains(args, "--add-dir") {
+		t.Errorf("expected --add-dir in agent args, got:\n%s", args)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	expectedPath := filepath.Join(home, ".cistern", "sandboxes", "testRepo", "_primary")
+	if !strings.Contains(args, expectedPath) {
+		t.Errorf("expected path %q in agent args, got:\n%s", expectedPath, args)
+	}
+}
+
 // TestCallFilterAgent_WithEmptyRepoPath_SkipsAddDirFlag verifies that when
 // repoPath is empty, --add-dir is NOT passed even if AddDirFlag is set.
 // Given a preset with AddDirFlag and an empty repoPath,
