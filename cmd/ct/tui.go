@@ -439,7 +439,6 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.detailDroplet != nil {
 				m.overlayMode = overlayText
 				m.overlayAction = actionRestart
-				m.overlayInput = ""
 			}
 		case "x":
 			if m.detailDroplet != nil {
@@ -455,13 +454,11 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.detailDroplet != nil {
 				m.overlayMode = overlayText
 				m.overlayAction = actionAddNote
-				m.overlayInput = ""
 			}
 		case "s":
 			if m.detailDroplet != nil {
 				m.overlayMode = overlayText
 				m.overlayAction = actionSetStep
-				m.overlayInput = ""
 			}
 		}
 		// Clamp to valid range after every scroll operation.
