@@ -9,7 +9,7 @@ Cistern is an agentic delivery system built around a water metaphor. Droplets of
 | Term | Meaning |
 |---|---|
 | **Droplet** | A unit of work — one issue, one feature, one fix. The atomic thing that flows. |
-| **Complexity** | A droplet's weight: standard, full, or critical. All droplets run through all cataractae; critical droplets require human approval before delivery. |
+| **Complexity** | A droplet's weight: standard, full, or critical. All droplets run through all cataractae. |
 | **Filtration** | Optional LLM refinement step. Refine a raw idea before it enters the Cistern. |
 | **Cistern** | The reservoir. Droplets queue here waiting to flow into the aqueduct. |
 | **Drought** | Idle state. The cistern is dry. Drought protocols run maintenance automatically. A drought may also be a forced maintenance window where processing is stopped. |
@@ -62,13 +62,7 @@ Every droplet flows through the same sequence of cataractae, regardless of compl
 All:      implement → simplify → review → qa → security-review → docs → delivery → done
 ```
 
-Complexity levels control one thing: whether a droplet pauses for human approval before delivery.
-
-```
-standard:  No human gate → delivery
-full:      No human gate → delivery
-critical:  Pauses for human approval (ct droplet approve <id>) → delivery
-```
+All droplets flow through the same pipeline and auto-merge after delivery.
 
 Filtration is an optional pre-intake step that refines vague ideas before they enter the pipeline. Use `ct droplet add --filter` to filtrate while adding, or `ct filter` to refine ideas standalone before deciding to add them.
 
@@ -84,21 +78,22 @@ Filtration is an optional pre-intake step that refines vague ideas before they e
 
 6. **Docs** (`docs`) — Reviews the diff and updates documentation for all user-visible changes: README, CHANGELOG, CLI reference, config docs. Skips if there are no user-visible changes.
 
-7. **Human Gate** — Only critical droplets pause before delivery and require explicit human approval: `ct droplet approve <id>`. Ensures a human signs off before any critical change ships.
 
 8. **Delivery** (`delivery`) — Owns all git operations: rebase, PR creation, CI monitoring, PR review response, and merge. One agent handles the full branch-to-merged lifecycle. If a delivery agent stalls, the Castellarius detects and recovers automatically — see [Automatic Stuck Delivery Recovery](#automatic-stuck-delivery-recovery).
 
 9. **Recirculation** — Revision sends the droplet back upstream to a prior cataractae for another pass. No retry limits. The water flows until it's pure.
 
+10. **Auto-merge** — After delivery, droplets auto-merge to main. All complexity levels flow through the same pipeline and auto-merge identically.
+
 ## Complexity Levels
 
-Set complexity when adding a droplet with `--complexity` (or `-x`). All droplets run through the same 7-step pipeline. Complexity controls whether a droplet requires human approval before delivery:
+Set complexity when adding a droplet with `--complexity` (or `-x`). Complexity levels indicate the scrutiny level used during review and QA, but all droplets run through the same pipeline and auto-merge identically:
 
-| Level | Name | Requires Human Approval |
+| Level | Name | Purpose |
 |---|---|---|
-| 1 | standard | No — auto-merges after delivery |
-| 2 | full *(default)* | No — auto-merges after delivery |
-| 3 | critical | Yes — pauses for `ct droplet approve <id>` before delivery |
+| 1 | standard | Minimal changes — suitable for simple fixes |
+| 2 | full *(default)* | Regular features — standard scrutiny |
+| 3 | critical | High-impact changes — maximum scrutiny (security review, etc.) |
 
 ```bash
 ct droplet add --title "Add pagination to list endpoint" --repo myproject --complexity standard

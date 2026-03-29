@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Remove require_human gate for critical complexity (ci-mguos)
+
+Critical complexity droplets no longer pause for human approval before delivery. All droplets now flow through the complete pipeline (implement → simplify → review → qa → security-review → docs → delivery) and auto-merge identically, regardless of complexity level.
+
+**Key changes:**
+- Removed `require_human: true` from the critical complexity block in aqueduct.yaml
+- Critical droplets flow directly to delivery without a separate human approval gate
+- `on_escalate: human` is preserved on all cataractae for explicit agent escalation
+- Updated README and documentation to clarify that complexity level no longer gates the human gate (removed entirely)
+- All droplets follow the same pipeline and auto-merge behavior
+
 ### Castellarius: persist operator assignment on dispatch, clear on terminal states (ci-dko75)
 
 Castellarius now tracks which aqueduct operator holds each droplet. When a droplet is dispatched to an aqueduct, the operator name is persisted in the database. When the droplet reaches a terminal state (delivered, cancelled, or stagnant), the assignment is cleared to prevent ghost assignments.

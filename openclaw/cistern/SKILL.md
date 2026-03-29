@@ -59,9 +59,9 @@ implement → review → qa → security-review → docs → delivery
 
 | Complexity | Code | Notes |
 |------------|------|-------|
-| standard | 1 | default minimum — always includes review |
-| full | 2 | all stages |
-| critical | 3 | all stages + human approval before merge |
+| standard | 1 | minimal scrutiny |
+| full | 2 | standard scrutiny |
+| critical | 3 | maximum scrutiny (security review included) |
 
 ## Adding a Droplet
 
