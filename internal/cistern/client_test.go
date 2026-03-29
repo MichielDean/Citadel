@@ -1633,3 +1633,63 @@ func TestSearch_CancelledStatus_ReturnsCancelled(t *testing.T) {
 		t.Errorf("Search(cancelled) returned %s, want %s", results[0].ID, cancelled.ID)
 	}
 }
+
+// TestCloseItem_ClearsAssignedAqueduct verifies that delivering a droplet removes
+// the assigned_aqueduct so no ghost assignments linger after terminal state.
+func TestCloseItem_ClearsAssignedAqueduct(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Feature", "", 1, 2)
+	c.SetAssignedAqueduct(item.ID, "cistern-alpha")
+
+	if err := c.CloseItem(item.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AssignedAqueduct != "" {
+		t.Errorf("AssignedAqueduct after CloseItem = %q, want empty string", got.AssignedAqueduct)
+	}
+}
+
+// TestEscalate_ClearsAssignedAqueduct verifies that escalating a droplet to stagnant
+// removes assigned_aqueduct so no ghost assignments linger.
+func TestEscalate_ClearsAssignedAqueduct(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Stuck task", "", 1, 2)
+	c.SetAssignedAqueduct(item.ID, "cistern-beta")
+
+	if err := c.Escalate(item.ID, "timeout"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AssignedAqueduct != "" {
+		t.Errorf("AssignedAqueduct after Escalate = %q, want empty string", got.AssignedAqueduct)
+	}
+}
+
+// TestCancel_ClearsAssignedAqueduct verifies that cancelling a droplet removes
+// assigned_aqueduct so no ghost assignments linger.
+func TestCancel_ClearsAssignedAqueduct(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Obsolete task", "", 1, 2)
+	c.SetAssignedAqueduct(item.ID, "cistern-gamma")
+
+	if err := c.Cancel(item.ID, "no longer needed"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AssignedAqueduct != "" {
+		t.Errorf("AssignedAqueduct after Cancel = %q, want empty string", got.AssignedAqueduct)
+	}
+}
