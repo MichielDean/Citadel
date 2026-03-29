@@ -42,7 +42,8 @@ ct droplet note <id> "Intermediate finding or progress update."
 ## Rules
 
 1. Always include `--notes` when signaling — describe what you did or found
-2. Never signal pass if required issues remain unresolved
-3. Implementer: never push to origin — local commits only
-4. Be specific in notes — "Fixed 3 issues in client.go" not "fixed it"
-5. If CONTEXT.md has revision notes from prior cycles, address every single one
+2. **Implementer**: signal `pass` when your work is committed and tests pass. Never signal `recirculate` — that is the reviewer's signal. Open issues are for the reviewer to verify and resolve; you cannot resolve your own issues.
+3. **Reviewer/QA/Security**: signal `recirculate` when you have findings that require implementation changes. Signal `pass` when all prior issues are resolved and no new issues found.
+4. Implementer: never push to origin — local commits only
+5. Be specific in notes — "Fixed 3 issues in client.go" not "fixed it"
+6. If CONTEXT.md has revision notes from prior cycles, address every single one
