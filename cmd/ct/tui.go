@@ -241,10 +241,10 @@ func (m tabAppModel) openPeek() (tabAppModel, tea.Cmd) {
 
 	var session, header string
 	if ch == nil {
-		// Droplet is not currently flowing — show a placeholder with no session.
-		header = fmt.Sprintf("[%s] — not flowing, no agent session", m.selectedID)
 		if m.selectedID == "" {
 			header = "(no droplet selected)"
+		} else {
+			header = fmt.Sprintf("[%s] — not flowing, no agent session", m.selectedID)
 		}
 	} else {
 		session = ch.RepoName + "-" + ch.Name
