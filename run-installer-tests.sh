@@ -167,7 +167,7 @@ test_fresh_install() {
 
     # Create skill stubs so ct castellarius start passes validateWorkflowSkills.
     exec_in_container bash -c "
-        for skill in cistern-droplet-state cistern-git cistern-github code-simplifier critical-code-reviewer adversarial-reviewer; do
+        for skill in cistern-droplet-state cistern-git cistern-github code-simplifier critical-code-reviewer reviewer; do
             mkdir -p ${home_dir}/.cistern/skills/\${skill}
             printf '# stub\\n' > ${home_dir}/.cistern/skills/\${skill}/SKILL.md
         done
@@ -233,7 +233,7 @@ test_upgrade() {
 
     # Create skill stubs so ct castellarius start passes validateWorkflowSkills.
     exec_in_container bash -c "
-        for skill in cistern-droplet-state cistern-git cistern-github code-simplifier critical-code-reviewer adversarial-reviewer; do
+        for skill in cistern-droplet-state cistern-git cistern-github code-simplifier critical-code-reviewer reviewer; do
             mkdir -p ${cistern_dir}/skills/\${skill}
             printf '# stub\\n' > ${cistern_dir}/skills/\${skill}/SKILL.md
         done
@@ -277,7 +277,7 @@ test_missing_credentials() {
 
     # Create skill stubs so ct castellarius start passes validateWorkflowSkills.
     exec_in_container bash -c "
-        for skill in cistern-droplet-state cistern-git cistern-github code-simplifier critical-code-reviewer adversarial-reviewer; do
+        for skill in cistern-droplet-state cistern-git cistern-github code-simplifier critical-code-reviewer reviewer; do
             mkdir -p ${home_dir}/.cistern/skills/\${skill}
             printf '# stub\\n' > ${home_dir}/.cistern/skills/\${skill}/SKILL.md
         done
