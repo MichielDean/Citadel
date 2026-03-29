@@ -152,7 +152,11 @@ If a check fails again after **2 fix attempts**, classify the failure:
 
 **Infrastructure failure** — identifiable by patterns such as "address already in use", "connection refused", "container failed to start", "service not available", or similar environment/port/service errors. Go stagnant:
 ```bash
-ct droplet block $DROPLET_ID --notes "CI blocked by infrastructure failure: <check name> — <error snippet> — $PR_URL"
+ct droplet block $DROPLET_ID --notes "$(cat <<'EOF'
+CI blocked by infrastructure failure: <check name> — <error snippet>
+$PR_URL
+EOF
+)"
 ```
 
 **Code-level failure** — test assertion errors, API mismatches, schema errors, compile errors, or anything the implementer can fix in code. Recirculate:
