@@ -161,16 +161,11 @@ type LLMConfig struct {
 }
 
 // ArchitectiConfig configures the Architecti autonomous diagnosis agent that
-// examines stagnant or blocked droplets.
+// examines stagnant or blocked droplets. Architecti is always active as a
+// serial queue drainer — no enable flag or threshold required. The scheduler
+// enqueues a droplet on every stagnant/blocked transition (one-to-one guarantee)
+// and drains the queue serially in the background.
 type ArchitectiConfig struct {
-	// Enabled activates the architecti trigger. When false, no goroutines are
-	// spawned and all other fields are ignored at runtime. Validation of field
-	// values still applies when the struct is present.
-	Enabled bool `yaml:"enabled"`
-	// ThresholdMinutes is the minimum duration (in minutes) a droplet must
-	// remain in stagnant or blocked state before architecti is invoked.
-	// Must not be negative.
-	ThresholdMinutes int `yaml:"threshold_minutes"`
 	// MaxFilesPerRun caps the number of files architecti may examine per
 	// invocation. Must be > 0.
 	MaxFilesPerRun int `yaml:"max_files_per_run"`

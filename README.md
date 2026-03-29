@@ -428,12 +428,10 @@ dashboard_font_family: 'Liberation Mono, DejaVu Sans Mono, Menlo, Consolas, mono
 #   per_token_requests: 120
 #   window: 1m
 
-# Architecti: autonomous diagnosis trigger for stagnant droplets (optional)
-# Omit or set enabled: false to disable (default). When enabled, Castellarius spawns
-# a diagnostician goroutine when a droplet has been stagnant/blocked for threshold_minutes.
+# Architecti: autonomous diagnosis for stagnant/blocked droplets (always active).
+# Triggered by state-machine transitions; no polling threshold required.
+# Omit to use built-in defaults.
 architecti:
-  enabled: true
-  threshold_minutes: 30
   max_files_per_run: 100
 
 # Drought protocols run when the cistern goes idle
@@ -681,14 +679,14 @@ Recovery attempts are attached as notes on the droplet and logged by the Castell
 
 ## Architecti: Autonomous Diagnosis Agent
 
-The Architecti is an autonomous recovery operator that diagnoses stagnant droplets and proposes corrective actions. Unlike the automatic stuck delivery and dispatch-loop recovery (which are built-in), the Architecti is an **optional** diagnostic agent that you can enable and configure.
+The Architecti is an autonomous recovery operator that diagnoses stagnant droplets and proposes corrective actions. It is always active — no configuration required to enable it.
 
 ### When it runs
 
-A droplet triggers the Architecti when:
-- The droplet has been **stagnant or blocked** for longer than `threshold_minutes` (configurable, default 30 minutes)
-- The Architecti is **enabled** in your cistern.yaml
-- No Architecti invocation is already in-flight for that droplet
+A droplet triggers the Architecti exactly once per bad-state transition:
+- When the Castellarius transitions a droplet to **stagnant** (no-route escalation, terminal blocked/human/escalate)
+- When a droplet is **stuck routing** (in_progress with outcome set but failing to advance)
+- Each bad-state transition triggers **exactly one** Architecti invocation — never more. An invocation note is written before the agent runs, so the guarantee survives restarts.
 
 ### What it does
 
@@ -714,21 +712,17 @@ The Architecti receives a comprehensive snapshot of the Castellarius state (all 
 
 ### Configuration
 
-Add an `architecti` section to `~/.cistern/cistern.yaml`:
+The Architecti runs automatically with sensible defaults. Add an optional `architecti` section to `~/.cistern/cistern.yaml` to tune behaviour:
 
 ```yaml
 architecti:
-  enabled: true
-  threshold_minutes: 30
   max_files_per_run: 100
 ```
 
 **Key fields:**
-- `enabled`: Activates the Architecti trigger. When `false` (default), no diagnosis goroutines are spawned
-- `threshold_minutes`: Minutes a droplet must be stagnant/blocked before Architecti is invoked
-- `max_files_per_run`: Maximum number of recovery actions (including file creations) per invocation
+- `max_files_per_run`: Maximum number of recovery actions (including file creations) per invocation. Default: 10.
 
-**To disable:** Omit the `architecti` section entirely or set `enabled: false`. Existing configs work unchanged.
+Omit the section entirely to use built-in defaults.
 
 ### Rate limits and safety
 

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"sync"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,12 +14,10 @@ import (
 	"github.com/MichielDean/cistern/internal/cistern"
 )
 
-// architectiConfig returns a valid, enabled ArchitectiConfig for test use.
-func architectiConfig(thresholdMinutes, maxFiles int) *aqueduct.ArchitectiConfig {
+// architectiConfig returns a valid ArchitectiConfig for test use.
+func architectiConfig(maxFiles int) *aqueduct.ArchitectiConfig {
 	return &aqueduct.ArchitectiConfig{
-		Enabled:          true,
-		ThresholdMinutes: thresholdMinutes,
-		MaxFilesPerRun:   maxFiles,
+		MaxFilesPerRun: maxFiles,
 	}
 }
 
@@ -45,144 +43,322 @@ func blockedDroplet(id string, updatedAgo time.Duration) *cistern.Droplet {
 	}
 }
 
-// --- heartbeatArchitecti tests ---
+// --- tryEnqueueArchitecti tests ---
 
-func TestHeartbeatArchitecti_WhenNilConfig_DoesNotSpawn(t *testing.T) {
-	// Given: Architecti config is nil (disabled at config level)
+func TestTryEnqueueArchitecti_NoExistingNote_EnqueuesAndWritesNote(t *testing.T) {
+	// Given: stagnant droplet with no existing [architecti] invocation note
 	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 90*time.Minute)
+	droplet := stagnantDroplet("d-001", 5*time.Minute)
+	client.items["d-001"] = droplet
 
 	s := testScheduler(client, newMockRunner(client))
-	// s.config.Architecti is nil (not set)
 
-	var called int32
-	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		atomic.AddInt32(&called, 1)
-		return nil
-	}
+	// When: tryEnqueueArchitecti is called
+	s.tryEnqueueArchitecti(client, droplet)
 
-	// When: heartbeatArchitecti runs
-	s.heartbeatArchitecti(context.Background())
-
-	// Then: runArchitectiFn is never called
-	if n := atomic.LoadInt32(&called); n != 0 {
-		t.Errorf("runArchitectiFn called %d times, want 0", n)
-	}
-}
-
-func TestHeartbeatArchitecti_WhenDisabled_DoesNotSpawn(t *testing.T) {
-	// Given: Architecti is present but Enabled=false
-	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 90*time.Minute)
-
-	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = &aqueduct.ArchitectiConfig{
-		Enabled:          false,
-		ThresholdMinutes: 30,
-		MaxFilesPerRun:   10,
-	}
-
-	var called int32
-	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		atomic.AddInt32(&called, 1)
-		return nil
-	}
-
-	s.heartbeatArchitecti(context.Background())
-
-	if n := atomic.LoadInt32(&called); n != 0 {
-		t.Errorf("runArchitectiFn called %d times, want 0", n)
-	}
-}
-
-func TestHeartbeatArchitecti_StagnantDropletPastThreshold_SpawnsArchitecti(t *testing.T) {
-	// Given: architecti enabled, stagnant droplet idle > threshold
-	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 60*time.Minute)
-
-	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = architectiConfig(30, 10)
-
-	spawned := make(chan string, 4)
-	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		spawned <- d.ID
-		return nil
-	}
-
-	// When: heartbeatArchitecti runs
-	s.heartbeatArchitecti(context.Background())
-
-	// Then: runArchitectiFn is called for the droplet
+	// Then: droplet is in the queue
 	select {
-	case id := <-spawned:
-		if id != "d-001" {
-			t.Errorf("got droplet ID %q, want %q", id, "d-001")
+	case got := <-s.architectiQueue:
+		if got.ID != "d-001" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-001")
+		}
+	default:
+		t.Fatal("expected droplet in queue, but queue was empty")
+	}
+
+	// Then: invocation note was written to the client
+	client.mu.Lock()
+	notes := client.notes["d-001"]
+	client.mu.Unlock()
+	var found bool
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected invocation note written with prefix [architecti] enqueued:, found none")
+	}
+}
+
+func TestTryEnqueueArchitecti_ExistingInvocationNote_DoesNotEnqueue(t *testing.T) {
+	// Given: droplet already has an [architecti] enqueued: note (prior invocation)
+	client := newMockClient()
+	droplet := stagnantDroplet("d-001", 5*time.Minute)
+	client.items["d-001"] = droplet
+	client.notes["d-001"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d-001",
+			CataractaeName: "architecti",
+			Content:        architectiInvocationNotePrefix + " stagnant",
+			CreatedAt:      time.Now(),
+		},
+	}
+
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: tryEnqueueArchitecti is called
+	s.tryEnqueueArchitecti(client, droplet)
+
+	// Then: nothing was enqueued
+	select {
+	case got := <-s.architectiQueue:
+		t.Errorf("expected empty queue, but got droplet %q", got.ID)
+	default:
+		// correct: queue is empty
+	}
+}
+
+func TestTryEnqueueArchitecti_OtherArchitectiNote_DoesEnqueue(t *testing.T) {
+	// Given: droplet has an architecti action note (e.g., restart) but NOT an
+	// invocation note — action notes must not block fresh enqueues.
+	client := newMockClient()
+	droplet := stagnantDroplet("d-001", 5*time.Minute)
+	client.items["d-001"] = droplet
+	client.notes["d-001"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d-001",
+			CataractaeName: "architecti",
+			Content:        "Architecti restart → implement: transient failure",
+			CreatedAt:      time.Now(),
+		},
+	}
+
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: tryEnqueueArchitecti is called
+	s.tryEnqueueArchitecti(client, droplet)
+
+	// Then: droplet is enqueued (action note does not act as dedup guard)
+	select {
+	case got := <-s.architectiQueue:
+		if got.ID != "d-001" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-001")
+		}
+	default:
+		t.Fatal("expected droplet in queue, but queue was empty")
+	}
+}
+
+func TestTryEnqueueArchitecti_AddNoteFails_EnqueuesWithoutNote(t *testing.T) {
+	// Given: AddNote returns an error — channel send happens first, so the
+	// droplet is still queued even though the dedup note could not be written.
+	client := newMockClient()
+	droplet := stagnantDroplet("d-001", 5*time.Minute)
+	client.addNoteErr = errors.New("db error")
+
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: tryEnqueueArchitecti sends to channel then attempts note write
+	s.tryEnqueueArchitecti(client, droplet)
+
+	// Then: droplet IS in the queue (send-before-note; note failure does not block processing)
+	select {
+	case got := <-s.architectiQueue:
+		if got.ID != "d-001" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-001")
+		}
+	default:
+		t.Fatal("expected droplet in queue after AddNote failure, but queue was empty")
+	}
+
+	// Then: no invocation note was written (AddNote failed)
+	client.mu.Lock()
+	notes := client.notes["d-001"]
+	client.mu.Unlock()
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			t.Error("unexpected invocation note written despite AddNote error")
+		}
+	}
+}
+
+func TestTryEnqueueArchitecti_BlockedDroplet_EnqueuesAndWritesNote(t *testing.T) {
+	// Given: blocked droplet with no existing invocation note
+	client := newMockClient()
+	droplet := blockedDroplet("d-002", 10*time.Minute)
+	client.items["d-002"] = droplet
+
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: tryEnqueueArchitecti is called
+	s.tryEnqueueArchitecti(client, droplet)
+
+	// Then: droplet is enqueued
+	select {
+	case got := <-s.architectiQueue:
+		if got.ID != "d-002" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-002")
+		}
+	default:
+		t.Fatal("expected d-002 in queue, but queue was empty")
+	}
+
+	// Then: invocation note content encodes the status
+	client.mu.Lock()
+	notes := client.notes["d-002"]
+	client.mu.Unlock()
+	var found bool
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			if strings.Contains(n.Content, "blocked") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected invocation note mentioning 'blocked' status")
+	}
+}
+
+func TestTryEnqueueArchitecti_QueueFull_DoesNotBlockAndDoesNotWriteNote(t *testing.T) {
+	// Given: queue is already at capacity
+	client := newMockClient()
+	droplet := stagnantDroplet("d-001", 5*time.Minute)
+
+	s := testScheduler(client, newMockRunner(client))
+
+	// Fill the queue to capacity
+	for i := 0; i < architectiQueueCap; i++ {
+		s.architectiQueue <- &cistern.Droplet{ID: "filler"}
+	}
+
+	// When: tryEnqueueArchitecti is called (should not block)
+	done := make(chan struct{})
+	go func() {
+		s.tryEnqueueArchitecti(client, droplet)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// correct: returned without blocking
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("tryEnqueueArchitecti blocked on full queue")
+	}
+
+	// Then: no invocation note was written — queue-full must not permanently
+	// silence the droplet by recording a dedup note without a queued entry.
+	client.mu.Lock()
+	notes := client.notes["d-001"]
+	client.mu.Unlock()
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			t.Error("invocation note written despite queue-full drop — droplet would be permanently silenced")
+		}
+	}
+}
+
+// --- startArchitectiQueue tests ---
+
+func TestStartArchitectiQueue_SerialDrain_RunsOneAtATime(t *testing.T) {
+	// Given: two droplets enqueued; runArchitectiFn blocks until released
+	client := newMockClient()
+	s := testScheduler(client, newMockRunner(client))
+	s.config.Architecti = architectiConfig(10)
+	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
+		return []byte("[]"), nil
+	}
+	s.architectiRestartCastellariusFn = func() error { return nil }
+
+	unblock := make(chan struct{})
+	started := make(chan string, 4)
+	var concurrent int32
+
+	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+		cur := atomic.AddInt32(&concurrent, 1)
+		started <- d.ID
+		if cur > 1 {
+			// Signal test that overlap occurred
+			started <- "CONCURRENT"
+		}
+		<-unblock
+		atomic.AddInt32(&concurrent, -1)
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.startArchitectiQueue(ctx)
+
+	// Enqueue two droplets with different IDs
+	s.architectiQueue <- stagnantDroplet("d-001", 5*time.Minute)
+	s.architectiQueue <- stagnantDroplet("d-002", 5*time.Minute)
+
+	// Wait for first droplet to start
+	select {
+	case id := <-started:
+		if id == "CONCURRENT" {
+			t.Fatal("concurrent Architecti runs detected")
 		}
 	case <-time.After(time.Second):
-		t.Fatal("runArchitectiFn was not called within 1s")
-	}
-}
-
-func TestHeartbeatArchitecti_BlockedDropletPastThreshold_SpawnsArchitecti(t *testing.T) {
-	// Given: architecti enabled, blocked droplet idle > threshold
-	client := newMockClient()
-	client.items["d-002"] = blockedDroplet("d-002", 45*time.Minute)
-
-	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = architectiConfig(30, 10)
-
-	spawned := make(chan string, 4)
-	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		spawned <- d.ID
-		return nil
+		t.Fatal("first droplet did not start processing within 1s")
 	}
 
-	s.heartbeatArchitecti(context.Background())
-
+	// While first is processing, confirm second has not started
 	select {
-	case id := <-spawned:
+	case id := <-started:
+		if id == "CONCURRENT" {
+			t.Fatal("concurrent Architecti runs detected")
+		}
+		t.Fatalf("second droplet started processing before first completed (got %q)", id)
+	case <-time.After(50 * time.Millisecond):
+		// correct: second is waiting
+	}
+
+	// Unblock first; second should now run
+	close(unblock)
+	select {
+	case id := <-started:
+		if id == "CONCURRENT" {
+			t.Fatal("concurrent Architecti runs detected")
+		}
 		if id != "d-002" {
-			t.Errorf("got droplet ID %q, want %q", id, "d-002")
+			t.Errorf("expected d-002, got %q", id)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("runArchitectiFn was not called within 1s")
+		t.Fatal("second droplet did not start after first completed")
 	}
 }
 
-func TestHeartbeatArchitecti_DropletBelowThreshold_DoesNotSpawn(t *testing.T) {
-	// Given: architecti enabled but droplet is recent (below threshold)
+func TestStartArchitectiQueue_DuplicatesInQueue_ProcessedOnce(t *testing.T) {
+	// Given: same droplet ID enqueued twice (race between enqueue and note write)
 	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 5*time.Minute)
-
 	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = architectiConfig(30, 10) // 30-minute threshold
+	s.config.Architecti = architectiConfig(10)
 
 	var called int32
-	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		atomic.AddInt32(&called, 1)
 		return nil
 	}
 
-	s.heartbeatArchitecti(context.Background())
-	// Give goroutines a moment to run (none should be spawned)
-	time.Sleep(20 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 
-	if n := atomic.LoadInt32(&called); n != 0 {
-		t.Errorf("runArchitectiFn called %d times, want 0", n)
+	// Put the same droplet ID in the queue twice before starting the drainer
+	d := stagnantDroplet("d-001", 5*time.Minute)
+	s.architectiQueue <- d
+	s.architectiQueue <- d
+
+	s.startArchitectiQueue(ctx)
+
+	// Allow drainer to process both entries
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	s.architectiWg.Wait()
+
+	if n := atomic.LoadInt32(&called); n != 1 {
+		t.Errorf("runArchitectiFn called %d times, want 1 (duplicate should be discarded)", n)
 	}
 }
 
-func TestHeartbeatArchitecti_PassesCorrectConfigToFn(t *testing.T) {
-	// Given: architecti enabled with specific config values
+func TestStartArchitectiQueue_UsesConfigFromScheduler(t *testing.T) {
+	// Given: scheduler has Architecti config with MaxFilesPerRun=77
 	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 60*time.Minute)
-
 	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = &aqueduct.ArchitectiConfig{
-		Enabled:          true,
-		ThresholdMinutes: 30,
-		MaxFilesPerRun:   99,
-	}
+	s.config.Architecti = architectiConfig(77)
 
 	cfgCh := make(chan aqueduct.ArchitectiConfig, 1)
 	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, cfg aqueduct.ArchitectiConfig) error {
@@ -190,114 +366,110 @@ func TestHeartbeatArchitecti_PassesCorrectConfigToFn(t *testing.T) {
 		return nil
 	}
 
-	s.heartbeatArchitecti(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.startArchitectiQueue(ctx)
+	s.architectiQueue <- stagnantDroplet("d-001", 5*time.Minute)
 
 	select {
 	case cfg := <-cfgCh:
-		if cfg.MaxFilesPerRun != 99 {
-			t.Errorf("MaxFilesPerRun = %d, want 99", cfg.MaxFilesPerRun)
-		}
-		if cfg.ThresholdMinutes != 30 {
-			t.Errorf("ThresholdMinutes = %d, want 30", cfg.ThresholdMinutes)
+		if cfg.MaxFilesPerRun != 77 {
+			t.Errorf("MaxFilesPerRun = %d, want 77", cfg.MaxFilesPerRun)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("runArchitectiFn was not called within 1s")
 	}
 }
 
-func TestHeartbeatArchitecti_WhenAlreadyInFlight_DoesNotDoubleSpawn(t *testing.T) {
-	// Given: architecti enabled, droplet past threshold
+func TestStartArchitectiQueue_DefaultConfig_WhenArchitectiNil(t *testing.T) {
+	// Given: no ArchitectiConfig set — should use built-in defaults
 	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 60*time.Minute)
-
 	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = architectiConfig(30, 10)
+	// s.config.Architecti is nil
 
-	started := make(chan struct{})
-	unblock := make(chan struct{})
-
-	var called int32
-	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		atomic.AddInt32(&called, 1)
-		close(started) // signal that goroutine is running
-		<-unblock      // block until test releases it
+	cfgCh := make(chan aqueduct.ArchitectiConfig, 1)
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, cfg aqueduct.ArchitectiConfig) error {
+		cfgCh <- cfg
 		return nil
 	}
 
-	// When: first heartbeat spawns the goroutine
-	s.heartbeatArchitecti(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Wait until the goroutine is actually running
+	s.startArchitectiQueue(ctx)
+	s.architectiQueue <- stagnantDroplet("d-001", 5*time.Minute)
+
 	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("goroutine did not start within 1s")
-	}
-
-	// When: second heartbeat fires while first goroutine is still running
-	s.heartbeatArchitecti(context.Background())
-
-	// Release the blocked goroutine
-	close(unblock)
-
-	// Wait for in-flight map cleanup
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		s.architectiInFlightMu.Lock()
-		_, still := s.architectiInFlight["d-001"]
-		s.architectiInFlightMu.Unlock()
-		if !still {
-			break
+	case cfg := <-cfgCh:
+		if cfg.MaxFilesPerRun != architectiDefaultMaxFilesPerRun {
+			t.Errorf("MaxFilesPerRun = %d, want %d (default)", cfg.MaxFilesPerRun, architectiDefaultMaxFilesPerRun)
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	// Then: runArchitectiFn was called exactly once
-	if n := atomic.LoadInt32(&called); n != 1 {
-		t.Errorf("runArchitectiFn called %d times, want 1", n)
+	case <-time.After(time.Second):
+		t.Fatal("runArchitectiFn was not called within 1s")
 	}
 }
 
-func TestHeartbeatArchitecti_AfterInFlightCompletes_AllowsRespawn(t *testing.T) {
-	// Given: architecti enabled, droplet past threshold
+func TestTryEnqueueArchitecti_RestartSafe_ExistingNoteBlocksReEnqueue(t *testing.T) {
+	// Given: Castellarius restarts; stagnant droplet already has an invocation note
+	// from the prior run. The note check must prevent re-enqueue.
 	client := newMockClient()
-	client.items["d-001"] = stagnantDroplet("d-001", 60*time.Minute)
+	droplet := stagnantDroplet("d-001", 120*time.Minute)
+	client.items["d-001"] = droplet
+	// Simulate: note was written before the restart
+	client.notes["d-001"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d-001",
+			CataractaeName: "architecti",
+			Content:        architectiInvocationNotePrefix + " stagnant",
+			CreatedAt:      time.Now().Add(-90 * time.Minute),
+		},
+	}
 
 	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = architectiConfig(30, 10)
 
-	var wg sync.WaitGroup
-	var called int32
-	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		atomic.AddInt32(&called, 1)
-		wg.Done()
-		return nil
+	// When: tryEnqueueArchitecti is called (e.g., on first tick after restart)
+	s.tryEnqueueArchitecti(client, droplet)
+
+	// Then: nothing enqueued — restart-safe guarantee holds
+	select {
+	case got := <-s.architectiQueue:
+		t.Errorf("expected empty queue after restart, but got droplet %q", got.ID)
+	default:
+		// correct
 	}
+}
 
-	// First heartbeat
-	wg.Add(1)
-	s.heartbeatArchitecti(context.Background())
-	wg.Wait() // wait for first goroutine to complete
+func TestTryEnqueueArchitecti_SuccessfulEnqueue_WritesBothNoteAndQueues(t *testing.T) {
+	// Given: successful enqueue — channel send happens first, then note write.
+	// Verify both the queue entry and the invocation note are present after the call.
+	client := newMockClient()
+	droplet := stagnantDroplet("d-001", 5*time.Minute)
 
-	// Ensure in-flight map is cleared before second heartbeat
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		s.architectiInFlightMu.Lock()
-		_, still := s.architectiInFlight["d-001"]
-		s.architectiInFlightMu.Unlock()
-		if !still {
-			break
+	s := testScheduler(client, newMockRunner(client))
+
+	s.tryEnqueueArchitecti(client, droplet)
+
+	// Then: invocation note was written
+	client.mu.Lock()
+	notes := client.notes["d-001"]
+	client.mu.Unlock()
+
+	var invocationNote bool
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			invocationNote = true
 		}
-		time.Sleep(5 * time.Millisecond)
+	}
+	if !invocationNote {
+		t.Error("invocation note not written after successful channel send")
 	}
 
-	// Second heartbeat — should spawn again since in-flight is clear
-	wg.Add(1)
-	s.heartbeatArchitecti(context.Background())
-	wg.Wait()
-
-	if n := atomic.LoadInt32(&called); n != 2 {
-		t.Errorf("runArchitectiFn called %d times, want 2", n)
+	// Then: droplet is also in the queue
+	select {
+	case <-s.architectiQueue:
+	default:
+		t.Error("droplet was not sent to queue")
 	}
 }
 
@@ -307,7 +479,7 @@ func TestHeartbeatArchitecti_AfterInFlightCompletes_AllowsRespawn(t *testing.T) 
 // It injects a no-op exec function so tests don't need a real claude or system prompt.
 func testSchedulerWithArchitecti(client *mockClient) *Castellarius {
 	s := testScheduler(client, newMockRunner(client))
-	s.config.Architecti = architectiConfig(30, 3)
+	s.config.Architecti = architectiConfig(3)
 	// Default exec: return empty array (no actions).
 	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
 		return []byte("[]"), nil
@@ -560,6 +732,88 @@ func TestRunArchitecti_NoteAction_AddsNoteToDroplet(t *testing.T) {
 	}
 }
 
+func TestStartArchitectiQueue_PanicInRunFn_DrainerContinues(t *testing.T) {
+	// Given: runArchitectiFn panics on the first droplet. The drainer must
+	// recover and continue processing subsequent droplets — a panic must not
+	// kill the goroutine permanently.
+	client := newMockClient()
+	s := testScheduler(client, newMockRunner(client))
+	s.config.Architecti = architectiConfig(10)
+
+	processed := make(chan string, 4)
+	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+		if d.ID == "d-panic" {
+			panic("simulated panic")
+		}
+		processed <- d.ID
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.startArchitectiQueue(ctx)
+
+	// Enqueue the panicking droplet first, then a normal one
+	s.architectiQueue <- &cistern.Droplet{ID: "d-panic", Status: "stagnant"}
+	s.architectiQueue <- stagnantDroplet("d-ok", 5*time.Minute)
+
+	// Then: drainer recovers from panic and processes d-ok
+	select {
+	case id := <-processed:
+		if id != "d-ok" {
+			t.Errorf("got %q, want d-ok", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("d-ok not processed within 1s — drainer goroutine may have died on panic")
+	}
+}
+
+func TestStartArchitectiQueue_SeenMap_ClearedBetweenBursts(t *testing.T) {
+	// Given: the drainer's seen-map is cleared when the channel drains.
+	// A droplet processed in one burst must not be blocked by a stale seen-map
+	// entry when it appears in a later burst (e.g., re-queued directly for testing).
+	client := newMockClient()
+	s := testScheduler(client, newMockRunner(client))
+	s.config.Architecti = architectiConfig(10)
+
+	processed := make(chan string, 4)
+	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+		processed <- d.ID
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.startArchitectiQueue(ctx)
+
+	// First burst: enqueue d-001 and drain it
+	s.architectiQueue <- stagnantDroplet("d-001", 5*time.Minute)
+	select {
+	case id := <-processed:
+		if id != "d-001" {
+			t.Fatalf("first burst: got %q, want d-001", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first burst: d-001 not processed within 1s")
+	}
+
+	// Allow drainer to detect empty channel and clear seen-map
+	time.Sleep(20 * time.Millisecond)
+
+	// Second burst: enqueue d-001 again; seen-map should be cleared so it runs
+	s.architectiQueue <- stagnantDroplet("d-001", 5*time.Minute)
+	select {
+	case id := <-processed:
+		if id != "d-001" {
+			t.Fatalf("second burst: got %q, want d-001", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second burst: d-001 not processed within 1s — seen-map not cleared between bursts")
+	}
+}
+
 func TestRunArchitecti_RestartCastellarius_WhenSchedulerHung(t *testing.T) {
 	// Given: agent returns restart_castellarius; health file shows scheduler hung
 	client := newMockClient()
@@ -768,3 +1022,4 @@ func TestRunArchitecti_RestartRateLimit_NotRecordedWhenAssignFails(t *testing.T)
 		t.Errorf("after second run: assignCalls = %d, want 2 (rate limit must not block retry after failed assign)", secondAssigns)
 	}
 }
+
