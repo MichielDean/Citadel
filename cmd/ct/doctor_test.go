@@ -1830,7 +1830,14 @@ func TestRunDoctorExtendedChecks_DefaultWorkflow_InstallerStubs_Passes(t *testin
 	}
 
 	// Write a config that references the default workflow.
-	cfgContent := "repos:\n  - name: cistern\n    url: https://github.com/example/cistern\n    workflow_path: aqueduct/aqueduct.yaml\n    cataractae: 1\n    prefix: ct\nmax_cataractae: 1\n"
+	cfgContent := `repos:
+  - name: cistern
+    url: https://github.com/example/cistern
+    workflow_path: aqueduct/aqueduct.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
 	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -1860,11 +1867,11 @@ func TestRunDoctorExtendedChecks_DefaultWorkflow_InstallerStubs_Passes(t *testin
 		"reviewer",
 	}
 	for _, name := range installerStubs {
-		p := filepath.Join(skillsDir, name, "SKILL.md")
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		dir := filepath.Join(skillsDir, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir skill %s: %v", name, err)
 		}
-		if err := os.WriteFile(p, []byte("# "+name+" stub\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# "+name+" stub\n"), 0o644); err != nil {
 			t.Fatalf("write skill stub %s: %v", name, err)
 		}
 	}
