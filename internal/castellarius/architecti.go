@@ -771,8 +771,8 @@ func architectiShellQuote(s string) string {
 
 // RunArchitectiAdHoc builds a system snapshot, invokes the Architecti agent,
 // and optionally dispatches the resulting actions. Returns the snapshot text,
-// raw agent output bytes, and any error. When dryRun is true, actions are
-// parsed but not dispatched.
+// raw agent output bytes, and any error. When dryRun is true, raw output is
+// returned without parsing or dispatching.
 func (s *Castellarius) RunArchitectiAdHoc(ctx context.Context, trigger *cistern.Droplet, config aqueduct.ArchitectiConfig, dryRun bool) (snapshot string, rawOutput []byte, err error) {
 	snapshot, repoByDroplet := s.buildArchitectiSnapshot(ctx, trigger, config)
 

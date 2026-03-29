@@ -638,7 +638,7 @@ Use --droplet <id> to provide a specific droplet as trigger context.`,
 		ctx := context.Background()
 		snapshot, rawOutput, err := sched.RunArchitectiAdHoc(ctx, trigger, archCfg, architectiRunDryRun)
 		if err != nil {
-			return fmt.Errorf("architecti: %w", err)
+			return err
 		}
 
 		if architectiRunDryRun {
