@@ -47,7 +47,6 @@ func runCataractaeRender(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse aqueduct: %w", err)
 	}
 
-	// Find the named step.
 	var step *aqueduct.WorkflowCataractae
 	for i := range wf.Cataractae {
 		if wf.Cataractae[i].Name == cataractaeRenderStep {
@@ -59,7 +58,6 @@ func runCataractaeRender(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("step %q not found in workflow", cataractaeRenderStep)
 	}
 
-	// Build template context.
 	stepCtx := aqueduct.BuildStepTemplateContext(wf, step)
 	dropletCtx := aqueduct.DropletTemplateContext{
 		ID:          "<droplet-id>",
@@ -68,7 +66,6 @@ func runCataractaeRender(cmd *cobra.Command, args []string) error {
 		Complexity:  1,
 	}
 
-	// If a real droplet was specified, look it up.
 	if cataractaeRenderDroplet != "" {
 		dbPath := resolveDBPath()
 		c, err := cistern.New(dbPath, "")

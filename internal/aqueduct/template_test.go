@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// --- RenderTemplate tests (required by ci-amg37) ---
+// --- RenderTemplate tests ---
 
 // TestRenderTemplate_ImplementerWithoutRecirculate_RecirculateSectionAbsent verifies
 // that when a step has no OnRecirculate, the {{if .Step.OnRecirculate}} block is
