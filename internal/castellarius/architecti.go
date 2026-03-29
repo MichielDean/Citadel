@@ -769,6 +769,34 @@ func architectiShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// RunArchitectiAdHoc builds a system snapshot, invokes the Architecti agent,
+// and optionally dispatches the resulting actions. Returns the snapshot text,
+// raw agent output bytes, and any error. When dryRun is true, actions are
+// parsed but not dispatched.
+func (s *Castellarius) RunArchitectiAdHoc(ctx context.Context, trigger *cistern.Droplet, config aqueduct.ArchitectiConfig, dryRun bool) (snapshot string, rawOutput []byte, err error) {
+	snapshot, repoByDroplet := s.buildArchitectiSnapshot(ctx, trigger, config)
+
+	rawOutput, err = s.architectiExecFn(ctx, snapshot)
+	if err != nil {
+		return snapshot, nil, fmt.Errorf("architecti: exec: %w", err)
+	}
+
+	if dryRun {
+		return snapshot, rawOutput, nil
+	}
+
+	actions, err := parseArchitectiOutput(rawOutput, config.MaxFilesPerRun)
+	if err != nil {
+		return snapshot, rawOutput, fmt.Errorf("architecti: parse: %w", err)
+	}
+
+	if len(actions) == 0 {
+		return snapshot, rawOutput, nil
+	}
+
+	return snapshot, rawOutput, s.dispatchArchitectiActions(ctx, actions, repoByDroplet)
+}
+
 // defaultRestartCastellarius restarts the Castellarius systemd user service.
 func defaultRestartCastellarius() error {
 	return exec.Command("systemctl", "--user", "restart", "castellarius").Run()

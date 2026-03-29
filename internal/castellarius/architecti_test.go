@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1023,3 +1024,168 @@ func TestRunArchitecti_RestartRateLimit_NotRecordedWhenAssignFails(t *testing.T)
 	}
 }
 
+// --- RunArchitectiAdHoc tests ---
+
+func TestRunArchitectiAdHoc_DryRun_ReturnsSnapshotAndOutput_WithoutDispatching(t *testing.T) {
+	// Given: dry-run mode, agent returns a restart action
+	client := newMockClient()
+	client.items["d-001"] = stagnantDroplet("d-001", 60*time.Minute)
+	s := testSchedulerWithArchitecti(client)
+
+	agentOutput := `[{"action":"restart","droplet_id":"d-001","cataractae":"implement","reason":"test"}]`
+	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
+		return []byte(agentOutput), nil
+	}
+
+	// When: RunArchitectiAdHoc is called with dryRun=true
+	snapshot, rawOutput, err := s.RunArchitectiAdHoc(
+		context.Background(),
+		stagnantDroplet("d-001", 60*time.Minute),
+		*s.config.Architecti,
+		true,
+	)
+
+	// Then: no error, snapshot non-empty, raw output matches agent output
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if snapshot == "" {
+		t.Error("expected non-empty snapshot")
+	}
+	if string(rawOutput) != agentOutput {
+		t.Errorf("rawOutput = %q, want %q", rawOutput, agentOutput)
+	}
+	// Then: no dispatch — Assign not called
+	client.mu.Lock()
+	assigns := client.assignCalls
+	client.mu.Unlock()
+	if assigns != 0 {
+		t.Errorf("assignCalls = %d, want 0 (dry-run must not dispatch)", assigns)
+	}
+}
+
+func TestRunArchitectiAdHoc_Normal_DispatchesActions(t *testing.T) {
+	// Given: normal mode, agent returns a restart action for d-001
+	client := newMockClient()
+	client.items["d-001"] = stagnantDroplet("d-001", 60*time.Minute)
+	s := testSchedulerWithArchitecti(client)
+
+	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
+		return []byte(`[{"action":"restart","droplet_id":"d-001","cataractae":"implement","reason":"test"}]`), nil
+	}
+
+	// When: RunArchitectiAdHoc is called with dryRun=false
+	snapshot, rawOutput, err := s.RunArchitectiAdHoc(
+		context.Background(),
+		stagnantDroplet("d-001", 60*time.Minute),
+		*s.config.Architecti,
+		false,
+	)
+
+	// Then: no error, dispatch occurred
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if snapshot == "" {
+		t.Error("expected non-empty snapshot")
+	}
+	if len(rawOutput) == 0 {
+		t.Error("expected non-empty rawOutput")
+	}
+	client.mu.Lock()
+	step := client.steps["d-001"]
+	client.mu.Unlock()
+	if step != "implement" {
+		t.Errorf("step = %q, want %q (action was dispatched)", step, "implement")
+	}
+}
+
+func TestRunArchitectiAdHoc_Normal_EmptyActions_NoDispatch(t *testing.T) {
+	// Given: agent returns empty action array
+	client := newMockClient()
+	s := testSchedulerWithArchitecti(client)
+
+	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
+		return []byte(`[]`), nil
+	}
+
+	_, _, err := s.RunArchitectiAdHoc(
+		context.Background(),
+		stagnantDroplet("d-001", 60*time.Minute),
+		*s.config.Architecti,
+		false,
+	)
+
+	// Then: no error, no dispatch
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	client.mu.Lock()
+	assigns := client.assignCalls
+	client.mu.Unlock()
+	if assigns != 0 {
+		t.Errorf("assignCalls = %d, want 0 (empty actions list)", assigns)
+	}
+}
+
+func TestRunArchitectiAdHoc_ExecError_ReturnsError(t *testing.T) {
+	// Given: exec fn returns an error
+	client := newMockClient()
+	s := testSchedulerWithArchitecti(client)
+
+	execErr := errors.New("session spawn failed")
+	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
+		return nil, execErr
+	}
+
+	// When: RunArchitectiAdHoc is called
+	_, _, err := s.RunArchitectiAdHoc(
+		context.Background(),
+		stagnantDroplet("d-001", 60*time.Minute),
+		*s.config.Architecti,
+		false,
+	)
+
+	// Then: error wraps the exec error
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "exec") {
+		t.Errorf("expected error to mention exec, got: %v", err)
+	}
+	if !errors.Is(err, execErr) {
+		t.Errorf("expected error to wrap execErr, got: %v", err)
+	}
+}
+
+func TestRunArchitectiAdHoc_SnapshotContainsTriggerDropletID(t *testing.T) {
+	// Given: synthetic trigger droplet with a known ID
+	client := newMockClient()
+	s := testSchedulerWithArchitecti(client)
+
+	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
+		return []byte(`[]`), nil
+	}
+
+	trigger := &cistern.Droplet{
+		ID:        "my-trigger-droplet",
+		Status:    "stagnant",
+		UpdatedAt: time.Now().Add(-30 * time.Minute),
+	}
+
+	// When: RunArchitectiAdHoc is called
+	snapshot, _, err := s.RunArchitectiAdHoc(
+		context.Background(),
+		trigger,
+		*s.config.Architecti,
+		false,
+	)
+
+	// Then: snapshot includes the trigger droplet ID
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(snapshot, "my-trigger-droplet") {
+		t.Errorf("snapshot does not contain trigger droplet ID; snapshot = %q", snapshot)
+	}
+}
