@@ -781,7 +781,6 @@ func TestTabApp_Droplets_View_CursorAlwaysVisible(t *testing.T) {
 // When:  fetchDetailCmd is invoked and the returned tea.Cmd is executed
 // Then:  the resulting tuiDetailDataMsg has err != nil and the correct dropletID
 func TestFetchDetailCmd_CisternNewFails_ReturnsError(t *testing.T) {
-	t.TempDir() // ensure t.TempDir is available
 	dir := t.TempDir()
 
 	m := newTabAppModel("", dir) // dir is not a valid SQLite file
