@@ -1259,6 +1259,27 @@ func TestRunArchitectiAdHoc_ParseError_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestResolveArchitectiSystemPrompt_NotFound_ReturnsError(t *testing.T) {
+	// Given: HOME points to a temp dir (no SYSTEM_PROMPT.md there),
+	// and sandboxRoot also points to a temp dir with no SYSTEM_PROMPT.md.
+	t.Setenv("HOME", t.TempDir())
+
+	client := newMockClient()
+	s := testScheduler(client, newMockRunner(client))
+	s.sandboxRoot = t.TempDir()
+
+	// When: resolveArchitectiSystemPrompt is called
+	path, err := s.resolveArchitectiSystemPrompt()
+
+	// Then: error is non-nil and mentions SYSTEM_PROMPT.md not found; path is empty
+	if err == nil {
+		t.Fatalf("expected error, got nil (path=%q)", path)
+	}
+	if !strings.Contains(err.Error(), "SYSTEM_PROMPT.md not found") {
+		t.Errorf("error %q does not contain \"SYSTEM_PROMPT.md not found\"", err.Error())
+	}
+}
+
 func TestRunArchitectiAdHoc_Normal_ReturnsFilteredActions_MaxFilesPerRun(t *testing.T) {
 	// Given: LLM returns more file actions than MaxFilesPerRun allows
 	client := newMockClient()
