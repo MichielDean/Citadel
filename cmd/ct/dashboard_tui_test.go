@@ -458,6 +458,78 @@ func TestViewAqueductArches_ActiveWithNotes_InlinesFlowNotesAfterProgressBar(t *
 	}
 }
 
+// TestViewInlineFlowNotes_WhenEmptyRecentNotes_ReturnsNoNotesMessage verifies
+// that viewInlineFlowNotes renders the "(no notes yet — first pass)" placeholder
+// when a FlowActivity matches but has no RecentNotes.
+//
+// Given: a model with a FlowActivity for "ci-abc12" with an empty RecentNotes slice
+// When:  viewInlineFlowNotes is called with CataractaeInfo{DropletID: "ci-abc12"}
+// Then:  the returned lines contain "(no notes yet — first pass)"
+
+func TestViewInlineFlowNotes_WhenEmptyRecentNotes_ReturnsNoNotesMessage(t *testing.T) {
+	m := dashboardTUIModel{
+		width: 120,
+		data: &DashboardData{
+			FlowActivities: []FlowActivity{
+				{
+					DropletID:   "ci-abc12",
+					Title:       "Fix the bug",
+					Step:        "implement",
+					RecentNotes: []cistern.CataractaeNote{},
+				},
+			},
+		},
+	}
+	ch := CataractaeInfo{DropletID: "ci-abc12"}
+	lines := m.viewInlineFlowNotes(ch)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "no notes yet") {
+		t.Errorf("expected '(no notes yet — first pass)' placeholder, got: %q", joined)
+	}
+}
+
+// TestViewAqueductArches_IdleAqueduct_RemainsCompactSingleLine verifies that
+// idle aqueducts are rendered as a single compact line with no inline flow notes
+// appended.
+//
+// Given: a model with one idle aqueduct (no DropletID) named "libra"
+// When:  viewAqueductArches is called
+// Then:  the output contains exactly one line for "libra" (no inline notes below it)
+
+func TestViewAqueductArches_IdleAqueduct_RemainsCompactSingleLine(t *testing.T) {
+	m := dashboardTUIModel{
+		width: 120,
+		data: &DashboardData{
+			Cataractae: []CataractaeInfo{
+				{
+					Name:      "libra",
+					RepoName:  "myrepo",
+					DropletID: "", // idle — no active droplet
+				},
+			},
+			FlowActivities: []FlowActivity{},
+		},
+	}
+
+	lines := m.viewAqueductArches()
+
+	// Count lines that mention "libra".
+	libraCount := 0
+	for _, l := range lines {
+		if strings.Contains(stripANSITest(l), "libra") {
+			libraCount++
+		}
+	}
+	if libraCount != 1 {
+		t.Errorf("idle aqueduct 'libra' should appear in exactly 1 line, got %d lines; full output: %v", libraCount, lines)
+	}
+
+	// Total output should be exactly one line (no blank lines, no inline notes).
+	if len(lines) != 1 {
+		t.Errorf("viewAqueductArches with one idle aqueduct should return 1 line, got %d: %v", len(lines), lines)
+	}
+}
+
 // TestView_NoCURRENTFLOWSection verifies that the standalone CURRENT FLOW
 // section has been removed from the TUI View output.
 //
