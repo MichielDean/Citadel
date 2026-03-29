@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -117,6 +118,15 @@ type Castellarius struct {
 	// the main tick goroutine. atomic fields ensure safe concurrent access.
 	droughtRunning   atomic.Bool
 	droughtStartedAt atomic.Pointer[time.Time]
+
+	// runArchitectiFn is invoked for stagnant/blocked droplets when architecti
+	// is enabled. Defaults to runArchitecti; injectable for testing.
+	runArchitectiFn func(*cistern.Droplet, aqueduct.ArchitectiConfig) error
+
+	// architectiInFlight tracks droplet IDs for which runArchitecti is currently
+	// executing. Used to prevent double-spawn. Protected by architectiInFlightMu.
+	architectiInFlight   map[string]struct{}
+	architectiInFlightMu sync.Mutex
 }
 
 // isSupervisedProcess returns true when the Castellarius is being managed by
@@ -217,6 +227,8 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 		ghMergeFn:          defaultGhMerge,
 		dispatchLoop:       newDispatchLoopTracker(),
 		lastStallNoted:     make(map[string]time.Time),
+		runArchitectiFn:    runArchitecti,
+		architectiInFlight: make(map[string]struct{}),
 	}
 	for _, o := range opts {
 		o(s)
@@ -308,8 +320,10 @@ func NewFromParts(
 		killSessionFn:     defaultKillSession,
 		rebaseAndPushFn:   defaultRebaseAndPush,
 		ghMergeFn:         defaultGhMerge,
-		dispatchLoop:      newDispatchLoopTracker(),
-		lastStallNoted:    make(map[string]time.Time),
+		dispatchLoop:       newDispatchLoopTracker(),
+		lastStallNoted:     make(map[string]time.Time),
+		runArchitectiFn:    runArchitecti,
+		architectiInFlight: make(map[string]struct{}),
 	}
 	for _, o := range opts {
 		o(s)
@@ -450,6 +464,7 @@ func (s *Castellarius) Run(ctx context.Context) error {
 						}
 					}()
 					s.heartbeatInProgress(ctx)
+					s.heartbeatArchitecti(ctx)
 					s.checkHungDrought()
 				}()
 			}
@@ -1412,6 +1427,67 @@ func (s *Castellarius) respawnStalledDroplet(ctx context.Context, client Cistern
 		return err
 	}
 	return nil
+}
+
+// heartbeatArchitecti checks stagnant and blocked droplets and, when architecti
+// is enabled and the droplet has been idle longer than the configured threshold,
+// spawns a goroutine invoking runArchitectiFn. At most one goroutine runs per
+// droplet at a time; the in-flight set is cleared when the goroutine returns.
+func (s *Castellarius) heartbeatArchitecti(ctx context.Context) {
+	if s.config.Architecti == nil || !s.config.Architecti.Enabled {
+		return
+	}
+	cfg := *s.config.Architecti
+	threshold := time.Duration(cfg.ThresholdMinutes) * time.Minute
+
+	for _, repo := range s.config.Repos {
+		if ctx.Err() != nil {
+			return
+		}
+		client, ok := s.clients[repo.Name]
+		if !ok {
+			continue
+		}
+		for _, status := range []string{"stagnant", "blocked"} {
+			items, err := client.List(repo.Name, status)
+			if err != nil {
+				s.logger.Error("heartbeat: architecti: list failed",
+					"repo", repo.Name, "status", status, "error", err)
+				continue
+			}
+			for _, item := range items {
+				if time.Since(item.UpdatedAt) <= threshold {
+					continue
+				}
+				s.architectiInFlightMu.Lock()
+				if _, inFlight := s.architectiInFlight[item.ID]; inFlight {
+					s.architectiInFlightMu.Unlock()
+					continue
+				}
+				s.architectiInFlight[item.ID] = struct{}{}
+				s.architectiInFlightMu.Unlock()
+
+				dropletCopy := *item
+				s.logger.Info("heartbeat: architecti: spawning",
+					"repo", repo.Name,
+					"droplet", item.ID,
+					"status", item.Status,
+					"idle", time.Since(item.UpdatedAt).Round(time.Second).String(),
+				)
+				go func(d cistern.Droplet, c aqueduct.ArchitectiConfig) {
+					defer func() {
+						s.architectiInFlightMu.Lock()
+						delete(s.architectiInFlight, d.ID)
+						s.architectiInFlightMu.Unlock()
+					}()
+					if err := s.runArchitectiFn(&d, c); err != nil {
+						s.logger.Error("heartbeat: architecti: run failed",
+							"droplet", d.ID, "error", err)
+					}
+				}(dropletCopy, cfg)
+			}
+		}
+	}
 }
 
 // stallThresholdDuration returns the configured stall threshold, defaulting to 45 minutes.
