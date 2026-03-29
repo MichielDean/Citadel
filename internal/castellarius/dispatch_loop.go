@@ -153,22 +153,44 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 
 	// Recovery 2: missing or corrupt worktree — remove and recreate.
 	if !worktreeRegistered(primaryDir, worktreePath) {
+		branch := "feat/" + item.ID
 		s.logger.Info("dispatch-loop recovery: worktree missing/corrupt — recreating",
 			"droplet", item.ID,
 			"attempt", attempt,
 		)
 		removeDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID)
 		if _, err := prepareDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID); err != nil {
-			s.logger.Error("dispatch-loop recovery: recreate worktree failed",
-				"droplet", item.ID, "error", err)
-			s.addNote(client, item.ID, "dispatch-loop",
-				fmt.Sprintf("dispatch-loop recovery: %s — worktree recreate failed (attempt %s): %v",
-					item.ID, attempt, err))
-		} else {
-			s.addNote(client, item.ID, "dispatch-loop",
-				fmt.Sprintf("dispatch-loop recovery: %s — worktree recreated (attempt %s)",
-					item.ID, attempt))
+			if strings.Contains(err.Error(), "did not match any file(s) known to git") {
+				// The feature branch no longer exists in git. Remove any lingering
+				// directory left by the failed resume and try again — this time the
+				// new-worktree path will create a fresh branch from origin/main.
+				s.logger.Warn("dispatch-loop recovery: feature branch missing from git — creating fresh branch from origin/main",
+					"droplet", item.ID, "branch", branch)
+				_ = os.RemoveAll(worktreePath)
+				if _, err2 := prepareDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID); err2 != nil {
+					reason := fmt.Sprintf("dispatch-loop recovery: branch %s missing, fresh-branch creation failed: %v", branch, err2)
+					s.addNote(client, item.ID, "dispatch-loop", reason)
+					if escErr := client.Escalate(item.ID, reason); escErr != nil {
+						s.logger.Error("dispatch-loop recovery: escalate failed", "droplet", item.ID, "error", escErr)
+					}
+					s.dispatchLoop.reset(item.ID)
+				} else {
+					s.addNote(client, item.ID, "dispatch-loop",
+						fmt.Sprintf("dispatch-loop recovery: %s — fresh branch created from origin/main (branch %s was missing, attempt %s)",
+							item.ID, branch, attempt))
+				}
+			} else {
+				s.logger.Error("dispatch-loop recovery: recreate worktree failed",
+					"droplet", item.ID, "error", err)
+				s.addNote(client, item.ID, "dispatch-loop",
+					fmt.Sprintf("dispatch-loop recovery: %s — worktree recreate failed (attempt %s): %v",
+						item.ID, attempt, err))
+			}
+			return
 		}
+		s.addNote(client, item.ID, "dispatch-loop",
+			fmt.Sprintf("dispatch-loop recovery: %s — worktree recreated (attempt %s)",
+				item.ID, attempt))
 		return
 	}
 
