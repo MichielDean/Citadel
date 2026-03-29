@@ -17,6 +17,30 @@ git add go.mod go.sum -- ':!CONTEXT.md' && git commit -m "chore: go mod tidy"
 ```
 If go build fails: fix it before touching git. A broken build should not reach a PR.
 
+## Step 0.5 — Check for zero-commit branch
+
+```bash
+DROPLET_ID=$(grep '^## Item:' CONTEXT.md | awk '{print $3}')
+git fetch origin main
+FETCH_EXIT=$?
+```
+
+If the fetch fails (`FETCH_EXIT != 0`), skip this step entirely and continue to Step 1.
+
+If the fetch succeeds:
+
+```bash
+COMMIT_COUNT=$(git log origin/main..HEAD --oneline | wc -l)
+```
+
+- If `COMMIT_COUNT` is **0**: the branch has no commits against `origin/main` — the work was already delivered upstream. Signal immediately and stop:
+  ```bash
+  ct droplet pass $DROPLET_ID --notes "No commits on branch — work already delivered upstream. Signaling pass without PR."
+  ```
+  Do not proceed further.
+
+- If `COMMIT_COUNT` is **non-zero**: continue to Step 1 normally.
+
 ## Step 1 — Extract droplet ID and branch
 
 ```bash
@@ -29,15 +53,28 @@ echo "Delivering $DROPLET_ID from $BRANCH"
 Do NOT git stash. Per-droplet worktrees are clean by design. Stashing discards
 uncommitted work from prior cataractae silently.
 
-## Step 2 — Rebase
+## Step 2 — Rebase onto origin/main before PR
+
+This step is mandatory. Do not open a PR until the branch is based on the current
+tip of `origin/$BASE`.
 
 ```bash
 git fetch origin $BASE
-git rebase origin/$BASE
+if MERGE_BASE=$(git merge-base HEAD origin/$BASE) && ORIGIN_TIP=$(git rev-parse origin/$BASE); then
+  if [ "$MERGE_BASE" = "$ORIGIN_TIP" ]; then
+    echo "Branch is already based on origin/$BASE — no rebase needed"
+  else
+    echo "Branch is behind origin/$BASE — rebasing"
+    git rebase origin/$BASE
+  fi
+else
+  echo "merge-base check failed — rebasing unconditionally"
+  git rebase origin/$BASE
+fi
 ```
 
-If conflicts arise, resolve them — see Conflict Resolution below.
-After clean rebase:
+If conflicts arise during rebase, resolve them — see Conflict Resolution below.
+After fetch and any rebase:
 ```bash
 go build ./... && go test ./...
 git push --force-with-lease origin $BRANCH
