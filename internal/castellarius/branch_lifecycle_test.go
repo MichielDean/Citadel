@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -313,7 +314,8 @@ func TestRemoveDropletWorktree_KeepBranch_WhenStagnant_PreservesFeatureBranch(t 
 	if err != nil {
 		t.Fatalf("prepareDropletWorktree: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(worktreePath, "work.go"), []byte("// work\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(worktreePath, "work.go"), []byte("// work
+"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	branchMustRun(t, branchGitCmd(worktreePath, "add", "."))
@@ -375,7 +377,8 @@ func TestPrepareDropletWorktree_ResumesFromExistingBranch_AfterStagnantCleanup(t
 	if err != nil {
 		t.Fatalf("prepareDropletWorktree (first): %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(worktreePath, "impl.go"), []byte("// implementation\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(worktreePath, "impl.go"), []byte("// implementation
+"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	branchMustRun(t, branchGitCmd(worktreePath, "add", "."))
@@ -412,5 +415,51 @@ func TestPrepareDropletWorktree_ResumesFromExistingBranch_AfterStagnantCleanup(t
 	before, after := strings.TrimSpace(string(beforeSHA)), strings.TrimSpace(string(afterSHA))
 	if before != after {
 		t.Errorf("prior commits lost: HEAD before=%s after=%s", before, after)
+// --- repoMu serialization tests ---
+
+// TestPrepareDropletWorktree_ConcurrentSameRepo verifies that two goroutines
+// calling prepareDropletWorktree for different droplets against the same
+// primary clone succeed without error when serialized by a per-repo mutex —
+// the pattern used by the Castellarius dispatch loop via repoMu.
+//
+// Run with -race to confirm no Go-level data races are introduced by the
+// mutex acquisition pattern.
+func TestPrepareDropletWorktree_ConcurrentSameRepo(t *testing.T) {
+	primaryDir := makeBareAndClone(t)
+	sandboxRoot := t.TempDir()
+
+	const repoName = "myrepo"
+	var mu sync.Mutex // simulates s.repoMu[repoName]
+
+	type result struct {
+		path string
+		err  error
+	}
+	results := make([]result, 2)
+
+	var wg sync.WaitGroup
+	for i, id := range []string{"drop-concurrent-1", "drop-concurrent-2"} {
+		wg.Add(1)
+		i, id := i, id
+		go func() {
+			defer wg.Done()
+			mu.Lock()
+			path, err := prepareDropletWorktree(primaryDir, sandboxRoot, repoName, id)
+			mu.Unlock()
+			results[i] = result{path, err}
+		}()
+	}
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			t.Errorf("goroutine %d: prepareDropletWorktree failed: %v", i, r.err)
+		}
+		if r.path == "" {
+			t.Errorf("goroutine %d: empty worktree path returned", i)
+		}
+		if _, statErr := os.Stat(r.path); statErr != nil {
+			t.Errorf("goroutine %d: worktree path does not exist: %v", i, statErr)
+		}
 	}
 }

@@ -158,6 +158,8 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 			"droplet", item.ID,
 			"attempt", attempt,
 		)
+		s.repoMu[repo.Name].Lock()
+		defer s.repoMu[repo.Name].Unlock()
 		removeDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID)
 		// Prune stale worktree registry entries so git worktree add does not
 		// fail with "a branch named feat/X already exists" when the worktree
