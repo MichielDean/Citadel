@@ -1783,8 +1783,10 @@ func prepareBranchInSandbox(dir, itemID string) error {
 // sandboxRoot/<repoName>/<dropletID>/ on branch feat/<dropletID>.
 //
 // If the directory already exists (recirculation), the branch is checked out
-// without resetting — preserving all prior agent commits.
-// If new, it is created via `git worktree add -b feat/<id> <path> origin/main`.
+// and hard-reset — uncommitted changes are discarded, committed work is preserved.
+// If new, it first tries `git worktree add <path> feat/<id>` (attach existing branch);
+// if that fails (branch does not exist), falls back to
+// `git worktree add -b feat/<id> <path> origin/main` to create a fresh branch.
 func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string) (string, error) {
 	return prepareDropletWorktreeWithLogger(slog.Default(), primaryDir, sandboxRoot, repoName, dropletID)
 }
