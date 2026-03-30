@@ -542,6 +542,73 @@ func TestRecoverDispatchLoop_PathspecError_RemoveAllFails_EscalatesImmediately(t
 	}
 }
 
+// TestRecoverDispatchLoop_OrphanedRegistryEntry_PruneEnablesRecreate verifies
+// that when a feature branch is "in-use" by a stale worktree registry entry
+// (the directory was deleted externally without git worktree remove), recovery
+// calls git worktree prune before git worktree add so the stale entry is
+// cleared and the worktree can be recreated successfully.
+func TestRecoverDispatchLoop_OrphanedRegistryEntry_PruneEnablesRecreate(t *testing.T) {
+	sandboxRoot := t.TempDir()
+	const repoName = "test-repo"
+	const itemID = "dl-orphan-prune"
+
+	primaryDir := filepath.Join(sandboxRoot, repoName, "_primary")
+	makePrimaryClone(t, primaryDir)
+
+	// Create the feature branch in a worktree at a stale path (not the expected worktreePath).
+	stalePath := filepath.Join(sandboxRoot, repoName, "stale-"+itemID)
+	branch := "feat/" + itemID
+	addCmd := exec.Command("git", "worktree", "add", "-b", branch, stalePath, "origin/main")
+	addCmd.Dir = primaryDir
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add stale: %v\n%s", err, out)
+	}
+
+	// Delete the stale worktree directory — leaves the .git/worktrees registry entry
+	// intact, with the branch marked as checked out at a now-missing path.
+	if err := os.RemoveAll(stalePath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Precondition: the expected worktreePath is not registered (never created).
+	worktreePath := filepath.Join(sandboxRoot, repoName, itemID)
+	if worktreeRegistered(primaryDir, worktreePath) {
+		t.Fatal("precondition: worktreePath must not be registered")
+	}
+
+	client := newMockClient()
+	item := &cistern.Droplet{ID: itemID, CurrentCataractae: "implement", Status: "in_progress"}
+	client.items[itemID] = item
+
+	config := testConfig()
+	workflows := map[string]*aqueduct.Workflow{repoName: testWorkflow()}
+	clients := map[string]CisternClient{repoName: client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner, WithSandboxRoot(sandboxRoot))
+
+	sched.recoverDispatchLoop(client, item, config.Repos[0])
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// Must NOT escalate.
+	if _, escalated := client.escalated[itemID]; escalated {
+		t.Errorf("expected no escalation; reason: %q", client.escalated[itemID])
+	}
+
+	// A success note must be written confirming the worktree was recreated.
+	var hasSuccessNote bool
+	for _, n := range client.attached {
+		if n.id == itemID && strings.Contains(n.notes, "worktree recreated") {
+			hasSuccessNote = true
+			break
+		}
+	}
+	if !hasSuccessNote {
+		t.Errorf("expected 'worktree recreated' success note after prune clears stale entry; notes: %v", client.attached)
+	}
+}
+
 // TestRecoverDispatchLoop_AddNoteError_EscalationPath_LogsWarn verifies that
 // when AddNote returns an error during the escalation path (fixAttempt >
 // dispatchMaxSelfFix), the error is logged at Warn level rather than silently

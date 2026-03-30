@@ -159,6 +159,15 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 			"attempt", attempt,
 		)
 		removeDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID)
+		// Prune stale worktree registry entries so git worktree add does not
+		// fail with "a branch named feat/X already exists" when the worktree
+		// directory was deleted externally, leaving a stale .git/worktrees entry.
+		prune := exec.Command("git", "worktree", "prune")
+		prune.Dir = primaryDir
+		if pruneErr := prune.Run(); pruneErr != nil {
+			s.logger.Warn("dispatch-loop recovery: git worktree prune failed — proceeding anyway",
+				"droplet", item.ID, "error", pruneErr)
+		}
 		if _, err := prepareDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID); err != nil {
 			if strings.Contains(err.Error(), "did not match any file(s) known to git") {
 				// The feature branch no longer exists in git. Remove any lingering
