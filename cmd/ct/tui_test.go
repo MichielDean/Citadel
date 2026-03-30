@@ -1495,7 +1495,7 @@ func TestExecActionCmd_Cancel_SetsDropletCancelled(t *testing.T) {
 	}
 }
 
-// TestExecActionCmd_Escalate_SetsDropletPooled verifies that execActionCmd
+// TestExecActionCmd_Pool_SetsDropletPooled verifies that execActionCmd
 // with actionPool sets the droplet status to "pooled".
 //
 // Given: a real cistern DB with an open droplet
