@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Architecti: scan for pre-existing bad states on startup and each poll cycle (ci-4kvd7)
+
+Droplets that are already in stagnant or blocked state when the Castellarius starts are now automatically enqueued for Architecti recovery. Additionally, the scheduler scans for newly stagnant droplets on each poll cycle to catch transitions that escaped state-change detection.
+
+**Key changes:**
+- **Startup scan**: On Castellarius startup, `scanBadStates()` scans all repos for stagnant/blocked droplets and enqueues any without an existing `[architecti]` note for recovery
+- **Poll cycle scan**: On each scheduler tick (configurable interval), the same scan runs to catch droplets that transitioned to bad state outside the normal state-change trigger
+- **Note-based deduplication**: Droplets are only enqueued once — if a `[architecti]` note already exists, the droplet is skipped, preventing repeated invocations for the same stuck state
+- **No user configuration required**: Scanning is automatic and always active
+
+**Impact**: Pre-existing stagnant droplets no longer languish indefinitely after a Castellarius restart. Newly stagnant droplets that slip through transition detection are now caught and queued for recovery.
+
+**Acceptance criteria met**: Existing bad-state droplets are enqueued on startup; newly stagnant droplets are caught each poll cycle; note-based dedup prevents re-enqueueing the same state.
+
 ### Architecti snapshot: include full note history for all droplets (ci-jmw48)
 
 The Architecti snapshot now includes the complete note history for every droplet, giving the recovery agent full visibility into the decision trail and prior recovery attempts.

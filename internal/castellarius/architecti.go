@@ -145,6 +145,28 @@ func (s *Castellarius) startArchitectiQueue(ctx context.Context) {
 	}()
 }
 
+// scanBadStates scans all repos for droplets in stagnant or blocked state that
+// have no existing [architecti] invocation note, and enqueues any found.
+// Called once at startup (after startArchitectiQueue) so pre-existing bad states
+// are caught on restart, and on each poll cycle so newly stagnant droplets that
+// slip through transition detection are caught.
+// Note-based dedup in tryEnqueueArchitecti prevents repeated invocations.
+func (s *Castellarius) scanBadStates() {
+	for _, repo := range s.config.Repos {
+		client := s.clients[repo.Name]
+		for _, status := range []string{"stagnant", "blocked"} {
+			items, err := client.List(repo.Name, status)
+			if err != nil {
+				s.logger.Error("scan: list failed", "repo", repo.Name, "status", status, "error", err)
+				continue
+			}
+			for _, item := range items {
+				s.tryEnqueueArchitecti(client, item)
+			}
+		}
+	}
+}
+
 // ArchitectiAction is a single action output by the Architecti agent.
 type ArchitectiAction struct {
 	Action     string `json:"action"`

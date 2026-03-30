@@ -1459,6 +1459,147 @@ func TestResolveArchitectiSystemPrompt_NotFound_ReturnsError(t *testing.T) {
 	}
 }
 
+// --- scanBadStates tests ---
+
+func TestScanBadStates_StagnantDroplet_NoNote_Enqueued(t *testing.T) {
+	// Given: a stagnant droplet with no invocation note
+	client := newMockClient()
+	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: scanBadStates is called
+	s.scanBadStates()
+
+	// Then: droplet was enqueued
+	select {
+	case got := <-s.architectiQueue:
+		if got.ID != "d-001" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-001")
+		}
+	default:
+		t.Fatal("expected d-001 in architectiQueue, but queue was empty")
+	}
+}
+
+func TestScanBadStates_BlockedDroplet_NoNote_Enqueued(t *testing.T) {
+	// Given: a blocked droplet with no invocation note
+	client := newMockClient()
+	client.items["d-002"] = &cistern.Droplet{ID: "d-002", Repo: "test-repo", Status: "blocked"}
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: scanBadStates is called
+	s.scanBadStates()
+
+	// Then: droplet was enqueued
+	select {
+	case got := <-s.architectiQueue:
+		if got.ID != "d-002" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-002")
+		}
+	default:
+		t.Fatal("expected d-002 in architectiQueue, but queue was empty")
+	}
+}
+
+func TestScanBadStates_ExistingInvocationNote_NotEnqueued(t *testing.T) {
+	// Given: stagnant droplet already has an [architecti] invocation note (dedup guard)
+	client := newMockClient()
+	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
+	client.notes["d-001"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d-001",
+			CataractaeName: "architecti",
+			Content:        architectiInvocationNotePrefix + " stagnant",
+			CreatedAt:      time.Now(),
+		},
+	}
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: scanBadStates is called
+	s.scanBadStates()
+
+	// Then: nothing enqueued — note-based dedup in tryEnqueueArchitecti applies
+	select {
+	case got := <-s.architectiQueue:
+		t.Errorf("expected empty queue, but got droplet %q", got.ID)
+	default:
+		// correct
+	}
+}
+
+func TestScanBadStates_OpenDroplet_NotEnqueued(t *testing.T) {
+	// Given: an open droplet alongside a stagnant one; scanBadStates only scans stagnant/blocked
+	client := newMockClient()
+	client.items["open-1"] = &cistern.Droplet{ID: "open-1", Repo: "test-repo", Status: "open"}
+	client.items["stagnant-1"] = &cistern.Droplet{ID: "stagnant-1", Repo: "test-repo", Status: "stagnant"}
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: scanBadStates is called
+	s.scanBadStates()
+
+	// Then: only stagnant-1 enqueued; open-1 is not scanned
+	ids := map[string]bool{}
+	for len(s.architectiQueue) > 0 {
+		select {
+		case got := <-s.architectiQueue:
+			ids[got.ID] = true
+		default:
+		}
+	}
+	if !ids["stagnant-1"] {
+		t.Error("expected stagnant-1 in queue")
+	}
+	if ids["open-1"] {
+		t.Error("open-1 must not appear in queue — only stagnant/blocked statuses are scanned")
+	}
+}
+
+func TestScanBadStates_ListError_LogsAndContinues(t *testing.T) {
+	// Given: List returns an error for all calls
+	client := newMockClient()
+	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
+	client.listErr = errors.New("db error")
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: scanBadStates is called (must not panic)
+	s.scanBadStates()
+
+	// Then: nothing enqueued (List failed for all statuses)
+	select {
+	case got := <-s.architectiQueue:
+		t.Errorf("expected empty queue on list error, but got droplet %q", got.ID)
+	default:
+		// correct: error path handled gracefully
+	}
+}
+
+func TestScanBadStates_MultipleDroplets_AllEnqueued(t *testing.T) {
+	// Given: two stagnant and one blocked droplet, none with invocation notes
+	client := newMockClient()
+	client.items["s1"] = &cistern.Droplet{ID: "s1", Repo: "test-repo", Status: "stagnant"}
+	client.items["s2"] = &cistern.Droplet{ID: "s2", Repo: "test-repo", Status: "stagnant"}
+	client.items["b1"] = &cistern.Droplet{ID: "b1", Repo: "test-repo", Status: "blocked"}
+	s := testScheduler(client, newMockRunner(client))
+
+	// When: scanBadStates is called
+	s.scanBadStates()
+
+	// Then: all three droplets are in the architectiQueue
+	ids := map[string]bool{}
+	for len(s.architectiQueue) > 0 {
+		select {
+		case got := <-s.architectiQueue:
+			ids[got.ID] = true
+		default:
+		}
+	}
+	for _, id := range []string{"s1", "s2", "b1"} {
+		if !ids[id] {
+			t.Errorf("expected %q in architectiQueue, but was not found", id)
+		}
+	}
+}
+
 func TestRunArchitectiAdHoc_Normal_ReturnsFilteredActions_MaxFilesPerRun(t *testing.T) {
 	// Given: LLM returns more file actions than MaxFilesPerRun allows
 	client := newMockClient()

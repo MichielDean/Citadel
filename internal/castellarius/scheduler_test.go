@@ -1055,6 +1055,57 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 	}
 }
 
+func TestTick_ScanBadStates_ExistingStagnantDroplet_Enqueued(t *testing.T) {
+	// Given: a stagnant droplet exists with no invocation note before the tick
+	client := newMockClient()
+	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
+	sched := testScheduler(client, newMockRunner(client))
+
+	// When: tick runs
+	sched.Tick(context.Background())
+
+	// Then: droplet is in the architectiQueue — scanBadStates ran at the end of tick
+	select {
+	case got := <-sched.architectiQueue:
+		if got.ID != "d-001" {
+			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-001")
+		}
+	default:
+		t.Fatal("expected d-001 in architectiQueue after tick, but queue was empty")
+	}
+}
+
+func TestRun_StartupScan_ExistingStagnantDroplet_Enqueued(t *testing.T) {
+	// Given: a stagnant droplet exists before Castellarius starts
+	client := newMockClient()
+	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
+
+	runner := newMockRunner(client)
+	sched := testScheduler(client, runner)
+	// Inject a no-op runArchitectiFn so the drainer does not attempt real invocations.
+	sched.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+		return nil
+	}
+
+	// Use a pre-cancelled context — Run exits immediately after the startup scan.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	sched.Run(ctx) //nolint:errcheck
+
+	// Then: invocation note present — startup scanBadStates called tryEnqueueArchitecti.
+	// Removing s.scanBadStates() from Run() would leave this test failing.
+	client.mu.Lock()
+	notes := client.notes["d-001"]
+	client.mu.Unlock()
+
+	for _, n := range notes {
+		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
+			return
+		}
+	}
+	t.Error("expected architecti invocation note after startup scan, but none found")
+}
+
 func TestRun_CancelledContext(t *testing.T) {
 	client := newMockClient()
 	runner := newMockRunner(nil)

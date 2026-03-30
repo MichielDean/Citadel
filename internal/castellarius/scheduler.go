@@ -454,6 +454,11 @@ func (s *Castellarius) Run(ctx context.Context) error {
 	// the scheduler and processes one droplet at a time.
 	s.startArchitectiQueue(ctx)
 
+	// Scan for pre-existing bad-state droplets before entering the poll loop.
+	// Treats startup as a mass state-transition event: any stagnant/blocked
+	// droplet without an [architecti] invocation note is enqueued once.
+	s.scanBadStates()
+
 	if s.cleanupInterval > 0 {
 		go func() {
 			ticker := time.NewTicker(s.cleanupInterval)
@@ -813,6 +818,9 @@ func (s *Castellarius) tick(ctx context.Context) {
 		}
 	}
 	s.wasDrought = isDrought
+
+	// Catch any stagnant/blocked droplets that slipped through transition detection.
+	s.scanBadStates()
 
 	s.writeHealthFile()
 }

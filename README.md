@@ -683,10 +683,18 @@ The Architecti is an autonomous recovery operator that diagnoses stagnant drople
 
 ### When it runs
 
-A droplet triggers the Architecti exactly once per bad-state transition:
+The Architecti is invoked in the following scenarios:
+
+**State-transition triggers:**
 - When the Castellarius transitions a droplet to **stagnant** (no-route escalation, terminal blocked/human/escalate)
 - When a droplet is **stuck routing** (in_progress with outcome set but failing to advance)
 - Each bad-state transition triggers **exactly one** Architecti invocation — never more. An invocation note is written before the agent runs, so the guarantee survives restarts.
+
+**Scheduled scans:**
+- On **Castellarius startup**, a scan runs to discover and enqueue any droplets already in stagnant or blocked state
+- On **each poll cycle** (scheduler tick), a scan runs to catch droplets that newly transitioned to bad state outside normal state-change detection
+
+All Architecti invocations use **note-based deduplication**: a droplet with an existing `[architecti]` invocation note is skipped, preventing repeated recovery attempts for the same stuck state.
 
 ### What it does
 
