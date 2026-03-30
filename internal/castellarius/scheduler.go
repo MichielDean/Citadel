@@ -962,10 +962,11 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		}
 
 		if isTerminal(next) {
-			cleanupBranch(strings.ToLower(next) != "done") // keep branch unless truly done
+			nextLower := strings.ToLower(next)
+			cleanupBranch(nextLower != "done") // keep branch unless truly done
 			s.handleTerminal(client, item.ID, next, step.Name)
 			// Blocked/human/escalate terminals become stagnant: enqueue for Architecti.
-			if strings.ToLower(next) != "done" {
+			if nextLower != "done" {
 				s.tryEnqueueArchitecti(client, item)
 			}
 			continue
