@@ -1411,17 +1411,20 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 			continue
 		}
 
-		// Fast liveness check: if the tmux session is dead, record a zombie note
-		// and reset the droplet to open for re-dispatch. This runs on every
-		// heartbeat tick (~30s) — no threshold, no waiting.
+		// Fast liveness check: if the tmux session is dead, or the session is
+		// alive but the claude process has exited, record a zombie note and reset
+		// the droplet to open for re-dispatch. This runs on every heartbeat
+		// tick (~30s) — no threshold, no waiting.
+		//
+		// Minimum age guard: skip sessions dispatched < 2× pollInterval ago.
+		// During the startup window tmux may not yet be visible and the agent
+		// process may not yet be forked — both checks would be false positives.
 		if item.Assignee != "" {
 			sessionID := repo.Name + "-" + item.Assignee
+			if time.Since(item.UpdatedAt) < 2*s.pollInterval {
+				continue
+			}
 			if !isTmuxAlive(sessionID) {
-				// Minimum age guard: ignore sessions dispatched < 2× pollInterval ago
-				// (tmux may not yet be visible immediately after spawn).
-				if time.Since(item.UpdatedAt) < 2*s.pollInterval {
-					continue
-				}
 				step := currentCataracta(item, wf)
 				if step == nil {
 					s.logger.Error("heartbeat: no step for dead session — skipping",
@@ -1463,13 +1466,6 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 			// still running inside it. If not, the agent exited without signaling an
 			// outcome (e.g. OOM kill, hard token limit) — kill the orphaned session,
 			// record a diagnostic note, and reset the droplet for re-dispatch.
-			//
-			// Minimum age guard: during the startup window tmux is alive but the
-			// agent process may not yet be forked. Skip sessions dispatched
-			// < 2× pollInterval ago to avoid false positives.
-			if time.Since(item.UpdatedAt) < 2*s.pollInterval {
-				continue
-			}
 			if !isAgentAlive(sessionID) {
 				step := currentCataracta(item, wf)
 				if step == nil {
