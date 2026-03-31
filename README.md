@@ -78,12 +78,12 @@ Filtration is an optional pre-intake step that refines vague ideas before they e
 
 6. **Docs** (`docs`) — Reviews the diff and updates documentation for all user-visible changes: README, CHANGELOG, CLI reference, config docs. Skips if there are no user-visible changes.
 
+7. **Delivery** (`delivery`) — Owns all git operations: rebase, PR creation, CI monitoring, PR review response, and merge. One agent handles the full branch-to-merged lifecycle. If a delivery agent stalls, the Castellarius detects and recovers automatically — see [Automatic Stuck Delivery Recovery](#automatic-stuck-delivery-recovery).
 
-8. **Delivery** (`delivery`) — Owns all git operations: rebase, PR creation, CI monitoring, PR review response, and merge. One agent handles the full branch-to-merged lifecycle. If a delivery agent stalls, the Castellarius detects and recovers automatically — see [Automatic Stuck Delivery Recovery](#automatic-stuck-delivery-recovery).
+## Pipeline Behaviors
 
-9. **Recirculation** — Revision sends the droplet back upstream to a prior cataractae for another pass. No retry limits. The water flows until it's pure.
-
-10. **Auto-merge** — After delivery, droplets auto-merge to main. All complexity levels flow through the same pipeline and auto-merge identically.
+- **Recirculation** — A cataractae sends the droplet back upstream to a prior cataractae for another pass when issues are found. No retry limits. The water flows until it's pure.
+- **Auto-merge** — After delivery, droplets auto-merge to main. All complexity levels flow through the same pipeline and auto-merge identically.
 
 ## Complexity Levels
 
