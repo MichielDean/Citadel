@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1481,6 +1482,59 @@ func TestRunArchitectiAdHoc_SnapshotContainsTriggerDropletID(t *testing.T) {
 // DISABLED: 		t.Errorf("snapshot missing cataractae name; snapshot = %q", snapshot)
 // DISABLED: 	}
 // DISABLED: }
+
+func TestBuildArchitectiSnapshot_CisternReference_SkillPresent_AppendsVerbatimContent(t *testing.T) {
+	// Given: SKILL.md exists at the expected path under sandboxRoot
+	client := newMockClient()
+	s := testSchedulerWithArchitecti(client)
+
+	sandboxRoot := t.TempDir()
+	s.sandboxRoot = sandboxRoot
+
+	skillDir := filepath.Join(sandboxRoot, "cistern", "_primary", "openclaw", "cistern")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("failed to create skill dir: %v", err)
+	}
+	skillContent := "# Cistern Skills\n\nUse ct droplet pass <id> to signal completion.\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("failed to write SKILL.md: %v", err)
+	}
+
+	// When: snapshot is built
+	snapshot, _ := s.buildArchitectiSnapshot(context.Background(), pooledDroplet("trigger", 1*time.Minute), *s.config.Architecti)
+
+	// Then: ## Cistern Reference heading is present
+	if !strings.Contains(snapshot, "## Cistern Reference\n") {
+		t.Errorf("snapshot missing '## Cistern Reference' heading; snapshot = %q", snapshot)
+	}
+	// Then: skill file content appears verbatim
+	if !strings.Contains(snapshot, skillContent) {
+		t.Errorf("snapshot missing skill file content; snapshot = %q", snapshot)
+	}
+	// Then: fallback text is NOT present
+	if strings.Contains(snapshot, "(skill file unavailable)") {
+		t.Errorf("snapshot contains fallback text despite skill file being present; snapshot = %q", snapshot)
+	}
+}
+
+func TestBuildArchitectiSnapshot_CisternReference_SkillMissing_AppendsFallback(t *testing.T) {
+	// Given: SKILL.md does not exist under sandboxRoot
+	client := newMockClient()
+	s := testSchedulerWithArchitecti(client)
+	s.sandboxRoot = t.TempDir() // empty dir — no SKILL.md at expected path
+
+	// When: snapshot is built
+	snapshot, _ := s.buildArchitectiSnapshot(context.Background(), pooledDroplet("trigger", 1*time.Minute), *s.config.Architecti)
+
+	// Then: ## Cistern Reference heading is present
+	if !strings.Contains(snapshot, "## Cistern Reference\n") {
+		t.Errorf("snapshot missing '## Cistern Reference' heading; snapshot = %q", snapshot)
+	}
+	// Then: fallback line is present
+	if !strings.Contains(snapshot, "(skill file unavailable)") {
+		t.Errorf("snapshot missing fallback text when skill file absent; snapshot = %q", snapshot)
+	}
+}
 
 func TestRunArchitectiAdHoc_Normal_MarkdownWrappedJSON_ReturnsParsedActions(t *testing.T) {
 	// Given: LLM output wraps JSON in markdown code block (typical LLM output)

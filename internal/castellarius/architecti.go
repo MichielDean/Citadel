@@ -349,6 +349,15 @@ func (s *Castellarius) buildArchitectiSnapshot(ctx context.Context, trigger *cis
 	fmt.Fprintf(&sb, "- MaxFilesPerRun: %d\n", config.MaxFilesPerRun)
 	fmt.Fprintf(&sb, "- Poll interval: %s\n\n", s.pollInterval)
 
+	// --- Cistern Reference ---
+	sb.WriteString("## Cistern Reference\n")
+	skillPath := filepath.Join(s.sandboxRoot, "cistern", "_primary", "openclaw", "cistern", "SKILL.md")
+	if content, err := os.ReadFile(skillPath); err == nil {
+		sb.Write(content)
+	} else {
+		sb.WriteString("(skill file unavailable)\n")
+	}
+
 	return sb.String(), repoByDroplet
 }
 
