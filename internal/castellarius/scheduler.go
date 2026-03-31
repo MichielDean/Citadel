@@ -1732,7 +1732,7 @@ var isAgentAliveFn = func(sessionID string) bool {
 	if err != nil {
 		return false
 	}
-	return claudeAliveUnderPID(strings.TrimSpace(string(out)))
+	return claudeAliveUnderPIDIn(strings.TrimSpace(string(out)), "/proc")
 }
 
 // isAgentAlive returns true when the tmux session contains a live claude process.
@@ -1740,13 +1740,8 @@ func isAgentAlive(sessionID string) bool {
 	return isAgentAliveFn(sessionID)
 }
 
-// claudeAliveUnderPID returns true when any descendant of panePIDStr has a
+// claudeAliveUnderPIDIn returns true when any descendant of panePIDStr has a
 // cmdline whose argv[0] base name is "claude" or starts with "claude-".
-func claudeAliveUnderPID(panePIDStr string) bool {
-	return claudeAliveUnderPIDIn(panePIDStr, "/proc")
-}
-
-// claudeAliveUnderPIDIn is the testable core of claudeAliveUnderPID.
 // procRoot is the proc filesystem root; tests may pass a fake directory.
 func claudeAliveUnderPIDIn(panePIDStr, procRoot string) bool {
 	if panePIDStr == "" {
