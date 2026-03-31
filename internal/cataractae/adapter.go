@@ -148,10 +148,8 @@ func (a *Adapter) spawnAutomated(ctx context.Context, req castellarius.Cataracta
 // ("DPF-456") is used as the branch suffix: "feat/DPF-456".
 // Otherwise, the droplet ID is used: "feat/<id>".
 func branchForDroplet(d *cistern.Droplet) string {
-	if d.ExternalRef != "" {
-		if _, key, found := strings.Cut(d.ExternalRef, ":"); found && key != "" {
-			return "feat/" + key
-		}
+	if _, key, found := strings.Cut(d.ExternalRef, ":"); found && key != "" {
+		return "feat/" + key
 	}
 	return "feat/" + d.ID
 }

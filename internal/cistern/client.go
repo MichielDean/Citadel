@@ -439,20 +439,15 @@ func (c *Client) GetLastReviewedCommit(id string) (string, error) {
 // to clear the field (stores NULL). Format should be 'provider:key'
 // (e.g. 'jira:DPF-456', 'linear:LIN-789').
 func (c *Client) SetExternalRef(id, ref string) error {
-	var err error
-	var res sql.Result
-	now := time.Now().UTC()
-	if ref == "" {
-		res, err = c.db.Exec(
-			`UPDATE droplets SET external_ref = NULL, updated_at = ? WHERE id = ?`,
-			now, id,
-		)
-	} else {
-		res, err = c.db.Exec(
-			`UPDATE droplets SET external_ref = ?, updated_at = ? WHERE id = ?`,
-			ref, now, id,
-		)
+	var val any
+	if ref != "" {
+		val = ref
 	}
+	now := time.Now().UTC()
+	res, err := c.db.Exec(
+		`UPDATE droplets SET external_ref = ?, updated_at = ? WHERE id = ?`,
+		val, now, id,
+	)
 	if err != nil {
 		return fmt.Errorf("cistern: set external_ref %s: %w", id, err)
 	}
