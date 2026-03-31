@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Heartbeat: detect agents that exit inside a live tmux session without signaling outcome (ci-7x196)
+
+The heartbeat now detects a second class of zombie droplets: sessions where the tmux server is alive but the claude agent process has exited without signaling an outcome (e.g., OOM kill, hard token limit, non-zero exit). These "agent-dead" zombies are now recovered as aggressively as fully-dead tmux sessions.
+
+**Key changes:**
+- **New `isAgentAlive()` check**: Added to the heartbeat liveness detection — after confirming tmux is alive, the scheduler now checks whether any claude descendant process is still running inside the session
+- **Implementation**: Uses `tmux list-panes` to find the pane root PID, then walks `/proc` to detect claude descendants via BFS, checking cmdline for `claude` or `claude-*` binary names
+- **Minimum age guard**: The startup window (< 2× pollInterval) where tmux may not yet be visible and claude not yet forked is protected by a single hoisted age guard before both `isTmuxAlive` and `isAgentAlive` checks — prevents false positives on newly-dispatched sessions
+- **Zombie recovery**: When `isTmuxAlive` is true but `isAgentAlive` is false and no outcome is recorded, the session is killed (`tmux kill-session`), a diagnostic note is written, and the droplet is reset to open for re-dispatch
+- **Diagnostic note**: Records `"Session zombie detected: tmux alive but claude process dead. Session killed. Re-dispatching. [<timestamp>]"` with RFC3339 UTC timestamp
+- **Pool release**: The aqueduct pool slot is released to allow other droplets to be dispatched
+
+**Testing**:
+- **Unit tests** (`isAgentAlive`): Mock `/proc` fixtures validate correct detection of live claude processes vs. shell-only panes, and edge cases (empty PID, nonexistent PID, unrelated processes, deep descendants, false-positive names, empty cmdline)
+- **Integration test** (`heartbeatRepo`): Covers the tmux-alive-process-dead path — session is killed, note is written, droplet is reset to open
+- **Backward compatibility**: The existing tmux-dead path is unchanged and continues to be covered by existing tests
+
+**Impact**: Sessions where the agent process has exited without signaling will now be automatically recovered on the next heartbeat tick (~30s). Operators will see a diagnostic note in `ct droplet show <id>` explaining when and why the session was killed and the droplet reset.
+
+**Acceptance criteria met**: (1) `isAgentAlive()` correctly distinguishes live claude from shell-only panes in unit tests; (2) heartbeat integration test covers the agent-dead path with session kill, note write, and droplet reset; (3) age guard prevents false positives on startup; (4) existing tmux-dead path unchanged; (5) all tests pass.
+
 ### Architecti: scan for pre-existing bad states on startup and each poll cycle (ci-4kvd7)
 
 Droplets that are already in stagnant or blocked state when the Castellarius starts are now automatically enqueued for Architecti recovery. Additionally, the scheduler scans for newly stagnant droplets on each poll cycle to catch transitions that escaped state-change detection.
