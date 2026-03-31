@@ -2238,6 +2238,10 @@ func TestHeartbeatRepo_Debounce_SessionLogSignalAdvances_ClearsDebounce(t *testi
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	logDir := t.TempDir()
 	client := newMockClient()
@@ -2477,6 +2481,10 @@ func TestHeartbeatRepo_StallWithAssignee_SpawnsSession(t *testing.T) {
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	client := newMockClient()
 	runner := newMockRunner(client)
@@ -2578,6 +2586,10 @@ func TestHeartbeatRepo_SpawnFailure_ClearsDebounce(t *testing.T) {
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	client := newMockClient()
 	runner := newMockRunner(client)
@@ -2613,6 +2625,421 @@ func TestHeartbeatRepo_SpawnFailure_ClearsDebounce(t *testing.T) {
 
 	if len(client.attached) != 2 {
 		t.Errorf("expected 2 stall notes after retry tick, got %d", len(client.attached))
+	}
+}
+
+// --- isAgentAlive / claudeAliveUnderPIDIn unit tests ---
+
+// writeFakeProcEntry creates a minimal /proc/<pid> directory under procRoot with
+// a status file containing the given ppid and a cmdline file with null-separated args.
+func writeFakeProcEntry(t *testing.T, procRoot, pid, ppid string, argv ...string) {
+	t.Helper()
+	dir := filepath.Join(procRoot, pid)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	status := fmt.Sprintf("Name:\tsh\nPPid:\t%s\nUid:\t1000\n", ppid)
+	if err := os.WriteFile(filepath.Join(dir, "status"), []byte(status), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmdline := strings.Join(argv, "\x00") + "\x00"
+	if err := os.WriteFile(filepath.Join(dir, "cmdline"), []byte(cmdline), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestIsProcPIDEntry_ValidAndInvalid exercises the PID name filter.
+func TestIsProcPIDEntry_ValidAndInvalid(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"123", true},
+		{"1", true},
+		{"0", true},
+		{"", false},
+		{"abc", false},
+		{"12a", false},
+		{"net", false},
+		{"self", false},
+	}
+	for _, tc := range cases {
+		if got := isProcPIDEntry(tc.in); got != tc.want {
+			t.Errorf("isProcPIDEntry(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestParsePPid_ExtractsPPidLine verifies parsePPid returns the PPid value.
+func TestParsePPid_ExtractsPPidLine(t *testing.T) {
+	status := "Name:\tbash\nPid:\t42\nPPid:\t7\nUid:\t1000\n"
+	if got := parsePPid(status); got != "7" {
+		t.Errorf("parsePPid = %q, want %q", got, "7")
+	}
+}
+
+// TestParsePPid_MissingLine returns empty string when PPid line is absent.
+func TestParsePPid_MissingLine(t *testing.T) {
+	if got := parsePPid("Name:\tbash\nPid:\t42\n"); got != "" {
+		t.Errorf("parsePPid = %q, want empty", got)
+	}
+}
+
+// TestIsClaudeCmdline covers positive and negative cases.
+func TestIsClaudeCmdline(t *testing.T) {
+	cases := []struct {
+		cmdline string
+		want    bool
+	}{
+		{"/usr/bin/claude\x00--dangerously-skip-permissions\x00", true},
+		{"claude\x00", true},
+		{"/home/user/.nvm/bin/claude-code\x00arg\x00", true},
+		{"/bin/bash\x00-c\x00sleep 100\x00", false},
+		{"sh\x00", false},
+		{"", false},
+		{"\x00", false},
+		{"/usr/bin/notclaude\x00", false},
+		{"/usr/bin/claudeX\x00", false}, // not exact "claude" or "claude-*"
+	}
+	for _, tc := range cases {
+		if got := isClaudeCmdline(tc.cmdline); got != tc.want {
+			t.Errorf("isClaudeCmdline(%q) = %v, want %v", tc.cmdline, got, tc.want)
+		}
+	}
+}
+
+// TestClaudeAliveUnderPIDIn_EmptyPID_ReturnsFalse ensures the empty PID guard fires.
+func TestClaudeAliveUnderPIDIn_EmptyPID_ReturnsFalse(t *testing.T) {
+	if claudeAliveUnderPIDIn("", t.TempDir()) {
+		t.Error("expected false for empty panePIDStr")
+	}
+}
+
+// TestClaudeAliveUnderPIDIn_NoClaudeProcess_ReturnsFalse verifies that when no
+// descendant has "claude" in its cmdline the function returns false.
+func TestClaudeAliveUnderPIDIn_NoClaudeProcess_ReturnsFalse(t *testing.T) {
+	procRoot := t.TempDir()
+	// Pane PID 1 (shell), child 2 (another shell). Neither is claude.
+	writeFakeProcEntry(t, procRoot, "1", "0", "/bin/bash")
+	writeFakeProcEntry(t, procRoot, "2", "1", "/usr/bin/python3", "script.py")
+	if claudeAliveUnderPIDIn("1", procRoot) {
+		t.Error("expected false when no claude descendant exists")
+	}
+}
+
+// TestClaudeAliveUnderPIDIn_DirectClaudeChild_ReturnsTrue verifies that a direct
+// child of the pane PID running claude is detected.
+func TestClaudeAliveUnderPIDIn_DirectClaudeChild_ReturnsTrue(t *testing.T) {
+	procRoot := t.TempDir()
+	writeFakeProcEntry(t, procRoot, "1", "0", "/bin/bash")
+	writeFakeProcEntry(t, procRoot, "2", "1", "/usr/local/bin/claude", "--dangerously-skip-permissions")
+	if !claudeAliveUnderPIDIn("1", procRoot) {
+		t.Error("expected true when direct claude child exists")
+	}
+}
+
+// TestClaudeAliveUnderPIDIn_DeepDescendant_ReturnsTrue verifies that claude is
+// found even when it is several levels deep in the process tree.
+func TestClaudeAliveUnderPIDIn_DeepDescendant_ReturnsTrue(t *testing.T) {
+	procRoot := t.TempDir()
+	// Tree: 1 → 2 (sh) → 3 (node) → 4 (claude)
+	writeFakeProcEntry(t, procRoot, "1", "0", "/bin/bash")
+	writeFakeProcEntry(t, procRoot, "2", "1", "/bin/sh", "-c", "node launcher.js")
+	writeFakeProcEntry(t, procRoot, "3", "2", "/usr/bin/node", "launcher.js")
+	writeFakeProcEntry(t, procRoot, "4", "3", "/home/user/.local/bin/claude", "arg")
+	if !claudeAliveUnderPIDIn("1", procRoot) {
+		t.Error("expected true when claude is a deep descendant")
+	}
+}
+
+// TestClaudeAliveUnderPIDIn_UnrelatedClaudeProcess_ReturnsFalse verifies that a
+// claude process that is NOT a descendant of the pane PID is not counted.
+func TestClaudeAliveUnderPIDIn_UnrelatedClaudeProcess_ReturnsFalse(t *testing.T) {
+	procRoot := t.TempDir()
+	// Pane PID is 10; claude runs under PID 1 (unrelated).
+	writeFakeProcEntry(t, procRoot, "1", "0", "/bin/bash")
+	writeFakeProcEntry(t, procRoot, "2", "1", "/usr/bin/claude")
+	writeFakeProcEntry(t, procRoot, "10", "0", "/bin/bash") // our pane, no claude children
+	if claudeAliveUnderPIDIn("10", procRoot) {
+		t.Error("expected false when claude is not a descendant of pane PID")
+	}
+}
+
+// TestClaudeAliveUnderPIDIn_NonexistentPanePID_ReturnsFalse handles a pane PID
+// that no longer appears in /proc (process already gone).
+func TestClaudeAliveUnderPIDIn_NonexistentPanePID_ReturnsFalse(t *testing.T) {
+	procRoot := t.TempDir()
+	// /proc is empty (or only has unrelated processes).
+	writeFakeProcEntry(t, procRoot, "1", "0", "/bin/bash")
+	if claudeAliveUnderPIDIn("9999", procRoot) {
+		t.Error("expected false when pane PID does not appear in /proc")
+	}
+}
+
+// --- heartbeat zombie detection tests ---
+
+// TestHeartbeatRepo_TmuxDead_WritesNoteAndResetsDroplet verifies that when the
+// tmux session is dead the droplet is reset to open and a zombie note is written.
+// This covers the existing "tmux fully dead" path (acceptance criterion 3).
+func TestHeartbeatRepo_TmuxDead_WritesNoteAndResetsDroplet(t *testing.T) {
+	// Ensure tmux appears dead for our test session.
+	orig := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return false }
+	t.Cleanup(func() { isTmuxAliveFn = orig })
+
+	client := newMockClient()
+
+	item := &cistern.Droplet{
+		ID:                "zombie-tmuxdead",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+		UpdatedAt:         time.Now().Add(-10 * time.Minute), // old enough to pass age guard
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	// Note must have been written.
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 zombie note, got %d", len(client.attached))
+	}
+	note := client.attached[0].notes
+	if !strings.Contains(note, "tmux session") || !strings.Contains(note, "dead") {
+		t.Errorf("zombie note missing expected text; got: %s", note)
+	}
+
+	// Droplet must have been reset to open.
+	if item.Status != "open" {
+		t.Errorf("item status = %q, want open", item.Status)
+	}
+	if item.Assignee != "" {
+		t.Errorf("item assignee = %q, want empty", item.Assignee)
+	}
+}
+
+// TestHeartbeatRepo_TmuxAliveAgentDead_WritesNoteKillsSessionAndResetsDroplet
+// verifies the new path: tmux session alive but claude process has exited.
+// The heartbeat must kill the session, write a diagnostic note, and reset the
+// droplet to open for re-dispatch (acceptance criterion 2).
+func TestHeartbeatRepo_TmuxAliveAgentDead_WritesNoteKillsSessionAndResetsDroplet(t *testing.T) {
+	orig := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isTmuxAliveFn = orig })
+
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return false } // shell-only pane
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
+
+	client := newMockClient()
+
+	item := &cistern.Droplet{
+		ID:                "zombie-agentdead",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	var killedSessions []string
+	sched.killSessionFn = func(sessionID string) error {
+		killedSessions = append(killedSessions, sessionID)
+		return nil
+	}
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	// Session must have been killed.
+	if len(killedSessions) != 1 {
+		t.Fatalf("expected 1 killed session, got %d: %v", len(killedSessions), killedSessions)
+	}
+	if killedSessions[0] != "test-repo-alpha" {
+		t.Errorf("killed session = %q, want %q", killedSessions[0], "test-repo-alpha")
+	}
+
+	// Note must have been written with the expected diagnostic text.
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 note, got %d", len(client.attached))
+	}
+	note := client.attached[0].notes
+	if !strings.Contains(note, "tmux alive but claude process dead") {
+		t.Errorf("note missing expected text; got: %s", note)
+	}
+	if !strings.Contains(note, "Session killed") {
+		t.Errorf("note missing 'Session killed'; got: %s", note)
+	}
+	if !strings.Contains(note, "Re-dispatching") {
+		t.Errorf("note missing 'Re-dispatching'; got: %s", note)
+	}
+
+	// Droplet must have been reset to open.
+	if item.Status != "open" {
+		t.Errorf("item status = %q, want open", item.Status)
+	}
+	if item.Assignee != "" {
+		t.Errorf("item assignee = %q, want empty", item.Assignee)
+	}
+}
+
+// TestHeartbeatRepo_TmuxAliveAgentDead_RecentDispatch_SkipsZombieHandling verifies
+// that the minimum age guard prevents false-positive zombie kills during the
+// startup window when tmux is alive but the agent process has not yet been forked.
+func TestHeartbeatRepo_TmuxAliveAgentDead_RecentDispatch_SkipsZombieHandling(t *testing.T) {
+	orig := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isTmuxAliveFn = orig })
+
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return false } // agent not yet forked
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
+
+	client := newMockClient()
+
+	item := &cistern.Droplet{
+		ID:                "zombie-agentdead-recent",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+		UpdatedAt:         time.Now(), // just dispatched — within 2× pollInterval
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 60 // high threshold — not stalled
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	var killedSessions []string
+	sched.killSessionFn = func(sessionID string) error {
+		killedSessions = append(killedSessions, sessionID)
+		return nil
+	}
+
+	// Provide a recent note so stall detection does not fire.
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{CreatedAt: time.Now()},
+	}
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	// Age guard must have suppressed zombie handling — session must not be killed.
+	if len(killedSessions) != 0 {
+		t.Errorf("expected no sessions killed for recently-dispatched session, got %v", killedSessions)
+	}
+	if len(client.attached) != 0 {
+		t.Errorf("expected no notes written for recently-dispatched session, got %d", len(client.attached))
+	}
+	if item.Status != "in_progress" {
+		t.Errorf("item status = %q, want in_progress", item.Status)
+	}
+	if item.Assignee != "alpha" {
+		t.Errorf("item assignee = %q, want alpha", item.Assignee)
+	}
+}
+
+// TestHeartbeatRepo_TmuxAliveAgentAlive_SkipsZombieHandling verifies that when
+// both tmux and the claude process are alive no zombie action is taken.
+func TestHeartbeatRepo_TmuxAliveAgentAlive_SkipsZombieHandling(t *testing.T) {
+	orig := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isTmuxAliveFn = orig })
+
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true } // live claude process
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
+
+	client := newMockClient()
+
+	item := &cistern.Droplet{
+		ID:                "agent-alive",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 60 // high threshold — not stalled
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	var killedSessions []string
+	sched.killSessionFn = func(sessionID string) error {
+		killedSessions = append(killedSessions, sessionID)
+		return nil
+	}
+
+	// Provide a recent note so stall detection does not fire.
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{CreatedAt: time.Now()},
+	}
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(killedSessions) != 0 {
+		t.Errorf("expected no sessions killed for live agent, got %v", killedSessions)
+	}
+	if len(client.attached) != 0 {
+		t.Errorf("expected no notes written for live agent, got %d", len(client.attached))
+	}
+	if item.Status != "in_progress" {
+		t.Errorf("item status = %q, want in_progress", item.Status)
+	}
+}
+
+// TestHeartbeatRepo_TmuxAliveAgentDead_NoAssignee_SkipsZombieCheck verifies that
+// when the droplet has no assignee the agent-dead check is not attempted.
+func TestHeartbeatRepo_TmuxAliveAgentDead_NoAssignee_SkipsZombieCheck(t *testing.T) {
+	var agentCheckCalled bool
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool {
+		agentCheckCalled = true
+		return false
+	}
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
+
+	client := newMockClient()
+
+	item := &cistern.Droplet{
+		ID:                "no-assignee",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "", // no assignee — zombie checks should be skipped
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 60
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	// Add a recent note so stall detection does not fire either.
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{CreatedAt: time.Now()},
+	}
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if agentCheckCalled {
+		t.Error("isAgentAliveFn should not be called when droplet has no assignee")
 	}
 }
 

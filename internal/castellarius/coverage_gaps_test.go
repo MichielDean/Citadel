@@ -317,6 +317,10 @@ func TestHeartbeatRepo_StallDetected_ForAssignedDroplet(t *testing.T) {
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	client := newMockClient()
 	item := &cistern.Droplet{
@@ -345,6 +349,10 @@ func TestHeartbeatRepo_ActiveDroplet_NotStalled(t *testing.T) {
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	client := newMockClient()
 	item := &cistern.Droplet{
@@ -376,6 +384,10 @@ func TestHeartbeatRepo_UnknownAssignee_WritesStallNote(t *testing.T) {
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	client := newMockClient()
 	item := &cistern.Droplet{

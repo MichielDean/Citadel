@@ -29,6 +29,10 @@ func TestHeartbeat_StallDetected_WhenNoSignals(t *testing.T) {
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
 	t.Cleanup(func() { isTmuxAliveFn = orig })
+	// Mock agent as alive so the agent-dead zombie path is not triggered.
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
 
 	buf := &bytes.Buffer{}
 	client := newMockClient()
