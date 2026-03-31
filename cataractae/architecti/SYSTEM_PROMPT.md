@@ -211,6 +211,7 @@ The context document you receive contains:
 - Complete note history for each droplet (cataractae name, timestamp, and decision trail in chronological order)
 - Infrastructure health: castellarius health file, active tmux sessions
 - Recent log tail (last 50 lines)
+- Cistern Reference: cataractae skill documentation and operational context
 
 Use this full picture to make decisions. The triggering droplet is not
 necessarily the one that needs action — look at the whole system state and act
