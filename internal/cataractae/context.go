@@ -247,15 +247,18 @@ func writeContextFile(path string, p ContextParams) error {
 	}
 
 	// Partition notes in one pass:
-	//   ownNotes    — same cataractae only (avoids anchoring on unrelated stages)
-	//   manualNotes — operator annotations via `ct droplet note` (never step-filtered)
-	var ownNotes, manualNotes []cistern.CataractaeNote
+	//   ownNotes       — same cataractae only (avoids anchoring on unrelated stages)
+	//   manualNotes    — operator annotations via `ct droplet note` (never step-filtered)
+	//   schedulerNotes — scheduler system notes (zombie detection, timeouts, etc.)
+	var ownNotes, manualNotes, schedulerNotes []cistern.CataractaeNote
 	for _, n := range p.Notes {
 		switch n.CataractaeName {
 		case p.Step.Name:
 			ownNotes = append(ownNotes, n)
 		case "manual":
 			manualNotes = append(manualNotes, n)
+		case "scheduler":
+			schedulerNotes = append(schedulerNotes, n)
 		}
 	}
 	if len(ownNotes) > 4 {
@@ -271,6 +274,13 @@ func writeContextFile(path string, p ContextParams) error {
 	if len(manualNotes) > 0 {
 		b.WriteString("## Manual Notes\n\n")
 		for _, n := range manualNotes {
+			b.WriteString(n.Content)
+			b.WriteString("\n\n")
+		}
+	}
+	if len(schedulerNotes) > 0 {
+		b.WriteString("## Scheduler Notes\n\n")
+		for _, n := range schedulerNotes {
 			b.WriteString(n.Content)
 			b.WriteString("\n\n")
 		}

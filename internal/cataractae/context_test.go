@@ -256,3 +256,78 @@ func TestWriteContextFile_ManualNotes_ShownSeparately(t *testing.T) {
 		t.Error("cross-cataractae note 'deliver note X' must not appear anywhere in CONTEXT.md")
 	}
 }
+
+// TestWriteContextFile_SchedulerNotes_ShownSeparately verifies that notes with
+// CataractaeName=="scheduler" appear in a dedicated "## Scheduler Notes" section
+// and are NOT silently dropped by the step-name filter (ci-tgj96).
+//
+// Given: notes from implement, deliver, manual, and scheduler sources
+// When:  writeContextFile is called with step "implement"
+// Then:  scheduler notes appear in "## Scheduler Notes", implement notes appear
+//
+//	in "## Recent Step Notes", manual notes in "## Manual Notes", and
+//	deliver notes appear in none of these sections.
+func TestWriteContextFile_SchedulerNotes_ShownSeparately(t *testing.T) {
+	item := &cistern.Droplet{ID: "ci-test4", Title: "Test scheduler notes", Status: "in_progress"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent"}
+
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "scheduler", Content: "scheduler: zombie detected, recirculating"},
+		{CataractaeName: "implement", Content: "implement note A"},
+		{CataractaeName: "deliver", Content: "deliver note X"},
+		{CataractaeName: "scheduler", Content: "scheduler: timeout notice"},
+		{CataractaeName: "manual", Content: "operator annotation"},
+	}
+
+	p := ContextParams{
+		Item:  item,
+		Step:  step,
+		Notes: notes,
+	}
+
+	ctxPath := filepath.Join(t.TempDir(), "CONTEXT.md")
+	if err := writeContextFile(ctxPath, p); err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	content, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	got := string(content)
+
+	// Scheduler notes must appear in the dedicated Scheduler Notes section.
+	schedulerIdx := strings.Index(got, "## Scheduler Notes")
+	if schedulerIdx == -1 {
+		t.Fatal("'## Scheduler Notes' section not found — scheduler notes would be invisible (regression: ci-tgj96)")
+	}
+	schedulerSection := got[schedulerIdx:]
+	if !strings.Contains(schedulerSection, "scheduler: zombie detected, recirculating") {
+		t.Error("expected first scheduler note in '## Scheduler Notes' section")
+	}
+	if !strings.Contains(schedulerSection, "scheduler: timeout notice") {
+		t.Error("expected second scheduler note in '## Scheduler Notes' section")
+	}
+
+	// Own-step notes must still appear in Recent Step Notes.
+	recentIdx := strings.Index(got, "## Recent Step Notes")
+	if recentIdx == -1 {
+		t.Fatal("'## Recent Step Notes' section not found")
+	}
+	if !strings.Contains(got[recentIdx:], "implement note A") {
+		t.Error("expected own-cataractae note 'implement note A' in '## Recent Step Notes'")
+	}
+
+	// Manual notes must still appear in Manual Notes section.
+	if !strings.Contains(got, "## Manual Notes") {
+		t.Error("'## Manual Notes' section not found")
+	}
+	if !strings.Contains(got, "operator annotation") {
+		t.Error("expected manual note 'operator annotation' in CONTEXT.md")
+	}
+
+	// Cross-cataractae step notes must not appear anywhere.
+	if strings.Contains(got, "deliver note X") {
+		t.Error("cross-cataractae note 'deliver note X' must not appear anywhere in CONTEXT.md")
+	}
+}
