@@ -1411,17 +1411,20 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 			continue
 		}
 
-		// Fast liveness check: if the tmux session is dead, record a zombie note
-		// and reset the droplet to open for re-dispatch. This runs on every
-		// heartbeat tick (~30s) — no threshold, no waiting.
+		// Fast liveness check: if the tmux session is dead, or the session is
+		// alive but the claude process has exited, record a zombie note and reset
+		// the droplet to open for re-dispatch. This runs on every heartbeat
+		// tick (~30s) — no threshold, no waiting.
+		//
+		// Minimum age guard: skip sessions dispatched < 2× pollInterval ago.
+		// During the startup window tmux may not yet be visible and the agent
+		// process may not yet be forked — both checks would be false positives.
 		if item.Assignee != "" {
 			sessionID := repo.Name + "-" + item.Assignee
+			if time.Since(item.UpdatedAt) < 2*s.pollInterval {
+				continue
+			}
 			if !isTmuxAlive(sessionID) {
-				// Minimum age guard: ignore sessions dispatched < 2× pollInterval ago
-				// (tmux may not yet be visible immediately after spawn).
-				if time.Since(item.UpdatedAt) < 2*s.pollInterval {
-					continue
-				}
 				step := currentCataracta(item, wf)
 				if step == nil {
 					s.logger.Error("heartbeat: no step for dead session — skipping",
@@ -1454,6 +1457,48 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 				)
 				if err := client.Assign(item.ID, "", step.Name); err != nil {
 					s.logger.Error("heartbeat: zombie reset failed",
+						"repo", repo.Name, "droplet", item.ID, "error", err)
+				}
+				continue // handled — skip progress check for this item
+			}
+
+			// The tmux session is alive. Check whether the claude agent process is
+			// still running inside it. If not, the agent exited without signaling an
+			// outcome (e.g. OOM kill, hard token limit) — kill the orphaned session,
+			// record a diagnostic note, and reset the droplet for re-dispatch.
+			if !isAgentAlive(sessionID) {
+				step := currentCataracta(item, wf)
+				if step == nil {
+					s.logger.Error("heartbeat: no step for agent-dead session — skipping",
+						"repo", repo.Name, "droplet", item.ID)
+					continue
+				}
+				if err := s.killSessionFn(sessionID); err != nil {
+					s.logger.Warn("heartbeat: kill-session failed for agent-dead zombie",
+						"droplet", item.ID, "session", sessionID, "error", err)
+				}
+				if pool := s.pools[repo.Name]; pool != nil {
+					if w := pool.FindByName(item.Assignee); w != nil {
+						pool.Release(w)
+					}
+				}
+				zombieNote := fmt.Sprintf(
+					"Session zombie detected: tmux alive but claude process dead. Session killed. Re-dispatching. [%s]",
+					time.Now().UTC().Format(time.RFC3339),
+				)
+				if err := client.AddNote(item.ID, "scheduler", zombieNote); err != nil {
+					s.logger.Warn("heartbeat: AddNote failed for agent-dead zombie",
+						"droplet", item.ID, "error", err)
+				}
+				s.logger.Info("heartbeat: agent-dead zombie — killed session, resetting to open",
+					"repo", repo.Name,
+					"droplet", item.ID,
+					"assignee", item.Assignee,
+					"cataractae", step.Name,
+					"session", sessionID,
+				)
+				if err := client.Assign(item.ID, "", step.Name); err != nil {
+					s.logger.Error("heartbeat: agent-dead zombie reset failed",
 						"repo", repo.Name, "droplet", item.ID, "error", err)
 				}
 				continue // handled — skip progress check for this item
@@ -1679,6 +1724,123 @@ var isTmuxAliveFn = func(sessionID string) bool {
 // isTmuxAlive returns true if a tmux session with the given name is running.
 func isTmuxAlive(sessionID string) bool {
 	return isTmuxAliveFn(sessionID)
+}
+
+// isAgentAliveFn returns true when a claude process is alive inside the tmux
+// session. It uses tmux list-panes to find the pane root PID and then walks
+// /proc to find a claude descendant of that PID.
+// Injectable for testing without a real tmux server or process tree.
+var isAgentAliveFn = func(sessionID string) bool {
+	out, err := exec.Command("tmux", "list-panes", "-t", sessionID, "-F", "#{pane_pid}").Output()
+	if err != nil {
+		return false
+	}
+	return claudeAliveUnderPIDIn(strings.TrimSpace(string(out)), "/proc")
+}
+
+// isAgentAlive returns true when the tmux session contains a live claude process.
+func isAgentAlive(sessionID string) bool {
+	return isAgentAliveFn(sessionID)
+}
+
+// claudeAliveUnderPIDIn returns true when any descendant of panePIDStr has a
+// cmdline whose argv[0] base name is "claude" or starts with "claude-".
+// procRoot is the proc filesystem root; tests may pass a fake directory.
+func claudeAliveUnderPIDIn(panePIDStr, procRoot string) bool {
+	if panePIDStr == "" {
+		return false
+	}
+
+	procDir, err := os.Open(procRoot)
+	if err != nil {
+		return false
+	}
+	defer procDir.Close()
+
+	entries, err := procDir.Readdirnames(-1)
+	if err != nil {
+		return false
+	}
+
+	type procInfo struct {
+		ppid    string
+		cmdline string
+	}
+	infos := make(map[string]procInfo, len(entries))
+
+	for _, entry := range entries {
+		if !isProcPIDEntry(entry) {
+			continue
+		}
+		statusData, err := os.ReadFile(filepath.Join(procRoot, entry, "status"))
+		if err != nil {
+			continue
+		}
+		ppid := parsePPid(string(statusData))
+		cmdlineData, _ := os.ReadFile(filepath.Join(procRoot, entry, "cmdline"))
+		infos[entry] = procInfo{ppid: ppid, cmdline: string(cmdlineData)}
+	}
+
+	// Build parent → children map.
+	children := make(map[string][]string, len(infos))
+	for pid, info := range infos {
+		if info.ppid != "" {
+			children[info.ppid] = append(children[info.ppid], pid)
+		}
+	}
+
+	// BFS from panePIDStr; return true on the first claude descendant found.
+	queue := []string{panePIDStr}
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		if info, ok := infos[pid]; ok && isClaudeCmdline(info.cmdline) {
+			return true
+		}
+		queue = append(queue, children[pid]...)
+	}
+	return false
+}
+
+// isProcPIDEntry reports whether s is a valid Linux /proc PID directory name
+// (a non-empty string of decimal digits).
+func isProcPIDEntry(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// parsePPid extracts the PPid value from a /proc/<pid>/status file.
+func parsePPid(status string) string {
+	for _, line := range strings.Split(status, "\n") {
+		if strings.HasPrefix(line, "PPid:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				return fields[1]
+			}
+		}
+	}
+	return ""
+}
+
+// isClaudeCmdline returns true when the null-separated cmdline identifies a
+// claude process — the base name of argv[0] is "claude" or starts with "claude-".
+func isClaudeCmdline(cmdline string) bool {
+	if cmdline == "" {
+		return false
+	}
+	argv0 := strings.SplitN(cmdline, "\x00", 2)[0]
+	if argv0 == "" {
+		return false
+	}
+	base := filepath.Base(argv0)
+	return base == "claude" || strings.HasPrefix(base, "claude-")
 }
 
 // sandboxHead returns the current HEAD commit hash in the given directory.

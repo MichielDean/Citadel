@@ -126,6 +126,40 @@ If the provider remains degraded, investigate:
 - Is authentication stale? Run `ct doctor --fix` to refresh tokens
 - Rate limiting? Reduce concurrent aqueducts or add delays in cataractae timeouts
 
+### Droplet Reset With "Session Zombie" Note
+
+If you see a droplet note like: `"Session zombie detected: tmux alive but claude process dead. Session killed. Re-dispatching. [<timestamp>]"`, the Castellarius detected and recovered an agent that exited without signaling an outcome.
+
+**What this means:**
+- The tmux session was still alive (server running, pane responsive)
+- But the claude agent process inside had exited (OOM kill, hard token limit, non-zero exit, or crash)
+- The agent never called `ct droplet pass/block/recirculate` before exiting
+- The Castellarius heartbeat detected this condition and automatically recovered it
+
+**Expected behavior:**
+1. The note is added to the droplet history
+2. The session is killed (`tmux kill-session`)
+3. The aqueduct pool slot is released
+4. The droplet is reset to `open` status at the current cataractae
+5. It will be re-dispatched on the next cycle
+
+**Diagnosis (optional — automatic recovery handles this):**
+If you want to understand why the agent exited:
+```bash
+ct droplet show <id>              # View the note timestamp and cataractae
+ct droplet peek <id> --raw        # Read the session log file directly (if saved)
+journalctl --user -u cistern-castellarius --since "1h ago" | grep <id>  # Check scheduler logs
+```
+
+**Root cause investigation** (if this happens repeatedly for the same step):
+- Check the agent process resource limits: `ulimit -a` in the cataractae environment
+- Review provider logs for token exhaustion or quota issues
+- Check system memory/disk during the time window from the note timestamp
+- Look for patterns (e.g., always fails at the same percentage of work) that suggest a hard limit
+
+**Recovery action:**
+No action is needed — the droplet will be re-dispatched automatically. If it keeps hitting the same limit, file a bug to increase resources or optimize the agent implementation.
+
 ### Cataractae Signaled Recirculate But No on_recirculate Route Configured
 
 If you see a diagnostic note like: `"cataractae 'foo' signaled recirculate but has no on_recirculate route configured"`, the droplet is blocked because an agent incorrectly used `ct droplet recirculate` instead of `ct droplet pass` or `ct droplet pool`.
