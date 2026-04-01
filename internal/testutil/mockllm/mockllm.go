@@ -18,9 +18,7 @@
 //	t.Setenv("ANTHROPIC_API_KEY", "test-key")
 //	t.Setenv("ANTHROPIC_BASE_URL", mock.URL)
 //
-//	proposals, err := callRefineAPI("Fix login bug", "")
-//	// assert proposals == mockllm.HardcodedProposals parsed
-//
+//	// make an HTTP call that hits the mock server, then:
 //	reqs := mock.Requests()
 //	// assert auth header, model, messages...
 package mockllm

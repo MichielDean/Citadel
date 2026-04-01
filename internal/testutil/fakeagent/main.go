@@ -17,9 +17,9 @@
 //	hardcoded proposal array and a test session_id. This is the behaviour
 //	expected by callFilterAgent() in filter.go.
 //
-//	When only --print is present (without --output-format), prints the hardcoded
-//	proposal array directly. This preserves backward compatibility with
-//	runNonInteractive() in refine.go.
+//	When only --print is present (without --output-format), or when
+//	FAKEAGENT_MODE=raw_fallback is set, prints the hardcoded proposal array
+//	directly. This exercises the JSON-fallback path in callFilterAgent().
 //
 //	We scan os.Args directly because flag.Parse stops at the first positional
 //	arg (e.g. a subcommand like "exec"), which would otherwise prevent --print
@@ -47,14 +47,14 @@ import (
 	"time"
 )
 
-// hardcodedProposals is the JSON array printed in non-interactive mode.
-// Its content must match mockllm.HardcodedProposalsJSON so that tests can
-// verify the full round-trip without importing the mockllm package.
+// hardcodedProposals is the raw text output for FAKEAGENT_MODE=raw_fallback,
+// exercising the non-JSON fallback path in callFilterAgent where stdout
+// becomes filterSessionResult.Text directly.
 const hardcodedProposals = `[{"title":"mock proposal","description":"test description","complexity":"standard","depends_on":[]}]`
 
 // hardcodedJSONEnvelope is returned when both --print and --output-format are
-// present. The result field contains the proposal array (with escaped quotes)
-// and session_id is a stable test value used to verify session_id extraction.
+// present. The result field becomes filterSessionResult.Text; session_id is a
+// stable test value used to verify session_id extraction.
 const hardcodedJSONEnvelope = `{"type":"result","subtype":"success","is_error":false,"result":"[{\"title\":\"mock proposal\",\"description\":\"test description\",\"complexity\":\"standard\",\"depends_on\":[]}]","session_id":"test-session-id-abc123"}`
 
 // hardcodedErrorEnvelope is returned in FAKEAGENT_MODE=error_envelope.

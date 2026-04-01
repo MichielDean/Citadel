@@ -1,6 +1,6 @@
 // failagent is a minimal fake agent binary used in tests.
 // It writes a known message to stderr and exits with a non-zero status code,
-// simulating a failing agent binary for testing error handling in runNonInteractive.
+// simulating a failing agent binary to test the exec-failure path in callFilterAgent.
 package main
 
 import (

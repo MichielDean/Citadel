@@ -5,11 +5,10 @@
 ```bash
 ct filter --title "..." [--description "..."]              # New refinement session
 ct filter --resume <session-id> '<feedback>'              # Continue refinement
-ct filter --resume <session-id> --file --repo <repo>      # Persist final result
 ct filter --output-format json                            # Scriptable JSON output
 ```
 
-Interactive LLM-powered refinement **without persisting** until you're ready. Same model and prompt as `ct droplet add --filter`, but non-destructive and resumable.
+Interactive LLM-powered refinement that produces a spec, but does not file droplets. Same model and prompt as `ct droplet add --filter`, but non-destructive and resumable. File each droplet separately using `ct droplet add --title "..." --repo <repo> ...` with `--depends-on` to wire dependencies.
 
 ### Context Injection
 
