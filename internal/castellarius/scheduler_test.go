@@ -39,6 +39,7 @@ type mockClient struct {
 	steps               map[string]string           // id → current step (for assertions)
 	items               map[string]*cistern.Droplet // id → item (for List/SetOutcome)
 	notes               map[string][]cistern.CataractaeNote
+	issues              map[string][]cistern.DropletIssue // id → issues
 	pooled              map[string]string
 	attached            []attachedNote
 	closed              map[string]bool
@@ -47,6 +48,7 @@ type mockClient struct {
 	getNotesErr         error             // if set, GetNotes returns this error
 	getReadyErr         error             // if set, GetReady returns this error once then clears
 	listErr             error             // if set, List returns this error
+	listIssuesErr       error             // if set, ListIssues returns this error
 	assignErr           error             // if set, Assign returns this error
 	cancelled           map[string]string // id → cancel reason
 	filed               []filedDroplet    // FileDroplet calls
@@ -62,6 +64,7 @@ func newMockClient() *mockClient {
 		steps:               make(map[string]string),
 		items:               make(map[string]*cistern.Droplet),
 		notes:               make(map[string][]cistern.CataractaeNote),
+		issues:              make(map[string][]cistern.DropletIssue),
 		pooled:              make(map[string]string),
 		closed:              make(map[string]bool),
 		lastReviewedCommits: make(map[string]string),
@@ -234,6 +237,25 @@ func (m *mockClient) GetLastReviewedCommit(id string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lastReviewedCommits[id], nil
+}
+
+func (m *mockClient) ListIssues(dropletID string, openOnly bool, flaggedBy string) ([]cistern.DropletIssue, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.listIssuesErr != nil {
+		return nil, m.listIssuesErr
+	}
+	var result []cistern.DropletIssue
+	for _, iss := range m.issues[dropletID] {
+		if openOnly && iss.Status != "open" {
+			continue
+		}
+		if flaggedBy != "" && iss.FlaggedBy != flaggedBy {
+			continue
+		}
+		result = append(result, iss)
+	}
+	return result, nil
 }
 
 // mockRunner records Spawn calls and writes outcomes to the mockClient.
@@ -831,6 +853,316 @@ func TestTick_RecirculateNonFirstStep_RestartsAtImplementNotCurrentStep(t *testi
 	}
 	if noteCount != 1 {
 		t.Errorf("expected exactly one structured routing note, got %d; notes: %v", noteCount, client.attached)
+	}
+}
+
+// --- Loop recovery tests ---
+
+// loopWorkflow returns a workflow where implement recirculates to itself and
+// review can send work back to implement on failure/recirculate.
+func loopWorkflow() *aqueduct.Workflow {
+	return &aqueduct.Workflow{
+		Name: "test",
+		Cataractae: []aqueduct.WorkflowCataractae{
+			{
+				Name:          "implement",
+				Type:          aqueduct.CataractaeTypeAgent,
+				OnPass:        "review",
+				OnFail:        "pooled",
+				OnRecirculate: "implement",
+			},
+			{
+				Name:          "review",
+				Type:          aqueduct.CataractaeTypeAgent,
+				OnPass:        "done",
+				OnFail:        "implement",
+				OnRecirculate: "implement",
+			},
+		},
+	}
+}
+
+func loopTestScheduler(client CisternClient, runner CataractaeRunner) *Castellarius {
+	config := testConfig()
+	workflows := map[string]*aqueduct.Workflow{"test-repo": loopWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	return NewFromParts(config, workflows, clients, runner)
+}
+
+func TestTick_ImplementRecirculate_NoReviewerIssues_RoutesNormally(t *testing.T) {
+	// Given: implement recirculates with no open reviewer issues.
+	// When: the scheduler observes the recirculate outcome.
+	// Then: the droplet routes normally back to implement (no loop recovery).
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d1", CurrentCataractae: "implement"}}
+	// No issues registered.
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	if client.steps["d1"] != "implement" {
+		t.Errorf("expected droplet to remain at implement, got %q", client.steps["d1"])
+	}
+	if _, ok := client.pooled["d1"]; ok {
+		t.Error("expected no pooling")
+	}
+	// No loop-recovery notes should be added.
+	for _, n := range client.attached {
+		if n.id == "d1" && strings.Contains(n.notes, "loop-recovery") {
+			t.Errorf("unexpected loop-recovery note: %q", n.notes)
+		}
+	}
+}
+
+func TestTick_ImplementRecirculate_ReviewerIssueFirstCycle_AddsPendingNote(t *testing.T) {
+	// Given: implement recirculates with one open reviewer issue (first occurrence).
+	// When: the scheduler observes the recirculate outcome.
+	// Then: droplet still routes back to implement but a pending note is added.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d2", CurrentCataractae: "implement"}}
+	client.issues["d2"] = []cistern.DropletIssue{
+		{ID: "iss-001", DropletID: "d2", FlaggedBy: "review", Status: "open", Description: "fix the bug"},
+	}
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// Should still route to implement on the first cycle.
+	if client.steps["d2"] != "implement" {
+		t.Errorf("expected implement on first cycle, got %q", client.steps["d2"])
+	}
+
+	// A loop-recovery-pending note mentioning the issue ID must be attached.
+	var hasPending bool
+	for _, n := range client.attached {
+		if n.id == "d2" && strings.Contains(n.notes, "loop-recovery-pending") && strings.Contains(n.notes, "iss-001") {
+			hasPending = true
+			break
+		}
+	}
+	if !hasPending {
+		t.Errorf("expected [scheduler:loop-recovery-pending] note with issue ID, got: %v", client.attached)
+	}
+}
+
+func TestTick_ImplementRecirculate_ReviewerIssueSecondCycle_RoutesToReviewer(t *testing.T) {
+	// Given: implement recirculates with one open reviewer issue AND a prior
+	// loop-recovery-pending note already exists (simulating the second cycle).
+	// When: the scheduler observes the recirculate outcome.
+	// Then: the droplet is routed directly to the reviewer cataractae.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d3", CurrentCataractae: "implement"}}
+	client.issues["d3"] = []cistern.DropletIssue{
+		{ID: "iss-002", DropletID: "d3", FlaggedBy: "review", Status: "open", Description: "still broken"},
+	}
+	// Pre-populate one pending note to simulate the first cycle having already fired.
+	client.notes["d3"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d3",
+			CataractaeName: "scheduler",
+			Content:        "[scheduler:loop-recovery-pending] issue=iss-002 — open reviewer issue found at implement, routing back to implement (cycle 1/2)",
+			CreatedAt:      time.Now().Add(-time.Minute),
+		},
+	}
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	if client.steps["d3"] != "review" {
+		t.Errorf("expected droplet routed to review on second cycle, got %q", client.steps["d3"])
+	}
+	if _, ok := client.pooled["d3"]; ok {
+		t.Error("expected no pooling on loop recovery")
+	}
+}
+
+func TestTick_ImplementRecirculate_LoopRecovery_WritesStructuredNote(t *testing.T) {
+	// Given: second-cycle loop condition is met.
+	// When: the scheduler recovers the loop.
+	// Then: a structured [scheduler:loop-recovery] note with the issue ID is written.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d4", CurrentCataractae: "implement"}}
+	client.issues["d4"] = []cistern.DropletIssue{
+		{ID: "iss-003", DropletID: "d4", FlaggedBy: "review", Status: "open", Description: "needs fix"},
+	}
+	client.notes["d4"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d4",
+			CataractaeName: "scheduler",
+			Content:        "[scheduler:loop-recovery-pending] issue=iss-003 — open reviewer issue found at implement, routing back to implement (cycle 1/2)",
+			CreatedAt:      time.Now().Add(-time.Minute),
+		},
+	}
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// The structured recovery note must be present.
+	var hasRecoveryNote bool
+	for _, n := range client.attached {
+		if n.id == "d4" &&
+			strings.Contains(n.notes, "[scheduler:loop-recovery]") &&
+			strings.Contains(n.notes, "iss-003") &&
+			strings.Contains(n.notes, "routing to reviewer") {
+			hasRecoveryNote = true
+			break
+		}
+	}
+	if !hasRecoveryNote {
+		t.Errorf("expected [scheduler:loop-recovery] note with issue ID, got: %v", client.attached)
+	}
+}
+
+func TestTick_ImplementRecirculate_GetNotesError_RoutesNormally(t *testing.T) {
+	// Given: implement recirculates with an open reviewer issue but GetNotes fails.
+	// When: the scheduler observes the recirculate outcome.
+	// Then: loop recovery does not fire; droplet routes normally back to implement.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d6", CurrentCataractae: "implement"}}
+	client.issues["d6"] = []cistern.DropletIssue{
+		{ID: "iss-005", DropletID: "d6", FlaggedBy: "review", Status: "open", Description: "fix needed"},
+	}
+	client.getNotesErr = errors.New("storage unavailable")
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// Should still route to implement — no recovery without notes.
+	if client.steps["d6"] != "implement" {
+		t.Errorf("expected implement on GetNotes error, got %q", client.steps["d6"])
+	}
+	// No loop-recovery notes should have been added.
+	for _, n := range client.attached {
+		if n.id == "d6" && strings.Contains(n.notes, "loop-recovery") {
+			t.Errorf("unexpected loop-recovery note on GetNotes error: %q", n.notes)
+		}
+	}
+}
+
+func TestTick_ImplementRecirculate_ListIssuesError_RoutesNormally(t *testing.T) {
+	// Given: implement recirculates but ListIssues fails.
+	// When: the scheduler observes the recirculate outcome.
+	// Then: loop recovery does not fire; droplet routes normally back to implement.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d7", CurrentCataractae: "implement"}}
+	client.listIssuesErr = errors.New("storage unavailable")
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// Should still route to implement — no recovery without issue list.
+	if client.steps["d7"] != "implement" {
+		t.Errorf("expected implement on ListIssues error, got %q", client.steps["d7"])
+	}
+	// No loop-recovery notes should have been added.
+	for _, n := range client.attached {
+		if n.id == "d7" && strings.Contains(n.notes, "loop-recovery") {
+			t.Errorf("unexpected loop-recovery note on ListIssues error: %q", n.notes)
+		}
+	}
+}
+
+func TestTick_ImplementRecirculate_ClosedIssue_DoesNotTriggerRecovery(t *testing.T) {
+	// Given: implement recirculates but the reviewer issue is already resolved.
+	// When: the scheduler observes the recirculate outcome.
+	// Then: no loop recovery — routes normally back to implement.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d5", CurrentCataractae: "implement"}}
+	client.issues["d5"] = []cistern.DropletIssue{
+		{ID: "iss-004", DropletID: "d5", FlaggedBy: "review", Status: "resolved", Description: "was broken"},
+	}
+	// Even with a pending note from before, the resolved issue should not trigger recovery.
+	client.notes["d5"] = []cistern.CataractaeNote{
+		{
+			DropletID:      "d5",
+			CataractaeName: "scheduler",
+			Content:        "[scheduler:loop-recovery-pending] issue=iss-004 — open reviewer issue found at implement, routing back to implement (cycle 1/2)",
+			CreatedAt:      time.Now().Add(-time.Minute),
+		},
+	}
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	if client.steps["d5"] != "implement" {
+		t.Errorf("expected implement (no recovery for closed issue), got %q", client.steps["d5"])
 	}
 }
 
