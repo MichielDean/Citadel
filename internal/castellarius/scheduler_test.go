@@ -2441,10 +2441,11 @@ func TestHeartbeatRepo_StallDetected_AppendsNoteAndWarnLog(t *testing.T) {
 	}
 }
 
-// TestHeartbeatRepo_Debounce_SuppressesSecondNote verifies that a second stall
-// note is NOT appended on a subsequent heartbeat tick when no progress signal
-// has advanced since the first note was written.
-func TestHeartbeatRepo_Debounce_SuppressesSecondNote(t *testing.T) {
+// TestHeartbeatRepo_OrphanRecovery_SecondTick_ItemResetToOpenNotReprocessed
+// verifies that after orphan recovery resets a no-assignee in_progress droplet
+// to open on the first tick, the second heartbeat tick writes no additional
+// notes because the item is no longer in_progress and is not returned by List.
+func TestHeartbeatRepo_OrphanRecovery_SecondTick_ItemResetToOpenNotReprocessed(t *testing.T) {
 	client := newMockClient()
 
 	item := &cistern.Droplet{
