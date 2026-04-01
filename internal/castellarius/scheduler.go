@@ -1558,11 +1558,9 @@ func (s *Castellarius) shouldWriteStallNote(client CisternClient, dropletID stri
 		return time.Since(noted) >= stallNoteInterval
 	}
 	// In-memory entry absent: check DB for a recent stall note (handles restarts).
-	if last := lastSchedulerStallNoteTime(client, dropletID); !last.IsZero() {
-		if time.Since(last) < stallNoteInterval {
-			s.lastStallNoted[dropletID] = last // populate cache from DB
-			return false
-		}
+	if last := lastSchedulerStallNoteTime(client, dropletID); !last.IsZero() && time.Since(last) < stallNoteInterval {
+		s.lastStallNoted[dropletID] = last // populate cache from DB
+		return false
 	}
 	return true
 }
