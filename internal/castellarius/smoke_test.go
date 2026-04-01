@@ -204,6 +204,10 @@ func (c *pipelineClient) GetLastReviewedCommit(id string) (string, error) {
 	return "", nil
 }
 
+func (c *pipelineClient) ListIssues(dropletID string, openOnly bool, flaggedBy string) ([]cistern.DropletIssue, error) {
+	return nil, nil
+}
+
 func (c *pipelineClient) Cancel(id, reason string) error {
 	return nil
 }
