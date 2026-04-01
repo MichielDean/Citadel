@@ -121,9 +121,11 @@ Examples:
 }
 
 // loadTrackerConfig reads cistern.yaml and returns the TrackerConfig for the
-// named provider. When the config cannot be loaded or the provider has no
-// entry, an empty config with only the Name set is returned so the provider
-// can still be constructed (it will validate its own required fields).
+// named provider. If the config file does not exist or the provider has no
+// entry in the trackers section, a bare config with only the Name set is
+// returned so the provider can still be constructed (it will validate its own
+// required fields). If the config file exists but cannot be parsed, an error
+// is returned.
 func loadTrackerConfig(providerName string) (tracker.TrackerConfig, error) {
 	cfgPath := resolveConfigPath()
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
