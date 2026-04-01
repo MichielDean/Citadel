@@ -1613,7 +1613,7 @@ func latestNoteSignal(client CisternClient, dropletID string) (time.Time, string
 	var latest time.Time
 	for _, n := range notes {
 		if n.CataractaeName == "scheduler" {
-			continue // exclude scheduler-generated notes to prevent self-clearing debounce loop
+			continue // exclude scheduler-generated notes to prevent self-clearing rate-limit loop
 		}
 		if n.CreatedAt.After(latest) {
 			latest = n.CreatedAt

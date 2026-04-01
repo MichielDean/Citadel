@@ -2181,10 +2181,10 @@ func TestHeartbeatRepo_StallDetected_AppendsNoteAndWarnLog(t *testing.T) {
 	}
 }
 
-// TestHeartbeatRepo_Debounce_SuppressesSecondNote verifies that a second stall
+// TestHeartbeatRepo_RateLimit_SuppressesSecondNote verifies that a second stall
 // note is NOT appended on a subsequent heartbeat tick when no progress signal
 // has advanced since the first note was written.
-func TestHeartbeatRepo_Debounce_SuppressesSecondNote(t *testing.T) {
+func TestHeartbeatRepo_RateLimit_SuppressesSecondNote(t *testing.T) {
 	client := newMockClient()
 
 	item := &cistern.Droplet{
@@ -2209,17 +2209,17 @@ func TestHeartbeatRepo_Debounce_SuppressesSecondNote(t *testing.T) {
 		t.Fatalf("expected 1 stall note after first tick, got %d", len(client.attached))
 	}
 
-	// Second call: signals have not advanced → debounce suppresses.
+	// Second call: signals have not advanced → rate-limit suppresses.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	if len(client.attached) != 1 {
-		t.Errorf("expected still 1 note after second tick (debounced), got %d", len(client.attached))
+		t.Errorf("expected still 1 note after second tick (rate-limited), got %d", len(client.attached))
 	}
 }
 
-// TestHeartbeatRepo_Debounce_NoteSignalAdvances_ClearsDebounce verifies that
-// when the newest-note signal advances past the debounce time, the debounce
+// TestHeartbeatRepo_RateLimit_NoteSignalAdvances_ClearsRateLimit verifies that
+// when the newest-note signal advances past the rate-limit time, the rate-limit
 // entry is cleared and the next stall event re-triggers a note.
-func TestHeartbeatRepo_Debounce_NoteSignalAdvances_ClearsDebounce(t *testing.T) {
+func TestHeartbeatRepo_RateLimit_NoteSignalAdvances_ClearsRateLimit(t *testing.T) {
 	client := newMockClient()
 
 	item := &cistern.Droplet{
@@ -2238,28 +2238,28 @@ func TestHeartbeatRepo_Debounce_NoteSignalAdvances_ClearsDebounce(t *testing.T) 
 	runner := newMockRunner(client)
 	sched := NewFromParts(config, workflows, clients, runner)
 
-	// Pre-set debounce entry (simulates a previous stall note).
+	// Pre-set rate-limit entry (simulates a previous stall note).
 	debounceTime := time.Now().Add(-10 * time.Minute)
 	sched.lastStallNoted[item.ID] = debounceTime
 
-	// Add a note whose timestamp is newer than the debounce entry but still
+	// Add a note whose timestamp is newer than the rate-limit entry but still
 	// older than the 1-minute threshold (so the droplet is still stalled).
-	advancedTime := debounceTime.Add(3 * time.Minute) // now - 7 min: stalled, but > debounce
+	advancedTime := debounceTime.Add(3 * time.Minute) // now - 7 min: stalled, but > rate-limit entry
 	client.notes[item.ID] = []cistern.CataractaeNote{
 		{CreatedAt: advancedTime},
 	}
 
-	// heartbeatRepo should clear the debounce (note signal > debounceTime) and
-	// then detect stall again → write a new note.
+	// heartbeatRepo should clear the rate-limit entry (note signal > lastStallNoted)
+	// and then detect stall again → write a new note.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	if len(client.attached) != 1 {
-		t.Errorf("expected 1 new stall note after note signal reset debounce, got %d", len(client.attached))
+		t.Errorf("expected 1 new stall note after note signal reset rate-limit entry, got %d", len(client.attached))
 	}
 }
 
-// TestHeartbeatRepo_Debounce_WorktreeSignalAdvances_ClearsDebounce verifies
-// that a newer worktree mtime clears the debounce and allows a new stall note.
-func TestHeartbeatRepo_Debounce_WorktreeSignalAdvances_ClearsDebounce(t *testing.T) {
+// TestHeartbeatRepo_RateLimit_WorktreeSignalAdvances_ClearsRateLimit verifies
+// that a newer worktree mtime clears the rate-limit entry and allows a new stall note.
+func TestHeartbeatRepo_RateLimit_WorktreeSignalAdvances_ClearsRateLimit(t *testing.T) {
 	sandboxRoot := t.TempDir()
 	client := newMockClient()
 
@@ -2280,12 +2280,12 @@ func TestHeartbeatRepo_Debounce_WorktreeSignalAdvances_ClearsDebounce(t *testing
 	sched := NewFromParts(config, workflows, clients, runner,
 		WithSandboxRoot(sandboxRoot))
 
-	// Pre-set debounce entry.
+	// Pre-set rate-limit entry.
 	debounceTime := time.Now().Add(-10 * time.Minute)
 	sched.lastStallNoted[item.ID] = debounceTime
 
-	// Create worktree dir with a file whose mtime is newer than debounceTime
-	// but still old enough to be stalled (3 min → 7 min ago > 1 min threshold).
+	// Create worktree dir with a file whose mtime is newer than the rate-limit
+	// entry but still old enough to be stalled (3 min → 7 min ago > 1 min threshold).
 	worktreeDir := filepath.Join(sandboxRoot, "test-repo", item.ID)
 	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
 		t.Fatal(err)
@@ -2294,22 +2294,22 @@ func TestHeartbeatRepo_Debounce_WorktreeSignalAdvances_ClearsDebounce(t *testing
 	if err := os.WriteFile(testFile, []byte("package main"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	fileMtime := debounceTime.Add(3 * time.Minute) // still stalled, but > debounce
+	fileMtime := debounceTime.Add(3 * time.Minute) // still stalled, but > rate-limit entry
 	if err := os.Chtimes(testFile, fileMtime, fileMtime); err != nil {
 		t.Fatal(err)
 	}
 
-	// Debounce should be cleared (worktree signal > debounceTime), droplet is
+	// Rate-limit entry should be cleared (worktree signal > lastStallNoted), droplet is
 	// still stalled → new note written.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	if len(client.attached) != 1 {
-		t.Errorf("expected 1 new stall note after worktree signal reset debounce, got %d", len(client.attached))
+		t.Errorf("expected 1 new stall note after worktree signal reset rate-limit entry, got %d", len(client.attached))
 	}
 }
 
-// TestHeartbeatRepo_Debounce_SessionLogSignalAdvances_ClearsDebounce verifies
-// that a newer session log mtime clears the debounce and allows a new stall note.
-func TestHeartbeatRepo_Debounce_SessionLogSignalAdvances_ClearsDebounce(t *testing.T) {
+// TestHeartbeatRepo_RateLimit_SessionLogSignalAdvances_ClearsRateLimit verifies
+// that a newer session log mtime clears the rate-limit entry and allows a new stall note.
+func TestHeartbeatRepo_RateLimit_SessionLogSignalAdvances_ClearsRateLimit(t *testing.T) {
 	// Mock tmux as alive so liveness check passes through to stall detector.
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
@@ -2339,25 +2339,25 @@ func TestHeartbeatRepo_Debounce_SessionLogSignalAdvances_ClearsDebounce(t *testi
 	sched := NewFromParts(config, workflows, clients, runner,
 		WithSessionLogRoot(logDir))
 
-	// Pre-set debounce entry.
+	// Pre-set rate-limit entry.
 	debounceTime := time.Now().Add(-10 * time.Minute)
 	sched.lastStallNoted[item.ID] = debounceTime
 
-	// Create session log with mtime newer than debounce but still stalled.
+	// Create session log with mtime newer than rate-limit entry but still stalled.
 	logPath := filepath.Join(logDir, "test-repo-alpha.log")
 	if err := os.WriteFile(logPath, []byte("agent output"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	logMtime := debounceTime.Add(3 * time.Minute) // still stalled, but > debounce
+	logMtime := debounceTime.Add(3 * time.Minute) // still stalled, but > rate-limit entry
 	if err := os.Chtimes(logPath, logMtime, logMtime); err != nil {
 		t.Fatal(err)
 	}
 
-	// Debounce should be cleared (log signal > debounceTime), droplet is still
+	// Rate-limit entry should be cleared (log signal > lastStallNoted), droplet is still
 	// stalled → new note written.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	if len(client.attached) != 1 {
-		t.Errorf("expected 1 new stall note after session log signal reset debounce, got %d", len(client.attached))
+		t.Errorf("expected 1 new stall note after session log signal reset rate-limit entry, got %d", len(client.attached))
 	}
 }
 
@@ -2425,10 +2425,10 @@ func TestHeartbeatRepo_StallThreshold_DefaultsTo45Minutes(t *testing.T) {
 	}
 }
 
-// TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce verifies that
-// when AddNote fails, the debounce entry is NOT set, so the next tick can
+// TestHeartbeatRepo_RateLimit_AddNoteFailure_DoesNotArmRateLimit verifies that
+// when AddNote fails, the rate-limit entry is NOT set, so the next tick can
 // attempt to write the stall note again.
-func TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce(t *testing.T) {
+func TestHeartbeatRepo_RateLimit_AddNoteFailure_DoesNotArmRateLimit(t *testing.T) {
 	client := newMockClient()
 	client.addNoteErr = errors.New("db error")
 
@@ -2448,10 +2448,10 @@ func TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce(t *testing.T) 
 	runner := newMockRunner(client)
 	sched := NewFromParts(config, workflows, clients, runner)
 
-	// First tick: stalled but AddNote fails → debounce must NOT be armed.
+	// First tick: stalled but AddNote fails → rate-limit entry must NOT be set.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	if _, armed := sched.lastStallNoted[item.ID]; armed {
-		t.Error("expected debounce not armed after AddNote failure, but it was set")
+		t.Error("expected rate-limit entry not set after AddNote failure, but it was set")
 	}
 
 	// Second tick: AddNote now succeeds → stall note must be written.
@@ -2468,14 +2468,14 @@ func TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce(t *testing.T) 
 		t.Errorf("expected at least 1 successful stall note after AddNote failure recovery, got %d", successNotes)
 	}
 	if _, armed := sched.lastStallNoted[item.ID]; !armed {
-		t.Error("expected debounce armed after successful AddNote, but it was not set")
+		t.Error("expected rate-limit entry set after successful AddNote, but it was not set")
 	}
 }
 
-// TestHeartbeatRepo_Debounce_SchedulerNote_DoesNotResetDebounce verifies that
-// a scheduler-generated note returned by GetNotes does not clear the debounce
+// TestHeartbeatRepo_RateLimit_SchedulerNote_DoesNotResetRateLimit verifies that
+// a scheduler-generated note returned by GetNotes does not clear the rate-limit
 // entry, preventing the periodic re-triggering feedback loop.
-func TestHeartbeatRepo_Debounce_SchedulerNote_DoesNotResetDebounce(t *testing.T) {
+func TestHeartbeatRepo_RateLimit_SchedulerNote_DoesNotResetRateLimit(t *testing.T) {
 	client := newMockClient()
 
 	item := &cistern.Droplet{
@@ -2494,19 +2494,19 @@ func TestHeartbeatRepo_Debounce_SchedulerNote_DoesNotResetDebounce(t *testing.T)
 	runner := newMockRunner(client)
 	sched := NewFromParts(config, workflows, clients, runner)
 
-	// Pre-arm debounce 10 minutes ago.
+	// Pre-set rate-limit entry 10 minutes ago.
 	debounceTime := time.Now().Add(-10 * time.Minute)
 	sched.lastStallNoted[item.ID] = debounceTime
 
 	// Inject a scheduler-generated note whose timestamp is newer than the
-	// debounce entry but still older than the threshold (simulates the stall
+	// rate-limit entry but still older than the threshold (simulates the stall
 	// note written on the previous tick being fed back through GetNotes).
-	schedulerNoteTime := debounceTime.Add(3 * time.Minute) // 7 min ago — stalled, > debounce
+	schedulerNoteTime := debounceTime.Add(3 * time.Minute) // 7 min ago — stalled, > rate-limit entry
 	client.notes[item.ID] = []cistern.CataractaeNote{
 		{CataractaeName: "scheduler", CreatedAt: schedulerNoteTime},
 	}
 
-	// heartbeatRepo must filter out the scheduler note, leave debounce intact,
+	// heartbeatRepo must filter out the scheduler note, leave rate-limit entry intact,
 	// and write no new stall note.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	if len(client.attached) != 0 {
@@ -2514,10 +2514,10 @@ func TestHeartbeatRepo_Debounce_SchedulerNote_DoesNotResetDebounce(t *testing.T)
 	}
 }
 
-// TestHeartbeatRepo_StaleDebounce_PrunedWhenDropletNoLongerInProgress verifies
+// TestHeartbeatRepo_StaleRateLimit_PrunedWhenDropletNoLongerInProgress verifies
 // that lastStallNoted entries are removed when the corresponding droplet is no
 // longer in the in_progress list, preventing unbounded map growth.
-func TestHeartbeatRepo_StaleDebounce_PrunedWhenDropletNoLongerInProgress(t *testing.T) {
+func TestHeartbeatRepo_StaleRateLimit_PrunedWhenDropletNoLongerInProgress(t *testing.T) {
 	client := newMockClient()
 	// No in_progress items — simulates all droplets having completed.
 
@@ -2654,11 +2654,11 @@ func TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn(t *testing.T) {
 	}
 }
 
-// TestHeartbeatRepo_SpawnFailure_ClearsDebounce verifies that when respawnStalledDroplet
+// TestHeartbeatRepo_SpawnFailure_ClearsRateLimit verifies that when respawnStalledDroplet
 // returns an error (Spawn fails), the rate-limit entry is deleted. On the next heartbeat
 // the DB fallback suppresses a duplicate note (note was written seconds ago) but Spawn
 // is still retried — respawn is decoupled from note writing.
-func TestHeartbeatRepo_SpawnFailure_ClearsDebounce(t *testing.T) {
+func TestHeartbeatRepo_SpawnFailure_ClearsRateLimit(t *testing.T) {
 	// Mock tmux as alive so liveness check passes through to stall detector.
 	orig := isTmuxAliveFn
 	isTmuxAliveFn = func(_ string) bool { return true }
