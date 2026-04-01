@@ -385,19 +385,33 @@ func injectedSkillsForIdentity(cataractaeDir, identity string) []injectedSkillEn
 }
 
 // readSkillDescription reads the first non-empty, non-heading line from a SKILL.md
-// at path as a brief description. Falls back to filepath.Base(filepath.Dir(path))
-// (the skill directory name) when the file is absent or contains only headings.
+// at path as a brief description. YAML frontmatter (lines between the opening and
+// closing --- delimiters at the top of the file) is skipped before scanning.
+// Falls back to filepath.Base(filepath.Dir(path)) (the skill directory name) when
+// the file is absent or contains only headings/frontmatter.
 func readSkillDescription(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return filepath.Base(filepath.Dir(path))
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+	lines := strings.Split(string(data), "\n")
+	inFrontmatter := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if i == 0 && trimmed == "---" {
+			inFrontmatter = true
 			continue
 		}
-		return line
+		if inFrontmatter {
+			if trimmed == "---" {
+				inFrontmatter = false
+			}
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		return trimmed
 	}
 	return filepath.Base(filepath.Dir(path))
 }
