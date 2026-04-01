@@ -883,8 +883,8 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 					if pendingCount >= loopDetectN-1 {
 						// Loop confirmed — route to the reviewer cataractae.
 						recoveryNote := fmt.Sprintf(
-							"[scheduler:loop-recovery] detected implement\u2192implement loop on reviewer issue %s — routing to reviewer",
-							issue.ID,
+							"[scheduler:loop-recovery] detected %s→%s loop on reviewer issue %s — routing to reviewer",
+							step.Name, step.Name, issue.ID,
 						)
 						s.logger.Info("observe: loop recovery — routing to reviewer",
 							"droplet", item.ID, "step", step.Name,
