@@ -1209,16 +1209,62 @@ func TestDashboardTUI_ReconnectDoesNotRestartChild(t *testing.T) {
 	tui.Stop()
 }
 
-// TestDashboardTUI_RingBuffer_SnapshotOnReconnect verifies that PTY output written
-// before a WebSocket disconnect is captured in the ring buffer and returned as a
-// snapshot to a reconnecting client via attach().
+// TestDashboardTUI_LastFrame_NoRepaintMarker_AttachReturnsNil verifies that
+// attach() returns a nil lastFrame when no repaint marker has been broadcast yet.
 //
-// Given: a running DashboardTUI with a mock PTY pipe and a connected client
-// When:  known data is written through the mock PTY (simulating child output)
-// Then:  the connected client receives the broadcast
-// When:  the client detaches (WebSocket disconnect) and a new client re-attaches
-// Then:  the snapshot returned by attach() contains the PTY output in order
-func TestDashboardTUI_RingBuffer_SnapshotOnReconnect(t *testing.T) {
+// Given: a fresh DashboardTUI with no running child
+// When:  chunks without a repaint marker are broadcast
+// Then:  attach() returns nil — no complete frame to show
+func TestDashboardTUI_LastFrame_NoRepaintMarker_AttachReturnsNil(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	tui.broadcast([]byte("no-marker-chunk-1"))
+	tui.broadcast([]byte("no-marker-chunk-2"))
+
+	_, frame := tui.attach()
+	if frame != nil {
+		t.Errorf("attach() lastFrame = %q, want nil (no repaint marker seen)", frame)
+	}
+}
+
+// TestDashboardTUI_LastFrame_RepaintBoundaryCommitsFrame verifies that when a
+// second repaint marker arrives the accumulated frame is committed as lastFrame,
+// and the committed frame starts with the repaint marker.
+//
+// Given: a DashboardTUI with broadcast driven directly (no Start)
+// When:  two repaint frames are broadcast
+// Then:  attach() returns lastFrame == first frame (starts with repaint marker)
+// And:   lastFrame contains the content from the first frame
+func TestDashboardTUI_LastFrame_RepaintBoundaryCommitsFrame(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// First repaint: opens frame 1.
+	tui.broadcast([]byte(marker + "frame-one-content"))
+	// Second repaint: commits frame 1 and opens frame 2.
+	tui.broadcast([]byte(marker + "frame-two-content"))
+
+	_, frame := tui.attach()
+
+	if frame == nil {
+		t.Fatal("attach() lastFrame is nil, want committed frame")
+	}
+	if !bytes.Equal(frame[:len(repaintMarker)], repaintMarker) {
+		t.Errorf("lastFrame does not start with repaint marker: %q", frame)
+	}
+	if !bytes.Contains(frame, []byte("frame-one-content")) {
+		t.Errorf("lastFrame = %q, want it to contain %q", frame, "frame-one-content")
+	}
+}
+
+// TestDashboardTUI_LastFrame_ReconnectGetsCleanFrame verifies that a client
+// reconnecting after a disconnect receives a snapshot that begins with the repaint
+// marker — i.e., a clean, complete frame with no mid-sequence corruption.
+//
+// Given: a running DashboardTUI with a mock PTY pipe
+// When:  two full repaint frames are written through the PTY
+// Then:  attach() returns lastFrame starting with \033[2J\033[H
+// And:   lastFrame contains content from the first (committed) frame
+func TestDashboardTUI_LastFrame_ReconnectGetsCleanFrame(t *testing.T) {
 	ptyA, ptyB := net.Pipe()
 	t.Cleanup(func() { ptyA.Close(); ptyB.Close() })
 
@@ -1228,98 +1274,218 @@ func TestDashboardTUI_RingBuffer_SnapshotOnReconnect(t *testing.T) {
 	}
 	tui.Start()
 
-	// Attach clientA before writing so we can synchronize on the broadcast.
+	marker := string(repaintMarker)
 	clientA, _ := tui.attach()
 
-	// Write two known chunks through the mock PTY. net.Pipe is synchronous:
-	// each Write blocks until the corresponding Read completes, so after Write
-	// returns the data is already in the ring buffer.
-	chunks := []string{"snapshot-chunk-1", "snapshot-chunk-2"}
-	for _, c := range chunks {
-		if _, err := ptyB.Write([]byte(c)); err != nil {
-			t.Fatalf("write to pty: %v", err)
-		}
-		// Drain clientA's channel to confirm the broadcast completed.
-		select {
-		case <-clientA.ch:
-		case <-time.After(500 * time.Millisecond):
-			t.Fatalf("clientA did not receive broadcast for chunk %q", c)
-		}
+	// Write frame 1 through the mock PTY. net.Pipe is synchronous: Write blocks
+	// until the corresponding Read completes, so after Write returns the data is
+	// already in the broadcast pipeline.
+	if _, err := ptyB.Write([]byte(marker + "frame-one-body")); err != nil {
+		t.Fatalf("write frame1: %v", err)
+	}
+	select {
+	case <-clientA.ch:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("clientA did not receive frame1 broadcast")
 	}
 
-	// Simulate WebSocket disconnect: detach without stopping the child.
+	// Write frame 2 — its repaint marker commits frame 1 as lastFrame.
+	if _, err := ptyB.Write([]byte(marker + "frame-two-body")); err != nil {
+		t.Fatalf("write frame2: %v", err)
+	}
+	select {
+	case <-clientA.ch:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("clientA did not receive frame2 broadcast")
+	}
+
 	tui.detach(clientA)
 
-	// Simulate WebSocket reconnect: attach a new client and capture the snapshot.
+	// Simulate reconnect: the new snapshot must be a clean frame.
 	_, snapshot := tui.attach()
-
 	tui.Stop()
 
-	// Snapshot must contain both chunks in chronological order.
-	if len(snapshot) < len(chunks) {
-		t.Fatalf("snapshot has %d chunks, want at least %d", len(snapshot), len(chunks))
+	if snapshot == nil {
+		t.Fatal("snapshot is nil; want committed frame starting with repaint marker")
 	}
-	got := string(bytes.Join(snapshot, nil))
-	prevIdx := -1
-	for _, c := range chunks {
-		idx := strings.Index(got, c)
-		if idx < 0 {
-			t.Errorf("snapshot missing chunk %q; full snapshot: %q", c, got)
-			continue
-		}
-		if idx < prevIdx {
-			t.Errorf("chunk %q appears before earlier chunk in snapshot (not chronological)", c)
-		}
-		prevIdx = idx
+	if !bytes.Equal(snapshot[:len(repaintMarker)], repaintMarker) {
+		t.Errorf("snapshot does not start with repaint marker; got %q", snapshot)
+	}
+	if !bytes.Contains(snapshot, []byte("frame-one-body")) {
+		t.Errorf("snapshot = %q, want it to contain frame-one-body", snapshot)
 	}
 }
 
-// TestDashboardTUI_RingBuffer_WrapAroundEvictsOldest verifies the ring buffer
-// wrap-around behaviour: when more than tuiOutputBufChunks entries are broadcast,
-// the oldest entries are evicted and the snapshot returned by attach() is in
-// chronological order starting from the (N+1)-th chunk written.
+// TestDashboardTUI_LastFrame_FlushTimer_CommitsOnIdle verifies that when no
+// second repaint marker arrives the flush timer commits the pending frame so
+// that an idle TUI still exposes a snapshot to new connections.
 //
-// Given: a DashboardTUI with no running child (broadcast driven directly)
-// When:  tuiOutputBufChunks+1 chunks are broadcast (one past capacity)
-// Then:  snapshot length == tuiOutputBufChunks (oldest evicted)
-// And:   snapshot[0] is the second chunk written (first was evicted)
-// And:   snapshot[last] is the most recent chunk
-// And:   all chunks appear in chronological order
-func TestDashboardTUI_RingBuffer_WrapAroundEvictsOldest(t *testing.T) {
+// Given: a DashboardTUI with one repaint frame broadcast (no second marker)
+// When:  tuiFrameFlushDelay elapses
+// Then:  attach() returns a non-nil lastFrame starting with the repaint marker
+func TestDashboardTUI_LastFrame_FlushTimer_CommitsOnIdle(t *testing.T) {
 	tui := newDashboardTUI("", "", "")
-	// No Start() — we drive broadcast() directly to avoid PTY/goroutine overhead.
+	marker := string(repaintMarker)
 
-	total := tuiOutputBufChunks + 1
-	for i := 0; i < total; i++ {
-		tui.broadcast([]byte(fmt.Sprintf("chunk-%04d", i)))
+	tui.broadcast([]byte(marker + "idle-frame-content"))
+
+	// Wait for the flush timer to fire.
+	time.Sleep(tuiFrameFlushDelay + 50*time.Millisecond)
+
+	_, frame := tui.attach()
+
+	if frame == nil {
+		t.Fatal("attach() lastFrame is nil after flush timer; want committed frame")
 	}
-
-	_, snapshot := tui.attach()
-
-	// Ring must be at full capacity.
-	if len(snapshot) != tuiOutputBufChunks {
-		t.Fatalf("snapshot len = %d, want %d (ring capacity)", len(snapshot), tuiOutputBufChunks)
+	if !bytes.Equal(frame[:len(repaintMarker)], repaintMarker) {
+		t.Errorf("lastFrame does not start with repaint marker: %q", frame)
 	}
-
-	// chunk-0000 was evicted; oldest surviving entry is chunk-0001.
-	want0 := fmt.Sprintf("chunk-%04d", 1)
-	if !bytes.Equal(snapshot[0], []byte(want0)) {
-		t.Errorf("snapshot[0] = %q, want %q (oldest after wrap)", snapshot[0], want0)
+	if !bytes.Contains(frame, []byte("idle-frame-content")) {
+		t.Errorf("lastFrame = %q, want it to contain %q", frame, "idle-frame-content")
 	}
+}
 
-	// Most recent entry is the last chunk written.
-	wantLast := fmt.Sprintf("chunk-%04d", total-1)
-	if !bytes.Equal(snapshot[len(snapshot)-1], []byte(wantLast)) {
-		t.Errorf("snapshot[last] = %q, want %q", snapshot[len(snapshot)-1], wantLast)
+// TestDashboardTUI_FlushTimer_StaleCallbackDoesNotCorruptLastFrame verifies that
+// a flush timer callback carrying a stale generation does not overwrite a lastFrame
+// that was properly committed by the marker path after the timer was armed.
+//
+// Given: two repaint markers broadcast in sequence, committing frame-one via the marker path
+// When:  a stale flush callback (old generation) fires after the second marker committed frame-one
+// Then:  lastFrame remains frame-one — the stale callback is a no-op
+func TestDashboardTUI_FlushTimer_StaleCallbackDoesNotCorruptLastFrame(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Broadcast frame 1 — arms flush timer gen=1, pending = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+	// Broadcast frame 2 with marker — commits frame-one to lastFrame via marker path,
+	// increments flushGen to 2, and starts pending accumulation for frame-two.
+	tui.broadcast([]byte(marker + "frame-two-partial"))
+
+	// Stop the live gen=2 timer so it does not fire during the assertion.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
 	}
+	tui.mu.Unlock()
 
-	// Every consecutive pair must be in chronological (lexicographic) order.
-	for i := 1; i < len(snapshot); i++ {
-		prev := string(snapshot[i-1])
-		curr := string(snapshot[i])
-		if prev >= curr {
-			t.Errorf("snapshot not chronological at index %d: %q >= %q", i, prev, curr)
-		}
+	// Simulate the stale gen=1 callback (timer that fired between the two broadcasts).
+	// It must not overwrite lastFrame with the partial frame-two pending data.
+	tui.flushPendingFrame(1)
+
+	_, frame := tui.attach()
+
+	if frame == nil {
+		t.Fatal("attach() lastFrame is nil; want frame-one committed by marker path")
+	}
+	if !bytes.Contains(frame, []byte("frame-one-content")) {
+		t.Errorf("lastFrame = %q; stale callback must not corrupt the committed frame-one", frame)
+	}
+	if bytes.Contains(frame, []byte("frame-two-partial")) {
+		t.Errorf("lastFrame = %q; stale callback overwrote lastFrame with partial frame-two", frame)
+	}
+}
+
+// TestDashboardTUI_FrameAccumulate_MidChunkMarkerCommitsPendingAsLastFrame verifies
+// that when a single broadcast chunk contains trailing bytes from the previous frame
+// followed by a repaint marker, the accumulated pending data plus the trailing bytes
+// are committed as lastFrame and a new pending frame begins.
+//
+// Given: a DashboardTUI with inFrame=true and pending = marker+"frame-one-content"
+//        (established by broadcasting marker+"frame-one-content")
+// When:  a single chunk "previous-frame-tail"+marker+"next-frame-start" is broadcast
+// Then:  lastFrame == marker+"frame-one-content"+"previous-frame-tail"
+// And:   pending == marker+"next-frame-start"
+func TestDashboardTUI_FrameAccumulate_MidChunkMarkerCommitsPendingAsLastFrame(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Establish inFrame=true with pending = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+
+	// Stop the flush timer to prevent it from committing pending during the test.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	// Single chunk: trailing bytes from frame-one + repaint marker + start of frame-two.
+	// The marker is at idx > 0, exercising the d.pending = append(d.pending, rest[:idx]...) branch.
+	tui.broadcast([]byte("previous-frame-tail" + marker + "next-frame-start"))
+
+	tui.mu.Lock()
+	gotLastFrame := bytes.Clone(tui.lastFrame)
+	gotPending := bytes.Clone(tui.pending)
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	wantLastFrame := []byte(marker + "frame-one-content" + "previous-frame-tail")
+	if !bytes.Equal(gotLastFrame, wantLastFrame) {
+		t.Errorf("lastFrame = %q, want %q", gotLastFrame, wantLastFrame)
+	}
+	wantPending := []byte(marker + "next-frame-start")
+	if !bytes.Equal(gotPending, wantPending) {
+		t.Errorf("pending = %q, want %q", gotPending, wantPending)
+	}
+}
+
+// TestDashboardTUI_FrameAccumulate_TwoMarkersInOneChunkCommitsBothFrames verifies
+// that when a single broadcast chunk contains two repaintMarkers, frameAccumulate
+// correctly commits the first frame as lastFrame and begins accumulating the second.
+//
+// Given: a DashboardTUI with inFrame=true and pending = marker+"frame-one-content"
+//
+//	(established by broadcasting marker+"frame-one-content"), flush timer stopped
+//
+// When:  a single chunk marker+"frame-two-content"+marker+"frame-three-start" is broadcast
+// Then:  lastFrame == marker+"frame-two-content"
+// And:   pending  == marker+"frame-three-start"
+//
+// This exercises the loop in frameAccumulate running through a second iteration
+// with idx>=0, verifying that bytes.Clone(repaintMarker) isolates the new pending
+// backing from the committed lastFrame across loop iterations.
+func TestDashboardTUI_FrameAccumulate_TwoMarkersInOneChunkCommitsBothFrames(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Establish inFrame=true with pending = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+
+	// Stop the flush timer so it cannot commit pending during the test.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	// Single chunk with two repaint markers: frame-two is fully enclosed between
+	// the first and second marker, so frameAccumulate must commit it as lastFrame
+	// and leave frame-three-start accumulating in pending.
+	tui.broadcast([]byte(marker + "frame-two-content" + marker + "frame-three-start"))
+
+	tui.mu.Lock()
+	gotLastFrame := bytes.Clone(tui.lastFrame)
+	gotPending := bytes.Clone(tui.pending)
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	wantLastFrame := []byte(marker + "frame-two-content")
+	if !bytes.Equal(gotLastFrame, wantLastFrame) {
+		t.Errorf("lastFrame = %q, want %q", gotLastFrame, wantLastFrame)
+	}
+	wantPending := []byte(marker + "frame-three-start")
+	if !bytes.Equal(gotPending, wantPending) {
+		t.Errorf("pending = %q, want %q", gotPending, wantPending)
 	}
 }
 
