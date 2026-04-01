@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/provider"
@@ -645,21 +647,27 @@ func TestPrintAuditFindings_PrintsAllFindings(t *testing.T) {
 func TestAuditRunCmd_DryRun_PrintsFindingsWithoutFiling(t *testing.T) {
 	fakeagentBin := buildTestBin(t, "fakeauditagent", "github.com/MichielDean/cistern/internal/testutil/fakeauditagent")
 
+	repoName := fmt.Sprintf("AuditTestRepo-%d", time.Now().UnixNano())
+
 	// Create a fake repo worktree directory so Stat() passes.
 	home := t.TempDir()
-	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", "TestRepo", "_primary")
+	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", repoName, "_primary")
 	if err := os.MkdirAll(repoWorktree, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
 	db := filepath.Join(t.TempDir(), "test.db")
-	cfgPath := writeTestConfigWithAgent(t, "TestRepo", fakeagentBin)
+	cfgPath := writeTestConfigWithAgent(t, repoName, fakeagentBin)
 	t.Setenv("CT_CONFIG", cfgPath)
 	t.Setenv("CT_DB", db)
 	t.Setenv("CT_NO_ASCII_LOGO", "1")
-	// Override UserHomeDir by overriding the worktree directly in invokeAuditAgent
-	// via a custom HOME so filepath.Join(home, ".cistern",...) resolves correctly.
+	// Override UserHomeDir so filepath.Join(home, ".cistern",...) resolves correctly.
 	t.Setenv("HOME", home)
+	// Reset audit flag globals before the command runs to prevent cross-test contamination.
+	auditRunRepo = ""
+	auditRunDryRun = false
+	auditRunModel = ""
+	auditRunPriority = 1
 	t.Cleanup(func() {
 		auditRunRepo = ""
 		auditRunDryRun = false
@@ -668,7 +676,7 @@ func TestAuditRunCmd_DryRun_PrintsFindingsWithoutFiling(t *testing.T) {
 	})
 
 	out := captureStdout(t, func() {
-		err := execCmd(t, "audit", "run", "--repo", "TestRepo", "--dry-run")
+		err := execCmd(t, "audit", "run", "--repo", repoName, "--dry-run")
 		if err != nil {
 			t.Errorf("audit run dry-run: unexpected error: %v", err)
 		}
@@ -687,7 +695,7 @@ func TestAuditRunCmd_DryRun_PrintsFindingsWithoutFiling(t *testing.T) {
 		t.Fatalf("cistern.New: %v", err)
 	}
 	defer c.Close()
-	items, err := c.List("TestRepo", "")
+	items, err := c.List(repoName, "")
 	if err != nil {
 		t.Fatalf("c.List: %v", err)
 	}
@@ -704,18 +712,25 @@ func TestAuditRunCmd_DryRun_PrintsFindingsWithoutFiling(t *testing.T) {
 func TestAuditRunCmd_FilesDropletsForFindings(t *testing.T) {
 	fakeagentBin := buildTestBin(t, "fakeauditagent", "github.com/MichielDean/cistern/internal/testutil/fakeauditagent")
 
+	repoName := fmt.Sprintf("AuditTestRepo-%d", time.Now().UnixNano())
+
 	home := t.TempDir()
-	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", "TestRepo", "_primary")
+	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", repoName, "_primary")
 	if err := os.MkdirAll(repoWorktree, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
 	db := filepath.Join(t.TempDir(), "test.db")
-	cfgPath := writeTestConfigWithAgent(t, "TestRepo", fakeagentBin)
+	cfgPath := writeTestConfigWithAgent(t, repoName, fakeagentBin)
 	t.Setenv("CT_CONFIG", cfgPath)
 	t.Setenv("CT_DB", db)
 	t.Setenv("CT_NO_ASCII_LOGO", "1")
 	t.Setenv("HOME", home)
+	// Reset audit flag globals before the command runs to prevent cross-test contamination.
+	auditRunRepo = ""
+	auditRunDryRun = false
+	auditRunModel = ""
+	auditRunPriority = 1
 	t.Cleanup(func() {
 		auditRunRepo = ""
 		auditRunDryRun = false
@@ -723,7 +738,7 @@ func TestAuditRunCmd_FilesDropletsForFindings(t *testing.T) {
 		auditRunPriority = 1
 	})
 
-	err := execCmd(t, "audit", "run", "--repo", "TestRepo")
+	err := execCmd(t, "audit", "run", "--repo", repoName)
 	if err != nil {
 		t.Fatalf("audit run: unexpected error: %v", err)
 	}
@@ -733,7 +748,7 @@ func TestAuditRunCmd_FilesDropletsForFindings(t *testing.T) {
 		t.Fatalf("cistern.New: %v", err)
 	}
 	defer c.Close()
-	items, err := c.List("TestRepo", "")
+	items, err := c.List(repoName, "")
 	if err != nil {
 		t.Fatalf("c.List: %v", err)
 	}
@@ -764,18 +779,25 @@ func TestAuditRunCmd_MultipleFindings_SummaryShowsCorrectSeverityPerFinding(t *t
 	fakeagentBin := buildTestBin(t, "fakeauditagent", "github.com/MichielDean/cistern/internal/testutil/fakeauditagent")
 	t.Setenv("FAKEAUDITAGENT_MODE", "multi")
 
+	repoName := fmt.Sprintf("AuditTestRepo-%d", time.Now().UnixNano())
+
 	home := t.TempDir()
-	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", "TestRepo", "_primary")
+	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", repoName, "_primary")
 	if err := os.MkdirAll(repoWorktree, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
 	db := filepath.Join(t.TempDir(), "test.db")
-	cfgPath := writeTestConfigWithAgent(t, "TestRepo", fakeagentBin)
+	cfgPath := writeTestConfigWithAgent(t, repoName, fakeagentBin)
 	t.Setenv("CT_CONFIG", cfgPath)
 	t.Setenv("CT_DB", db)
 	t.Setenv("CT_NO_ASCII_LOGO", "1")
 	t.Setenv("HOME", home)
+	// Reset audit flag globals before the command runs to prevent cross-test contamination.
+	auditRunRepo = ""
+	auditRunDryRun = false
+	auditRunModel = ""
+	auditRunPriority = 1
 	t.Cleanup(func() {
 		auditRunRepo = ""
 		auditRunDryRun = false
@@ -784,7 +806,7 @@ func TestAuditRunCmd_MultipleFindings_SummaryShowsCorrectSeverityPerFinding(t *t
 	})
 
 	out := captureStdout(t, func() {
-		err := execCmd(t, "audit", "run", "--repo", "TestRepo")
+		err := execCmd(t, "audit", "run", "--repo", repoName)
 		if err != nil {
 			t.Errorf("audit run: unexpected error: %v", err)
 		}

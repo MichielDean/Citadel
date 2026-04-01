@@ -22,6 +22,9 @@ func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
 	}
+	if env := os.Getenv("CT_DB"); env != "" {
+		return env
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		os.Exit(1)
