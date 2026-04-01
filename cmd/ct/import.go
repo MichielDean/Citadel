@@ -89,6 +89,9 @@ Examples:
 				return err
 			}
 			defer c.Close()
+			if len(proposals) == 0 {
+				return fmt.Errorf("filter returned no proposals for %s/%s", providerName, issueKey)
+			}
 			for _, p := range proposals {
 				cx := complexityToInt(p.Complexity)
 				item, err := c.AddDroplet(repo, p.Title, p.Description, externalRef, priority, cx)

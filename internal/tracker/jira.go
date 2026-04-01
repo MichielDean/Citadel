@@ -7,7 +7,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
+
+// JiraHTTPTimeout is the timeout applied to all Jira HTTP requests.
+// Tests may override this to a shorter value to exercise timeout behaviour.
+var JiraHTTPTimeout = 30 * time.Second
 
 func init() {
 	Register("jira", newJiraProvider)
@@ -29,7 +34,7 @@ type jiraProvider struct {
 }
 
 func newJiraProvider(cfg TrackerConfig) (TrackerProvider, error) {
-	return &jiraProvider{cfg: cfg, client: &http.Client{}}, nil
+	return &jiraProvider{cfg: cfg, client: &http.Client{Timeout: JiraHTTPTimeout}}, nil
 }
 
 // Name returns the provider identifier.
@@ -64,6 +69,9 @@ func (p *jiraProvider) FetchIssue(key string) (*ExternalIssue, error) {
 	}
 	if p.cfg.UserEnv != "" {
 		user := os.Getenv(p.cfg.UserEnv)
+		if user == "" {
+			return ExternalIssue{}, fmt.Errorf("tracker: env var %s is not set", p.cfg.UserEnv)
+		}
 		req.SetBasicAuth(user, token)
 	} else {
 		req.Header.Set("Authorization", "Bearer "+token)

@@ -341,6 +341,41 @@ func TestImportCmd_WithFilter_AgentError_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestImportCmd_WithFilter_ZeroProposals_ReturnsError verifies that when the
+// LLM filter returns an empty proposals array, importCmd returns an error
+// rather than silently exiting 0 with no output.
+// Given an agent that outputs "[]",
+// When importCmd is run with importFilter=true,
+// Then an error is returned.
+func TestImportCmd_WithFilter_ZeroProposals_ReturnsError(t *testing.T) {
+	zeroagentBin := buildTestBin(t, "zeroproposalsagent", "github.com/MichielDean/cistern/internal/testutil/zeroproposalsagent")
+
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+
+	cfgPath := writeTestConfigWithAgent(t, "cistern", zeroagentBin)
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	c, err := cistern.New(db, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	t.Cleanup(func() { importFilter = false })
+
+	importRepo = "cistern"
+	importFilter = true
+	importPriority = 2
+	importComplexity = "1"
+	err = importCmd.RunE(importCmd, []string{"fake-tracker", "FAKE-42"})
+	if err == nil {
+		t.Fatal("expected error when filter returns zero proposals, got nil")
+	}
+}
+
 func TestImportCmd_JiraProvider_E2E(t *testing.T) {
 	// End-to-end test using a real Jira provider against an httptest server.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

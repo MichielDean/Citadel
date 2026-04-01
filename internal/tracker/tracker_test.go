@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/MichielDean/cistern/internal/tracker"
 )
@@ -194,6 +196,73 @@ func TestJiraProvider_FetchIssue_DefaultPriority_UnknownName(t *testing.T) {
 	}
 	if issue.Priority != 2 {
 		t.Errorf("Priority = %d, want 2 (default for unknown priority name)", issue.Priority)
+	}
+}
+
+func TestJiraProvider_FetchIssue_ReturnsErrorWhenUserEnvSetButEmpty(t *testing.T) {
+	// Given: UserEnv is configured but the env var resolves to an empty string.
+	srv := jiraServer("PROJ-5", "Some issue", "", "Medium", http.StatusOK)
+	defer srv.Close()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_USERENV", "test-token")
+	// JIRA_USER_EMPTY is deliberately not set so os.Getenv returns "".
+	t.Setenv("JIRA_USER_EMPTY", "")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_USERENV",
+		UserEnv:  "JIRA_USER_EMPTY",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When: FetchIssue is called.
+	_, err = p.FetchIssue("PROJ-5")
+
+	// Then: an error is returned mentioning the env var, not a silent broken request.
+	if err == nil {
+		t.Fatal("expected error when UserEnv is set but env var is empty, got nil")
+	}
+	if !strings.Contains(err.Error(), "JIRA_USER_EMPTY") {
+		t.Errorf("error %q does not mention the env var name", err.Error())
+	}
+}
+
+func TestJiraProvider_FetchIssue_TimesOutOnSlowServer(t *testing.T) {
+	// Given: a server that blocks indefinitely (simulates unreachable server).
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-done // block until the test ends
+	}))
+	defer srv.Close()
+	defer close(done)
+
+	// Override the package-level timeout to a short value for this test.
+	orig := tracker.JiraHTTPTimeout
+	tracker.JiraHTTPTimeout = 50 * time.Millisecond
+	defer func() { tracker.JiraHTTPTimeout = orig }()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_TIMEOUT", "test-token")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_TIMEOUT",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When: FetchIssue is called.
+	_, err = p.FetchIssue("PROJ-X")
+
+	// Then: an error is returned (request timed out).
+	if err == nil {
+		t.Fatal("expected timeout error from slow server, got nil")
 	}
 }
 
