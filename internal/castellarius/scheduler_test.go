@@ -618,9 +618,9 @@ func TestTick_NotesForwarding(t *testing.T) {
 	}
 }
 
-func TestTick_RecirculateAutoPromotesToPass(t *testing.T) {
+func TestTick_RecirculateNoOnRecirculateRoute_RestartsAtImplement(t *testing.T) {
 	// implement has OnPass="review" but no OnRecirculate.
-	// Signaling recirculate should auto-promote to pass and route to "review".
+	// Signaling recirculate should restart at implement (the first cataractae), not auto-promote.
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{{ID: "b1"}}
 
@@ -640,29 +640,29 @@ func TestTick_RecirculateAutoPromotesToPass(t *testing.T) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 
-	// Should route via on_pass → "review", not pool.
-	if client.steps["b1"] != "review" {
-		t.Errorf("expected auto-promote to route to review, got %q", client.steps["b1"])
+	// Should restart at implement, not advance to review or pool.
+	if client.steps["b1"] != "implement" {
+		t.Errorf("expected restart at implement, got %q", client.steps["b1"])
 	}
 	if _, ok := client.pooled["b1"]; ok {
-		t.Error("expected no pooling when recirculate auto-promotes via on_pass")
+		t.Error("expected no pooling when recirculate has no on_recirculate route")
 	}
-	// Warning note must be attached.
+	// Exactly one structured routing note must be attached.
 	var hasNote bool
 	for _, n := range client.attached {
-		if n.id == "b1" && strings.Contains(n.notes, "Auto-promoted") && strings.Contains(n.notes, "recirculate") {
+		if n.id == "b1" && strings.Contains(n.notes, "[scheduler:routing]") && strings.Contains(n.notes, "restarting at implement") {
 			hasNote = true
 			break
 		}
 	}
 	if !hasNote {
-		t.Error("expected auto-promote warning note attached to droplet")
+		t.Errorf("expected structured routing note, got notes: %v", client.attached)
 	}
 }
 
-func TestTick_RecirculateNoPassRoute_StillPools(t *testing.T) {
-	// A step with neither on_recirculate nor on_pass: recirculate cannot be promoted,
-	// so the droplet must still pool.
+func TestTick_RecirculateNoOnRecirculateOrPassRoute_RestartsAtImplement(t *testing.T) {
+	// A step with neither on_recirculate nor on_pass: recirculate should still
+	// restart at implement (the first cataractae), not pool.
 	wf := &aqueduct.Workflow{
 		Name: "test",
 		Cataractae: []aqueduct.WorkflowCataractae{
@@ -690,14 +690,16 @@ func TestTick_RecirculateNoPassRoute_StillPools(t *testing.T) {
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if _, ok := client.pooled["b2"]; !ok {
-		t.Error("expected pooling when neither on_recirculate nor on_pass exists")
+	if _, ok := client.pooled["b2"]; ok {
+		t.Error("expected no pooling when recirculate has no on_recirculate route — should restart at implement")
+	}
+	if client.steps["b2"] != "implement" {
+		t.Errorf("expected restart at implement, got %q", client.steps["b2"])
 	}
 }
 
-func TestTick_RecirculateNoRoute_BlocksWithDiagnosticNote(t *testing.T) {
-	// Given: a droplet at "implement" which has no on_recirculate route and no on_pass route
-	// (so it can't auto-promote either).
+func TestTick_RecirculateNoRoute_WritesStructuredNoteAndRestartsAtImplement(t *testing.T) {
+	// Given: a droplet at "implement" which has no on_recirculate route and no on_pass route.
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
 		{ID: "b1", CurrentCataractae: "implement"},
@@ -738,23 +740,30 @@ func TestTick_RecirculateNoRoute_BlocksWithDiagnosticNote(t *testing.T) {
 	sched.Tick(context.Background())
 	time.Sleep(10 * time.Millisecond)
 
-	// Then: droplet is pooled.
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if _, ok := client.pooled["b1"]; !ok {
-		t.Fatal("expected droplet to be pooled when no on_recirculate route exists")
+
+	// Then: droplet is restarted at implement, not pooled.
+	if _, ok := client.pooled["b1"]; ok {
+		t.Fatal("expected droplet to restart at implement, not be pooled")
+	}
+	if client.steps["b1"] != "implement" {
+		t.Errorf("expected restart at implement, got %q", client.steps["b1"])
 	}
 
-	// And: a diagnostic note naming the step and missing route is attached.
+	// And: exactly one structured routing note is attached.
 	found := false
 	for _, n := range client.attached {
-		if n.id == "b1" && strings.Contains(n.notes, "implement") && strings.Contains(n.notes, "on_recirculate") {
+		if n.id == "b1" &&
+			strings.Contains(n.notes, "[scheduler:routing]") &&
+			strings.Contains(n.notes, "implement") &&
+			strings.Contains(n.notes, "on_recirculate") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected diagnostic note about missing on_recirculate route, got notes: %v", client.attached)
+		t.Errorf("expected structured [scheduler:routing] note, got notes: %v", client.attached)
 	}
 }
 
