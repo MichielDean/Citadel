@@ -2167,8 +2167,8 @@ func TestHeartbeatRepo_StallDetected_AppendsNoteAndWarnLog(t *testing.T) {
 	if len(client.attached) != 1 {
 		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
 	}
-	if !strings.Contains(client.attached[0].notes, "stalled") {
-		t.Errorf("stall note body missing 'stalled'; got: %s", client.attached[0].notes)
+	if !strings.HasPrefix(client.attached[0].notes, stallNotePrefix) {
+		t.Errorf("stall note missing structured prefix %q; got: %s", stallNotePrefix, client.attached[0].notes)
 	}
 
 	// A Warn-level log entry must be present containing the droplet ID.
@@ -2460,7 +2460,7 @@ func TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce(t *testing.T) 
 	// attached[0] is from the failed first call; attached[1] is the successful second call.
 	successNotes := 0
 	for _, n := range client.attached {
-		if n.fromStep == "scheduler" && strings.Contains(n.notes, "stalled") {
+		if n.fromStep == "scheduler" && strings.HasPrefix(n.notes, stallNotePrefix) {
 			successNotes++
 		}
 	}
@@ -2655,8 +2655,9 @@ func TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn(t *testing.T) {
 }
 
 // TestHeartbeatRepo_SpawnFailure_ClearsDebounce verifies that when respawnStalledDroplet
-// returns an error (Spawn fails), the debounce entry is deleted so the next heartbeat
-// re-detects the stall and retries the spawn.
+// returns an error (Spawn fails), the rate-limit entry is deleted. On the next heartbeat
+// the DB fallback suppresses a duplicate note (note was written seconds ago) but Spawn
+// is still retried — respawn is decoupled from note writing.
 func TestHeartbeatRepo_SpawnFailure_ClearsDebounce(t *testing.T) {
 	// Mock tmux as alive so liveness check passes through to stall detector.
 	orig := isTmuxAliveFn
@@ -2686,21 +2687,30 @@ func TestHeartbeatRepo_SpawnFailure_ClearsDebounce(t *testing.T) {
 	clients := map[string]CisternClient{"test-repo": client}
 	sched := NewFromParts(config, workflows, clients, runner)
 
-	// First tick: stalled → note written → Spawn fails → debounce must be cleared.
+	// First tick: stalled → note written → Spawn fails → rate-limit entry cleared.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 
 	if len(client.attached) != 1 {
 		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
 	}
 	if _, armed := sched.lastStallNoted[item.ID]; armed {
-		t.Error("expected debounce cleared after Spawn failure, but lastStallNoted is still set")
+		t.Error("expected rate-limit entry cleared after Spawn failure, but lastStallNoted is still set")
 	}
 
-	// Second tick: stall re-detected → second note written → Spawn called again.
+	// Second tick: rate-limit suppresses a duplicate note (note was written seconds
+	// ago via DB fallback), but Spawn is retried regardless.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 
-	if len(client.attached) != 2 {
-		t.Errorf("expected 2 stall notes after retry tick, got %d", len(client.attached))
+	// Still only 1 note — rate-limited via DB fallback.
+	if len(client.attached) != 1 {
+		t.Errorf("expected still 1 stall note after retry tick (rate-limited), got %d", len(client.attached))
+	}
+	// Spawn was attempted twice.
+	runner.mu.Lock()
+	spawnCalls := len(runner.calls)
+	runner.mu.Unlock()
+	if spawnCalls != 2 {
+		t.Errorf("expected 2 spawn attempts (respawn decoupled from note), got %d", spawnCalls)
 	}
 }
 
@@ -3340,6 +3350,353 @@ func TestCheckHungDrought_WhenEmptyDBPath_NoWarning(t *testing.T) {
 
 	if strings.Contains(logBuf.String(), "hung") {
 		t.Errorf("unexpected warning for empty dbPath: %s", logBuf.String())
+	}
+}
+
+// --- stall note format and rate-limiting tests ---
+
+// TestHeartbeatRepo_StallNote_StructuredPrefix verifies that stall notes use the
+// [scheduler:stall] structured prefix so they can be identified programmatically.
+func TestHeartbeatRepo_StallNote_StructuredPrefix(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-prefix",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+	if !strings.HasPrefix(client.attached[0].notes, stallNotePrefix) {
+		t.Errorf("stall note missing prefix %q; got: %s", stallNotePrefix, client.attached[0].notes)
+	}
+}
+
+// TestHeartbeatRepo_StallNote_DiagnosticFields verifies that stall notes contain
+// all required structured fields: elapsed, note_signal, worktree_signal, session_signal.
+func TestHeartbeatRepo_StallNote_DiagnosticFields(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-fields",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+	note := client.attached[0].notes
+	for _, field := range []string{"elapsed=", "note_signal=", "worktree_signal=", "session_signal="} {
+		if !strings.Contains(note, field) {
+			t.Errorf("stall note missing field %q; got: %s", field, note)
+		}
+	}
+}
+
+// TestHeartbeatRepo_StallNote_SessionSignal_AbsentWhenNoAssignee verifies that
+// session_signal=absent when no assignee (and thus no session log) is present.
+func TestHeartbeatRepo_StallNote_SessionSignal_AbsentWhenNoAssignee(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-sess-absent",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+	if !strings.Contains(client.attached[0].notes, "session_signal=absent") {
+		t.Errorf("expected session_signal=absent; got: %s", client.attached[0].notes)
+	}
+}
+
+// TestHeartbeatRepo_StallNote_SessionSignal_PresentWhenLogExists verifies that
+// session_signal=present when a session log file exists for the assignee.
+func TestHeartbeatRepo_StallNote_SessionSignal_PresentWhenLogExists(t *testing.T) {
+	// Mock tmux and agent as alive so the liveness checks pass through.
+	origTmux := isTmuxAliveFn
+	isTmuxAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isTmuxAliveFn = origTmux })
+	origAgent := isAgentAliveFn
+	isAgentAliveFn = func(_ string) bool { return true }
+	t.Cleanup(func() { isAgentAliveFn = origAgent })
+
+	logDir := t.TempDir()
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-sess-present",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client),
+		WithSessionLogRoot(logDir))
+
+	// Write a stale session log (old enough to be stalled).
+	logPath := filepath.Join(logDir, "test-repo-alpha.log")
+	if err := os.WriteFile(logPath, []byte("agent output"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	staleMtime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(logPath, staleMtime, staleMtime); err != nil {
+		t.Fatal(err)
+	}
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	}
+	if !strings.Contains(client.attached[0].notes, "session_signal=present") {
+		t.Errorf("expected session_signal=present; got: %s", client.attached[0].notes)
+	}
+}
+
+// TestHeartbeatRepo_RateLimit_SuppressesNoteWithin60Minutes verifies that the
+// in-memory rate limit prevents a second stall note within stallNoteInterval.
+func TestHeartbeatRepo_RateLimit_SuppressesNoteWithin60Minutes(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-rl-suppress",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	// Pre-set rate-limit entry to 30 minutes ago (within the 60-minute window).
+	sched.lastStallNoted[item.ID] = time.Now().Add(-30 * time.Minute)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 0 {
+		t.Errorf("expected 0 stall notes (rate-limited, 30m < 60m), got %d", len(client.attached))
+	}
+}
+
+// TestHeartbeatRepo_RateLimit_AllowsNoteAfter60Minutes verifies that a new stall
+// note is written once stallNoteInterval has elapsed since the last note.
+func TestHeartbeatRepo_RateLimit_AllowsNoteAfter60Minutes(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-rl-allow",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	// Pre-set rate-limit entry to 61 minutes ago (outside the 60-minute window).
+	sched.lastStallNoted[item.ID] = time.Now().Add(-61 * time.Minute)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Errorf("expected 1 stall note (rate-limit expired, 61m > 60m), got %d", len(client.attached))
+	}
+}
+
+// TestHeartbeatRepo_RateLimit_DBFallback_SuppressesAfterRestart simulates a process
+// restart: the in-memory lastStallNoted is empty but the DB contains a recent
+// [scheduler:stall] note. Verifies no duplicate note is written within the window.
+func TestHeartbeatRepo_RateLimit_DBFallback_SuppressesAfterRestart(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-db-suppress",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	// Simulate a stall note written 30 minutes ago (before this process started).
+	recentStallNote := time.Now().Add(-30 * time.Minute)
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{
+			CataractaeName: "scheduler",
+			Content:        stallNotePrefix + " elapsed=2h note_signal=none worktree_signal=none session_signal=absent",
+			CreatedAt:      recentStallNote,
+		},
+	}
+	// In-memory is empty — simulates process restart.
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 0 {
+		t.Errorf("expected 0 new stall notes (DB fallback suppresses within 60m), got %d", len(client.attached))
+	}
+}
+
+// TestHeartbeatRepo_RateLimit_DBFallback_AllowsAfterInterval verifies that when the
+// most recent DB stall note is older than stallNoteInterval, a new note is written.
+func TestHeartbeatRepo_RateLimit_DBFallback_AllowsAfterInterval(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-db-allow",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	// Stall note written 61 minutes ago — outside the rate-limit window.
+	oldStallNote := time.Now().Add(-61 * time.Minute)
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{
+			CataractaeName: "scheduler",
+			Content:        stallNotePrefix + " elapsed=3h note_signal=none worktree_signal=none session_signal=absent",
+			CreatedAt:      oldStallNote,
+		},
+	}
+	// In-memory is empty — simulates process restart.
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Errorf("expected 1 new stall note (DB note older than 60m), got %d", len(client.attached))
+	}
+}
+
+// TestHeartbeatRepo_RateLimit_DBFallback_NonStallSchedulerNote_NotSuppressed
+// verifies that scheduler notes without the [scheduler:stall] prefix are NOT
+// counted as stall notes by the DB fallback check.
+func TestHeartbeatRepo_RateLimit_DBFallback_NonStallSchedulerNote_NotSuppressed(t *testing.T) {
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "stall-db-nonstall",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	sched := NewFromParts(config,
+		map[string]*aqueduct.Workflow{"test-repo": testWorkflow()},
+		map[string]CisternClient{"test-repo": client},
+		newMockRunner(client))
+
+	// Scheduler note without the stall prefix (e.g. a zombie note) — should not
+	// be counted as a stall note by the DB fallback.
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{
+			CataractaeName: "scheduler",
+			Content:        "Session zombie detected: tmux session dead.",
+			CreatedAt:      time.Now().Add(-5 * time.Minute),
+		},
+	}
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if len(client.attached) != 1 {
+		t.Errorf("expected 1 stall note (non-stall scheduler note does not suppress), got %d", len(client.attached))
+	}
+}
+
+// TestFormatStallDuration verifies the compact duration formatter used in stall notes.
+func TestFormatStallDuration(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "0m"},
+		{29 * time.Second, "0m"},  // rounds down to 0m
+		{30 * time.Second, "1m"},  // rounds up to 1m
+		{time.Minute, "1m"},
+		{45 * time.Minute, "45m"},
+		{59*time.Minute + 29*time.Second, "59m"}, // rounds down
+		{59*time.Minute + 30*time.Second, "1h"},  // rounds up to 1h
+		{time.Hour, "1h"},
+		{2 * time.Hour, "2h"},
+		{2*time.Hour + 30*time.Minute, "2h30m"},
+		{48 * time.Hour, "48h"},
+		{48*time.Hour + 15*time.Minute, "48h15m"},
+	}
+	for _, tc := range tests {
+		got := formatStallDuration(tc.d)
+		if got != tc.want {
+			t.Errorf("formatStallDuration(%v) = %q, want %q", tc.d, got, tc.want)
+		}
 	}
 }
 
