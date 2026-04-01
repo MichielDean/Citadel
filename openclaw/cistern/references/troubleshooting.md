@@ -118,7 +118,7 @@ The UNASSIGNED section displays:
 
 **Recovering orphaned droplets:**
 
-Once you see an orphaned droplet, you have two options:
+Once you see an orphaned droplet, you have three options:
 
 1. **Restart the droplet** to re-enter the pipeline:
    ```bash

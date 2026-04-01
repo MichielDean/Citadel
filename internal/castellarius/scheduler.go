@@ -1632,7 +1632,7 @@ func latestNoteSignal(client CisternClient, dropletID string) (time.Time, string
 // the directory does not exist, cannot be read, or sandboxRoot is empty.
 func latestWorktreeSignal(sandboxRoot, repoName, dropletID string) (time.Time, string) {
 	if sandboxRoot == "" {
-		return time.Time{}, "none (no sandbox root)"
+		return time.Time{}, "none_no_sandbox_root"
 	}
 	dir := filepath.Join(sandboxRoot, repoName, dropletID)
 	var latest time.Time
@@ -1649,7 +1649,7 @@ func latestWorktreeSignal(sandboxRoot, repoName, dropletID string) (time.Time, s
 		return nil
 	})
 	if latest.IsZero() {
-		return time.Time{}, "none (no files)"
+		return time.Time{}, "none_no_files"
 	}
 	return latest, latest.Format(time.RFC3339)
 }

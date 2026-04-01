@@ -3700,6 +3700,39 @@ func TestFormatStallDuration(t *testing.T) {
 	}
 }
 
+// TestLatestWorktreeSignal_Labels_AreSpaceFree verifies that all labels returned
+// by latestWorktreeSignal contain no spaces, ensuring the structured stall note
+// format (space-delimited key=value pairs) remains machine-readable.
+func TestLatestWorktreeSignal_Labels_AreSpaceFree(t *testing.T) {
+	tests := []struct {
+		name        string
+		sandboxRoot string
+		repoName    string
+		dropletID   string
+	}{
+		{
+			name:        "empty sandbox root",
+			sandboxRoot: "",
+			repoName:    "repo",
+			dropletID:   "drop-1",
+		},
+		{
+			name:        "directory does not exist",
+			sandboxRoot: t.TempDir(),
+			repoName:    "repo",
+			dropletID:   "drop-nonexistent",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, label := latestWorktreeSignal(tc.sandboxRoot, tc.repoName, tc.dropletID)
+			if strings.Contains(label, " ") {
+				t.Errorf("latestWorktreeSignal label contains spaces: %q", label)
+			}
+		})
+	}
+}
+
 // TestDispatch_SetsAssignedAqueduct verifies that dispatchRepo calls
 // SetAssignedAqueduct with the operator name immediately after dispatching
 // a droplet, so in_progress droplets always carry a non-empty assigned_aqueduct.
