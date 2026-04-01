@@ -746,11 +746,8 @@ func TestAuditRunCmd_MultipleFindings_SummaryShowsCorrectSeverityPerFinding(t *t
 }
 
 // setupAuditRunTest creates an isolated environment for end-to-end audit run tests.
-// It generates a unique repo name, sets up a temporary home dir with the required
-// worktree, creates an isolated DB, writes a config, sets all required env vars,
-// and resets the package-level audit flag globals before and after the test to
-// prevent cross-test contamination.
-// Returns the unique repo name and path to the isolated DB.
+// Uses a unique repo name to prevent cross-test contamination when CT_DB is shared.
+// Returns the repo name and path to the isolated DB.
 func setupAuditRunTest(t *testing.T, fakeagentBin string) (repoName, db string) {
 	t.Helper()
 	repoName = fmt.Sprintf("AuditTestRepo-%d", time.Now().UnixNano())
@@ -769,16 +766,14 @@ func setupAuditRunTest(t *testing.T, fakeagentBin string) (repoName, db string) 
 	// Override UserHomeDir so filepath.Join(home, ".cistern",...) resolves correctly.
 	t.Setenv("HOME", home)
 	// Reset audit flag globals before and after to prevent cross-test contamination.
-	auditRunRepo = ""
-	auditRunDryRun = false
-	auditRunModel = ""
-	auditRunPriority = 1
-	t.Cleanup(func() {
+	reset := func() {
 		auditRunRepo = ""
 		auditRunDryRun = false
 		auditRunModel = ""
 		auditRunPriority = 1
-	})
+	}
+	reset()
+	t.Cleanup(reset)
 	return repoName, db
 }
 
