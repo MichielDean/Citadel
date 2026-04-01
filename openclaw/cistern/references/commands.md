@@ -72,6 +72,58 @@ tmux new-session -d -s filtration
 tmux send-keys -t filtration "/tmp/add-droplet.sh" Enter
 ```
 
+## Import from External Trackers
+
+```bash
+ct import <provider> <issue-key> --repo <repo> [options]
+ct import jira PROJ-123 --repo myrepo
+ct import jira PROJ-456 --repo myrepo --filter
+ct import jira PROJ-789 --repo myrepo --priority 1 --complexity full
+```
+
+Import an issue from an external tracker (e.g. Jira) and file it as a droplet. The provider name must match a registered TrackerProvider (e.g. "jira") and have a corresponding entry in the `trackers` section of `cistern.yaml`.
+
+### Import Options
+
+| Flag | Values | Default | Required |
+|------|--------|---------|----------|
+| `--repo` | repo name | — | Yes |
+| `--filter` | flag — runs LLM filtration pass | off | No |
+| `--priority` | 1–4 (1 = highest) | Tracker value | No |
+| `--complexity` | 1/standard / 2/full / 3/critical | 1 | No |
+
+**Workflow:**
+1. Fetches the issue from the tracker using the provided issue key
+2. Maps tracker fields (title, description, priority) to droplet fields
+3. If `--filter` is set: sends title + description through LLM filtration for refinement (may create multiple droplets)
+4. If `--filter` is not set: files the issue directly as a single droplet
+5. Prints the created droplet ID(s) on success
+6. Sets `external_ref` field to enable bi-directional tracing (e.g., `jira:PROJ-123`)
+
+**Provider Configuration:**
+
+Add a tracker entry to `cistern.yaml`:
+
+```yaml
+trackers:
+  - name: jira
+    base_url: https://your-jira-instance.atlassian.net
+    user_env: JIRA_USER         # env var with username/email
+    token_env: JIRA_TOKEN       # env var with API token
+    priority_map:               # optional: override default priority mapping
+      Highest: 1
+      High: 1
+      Medium: 2
+      Low: 3
+      Lowest: 3
+```
+
+Required environment variables vary by provider. For Jira, set:
+```bash
+export JIRA_USER=your-email@example.com
+export JIRA_TOKEN=your-api-token
+```
+
 ### Complexity Matrix
 
 | Level | Code | Human Approval Required |

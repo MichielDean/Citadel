@@ -70,7 +70,7 @@ func (p *jiraProvider) FetchIssue(key string) (*ExternalIssue, error) {
 	if p.cfg.UserEnv != "" {
 		user := os.Getenv(p.cfg.UserEnv)
 		if user == "" {
-			return ExternalIssue{}, fmt.Errorf("tracker: env var %s is not set", p.cfg.UserEnv)
+			return nil, fmt.Errorf("tracker: env var %s is not set", p.cfg.UserEnv)
 		}
 		req.SetBasicAuth(user, token)
 	} else {
