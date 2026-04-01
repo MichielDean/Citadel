@@ -1345,6 +1345,48 @@ func TestDashboardTUI_LastFrame_FlushTimer_CommitsOnIdle(t *testing.T) {
 	}
 }
 
+// TestDashboardTUI_FlushTimer_StaleCallbackDoesNotCorruptLastFrame verifies that
+// a flush timer callback carrying a stale generation does not overwrite a lastFrame
+// that was properly committed by the marker path after the timer was armed.
+//
+// Given: two repaint markers broadcast in sequence, committing frame-one via the marker path
+// When:  a stale flush callback (old generation) fires after the second marker committed frame-one
+// Then:  lastFrame remains frame-one — the stale callback is a no-op
+func TestDashboardTUI_FlushTimer_StaleCallbackDoesNotCorruptLastFrame(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := "\033[2J\033[H"
+
+	// Broadcast frame 1 — arms flush timer gen=1, pending = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+	// Broadcast frame 2 with marker — commits frame-one to lastFrame via marker path,
+	// increments flushGen to 2, and starts pending accumulation for frame-two.
+	tui.broadcast([]byte(marker + "frame-two-partial"))
+
+	// Stop the live gen=2 timer so it does not fire during the assertion.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	// Simulate the stale gen=1 callback (timer that fired between the two broadcasts).
+	// It must not overwrite lastFrame with the partial frame-two pending data.
+	tui.flushPendingFrame(1)
+
+	_, frame := tui.attach()
+
+	if frame == nil {
+		t.Fatal("attach() lastFrame is nil; want frame-one committed by marker path")
+	}
+	if !bytes.Contains(frame, []byte("frame-one-content")) {
+		t.Errorf("lastFrame = %q; stale callback must not corrupt the committed frame-one", frame)
+	}
+	if bytes.Contains(frame, []byte("frame-two-partial")) {
+		t.Errorf("lastFrame = %q; stale callback overwrote lastFrame with partial frame-two", frame)
+	}
+}
+
 // readWSTextFrame reads one unmasked WebSocket text frame from br and returns the payload.
 func readWSTextFrame(br *bufio.Reader) (string, error) {
 	header := make([]byte, 2)

@@ -345,6 +345,7 @@ type DashboardTUI struct {
 	pending    []byte                  // frame being accumulated since last repaint marker (protected by mu)
 	inFrame    bool                    // true once the first repaint marker has been seen (protected by mu)
 	flushTimer *time.Timer             // commits pending to lastFrame after idle period (protected by mu)
+	flushGen   uint64                  // generation counter; stale timer callbacks compare and abort (protected by mu)
 
 	stopCh chan struct{} // closed by Stop to terminate run loop
 	doneCh chan struct{} // closed when run loop has fully exited
@@ -558,14 +559,21 @@ func (d *DashboardTUI) scheduleFlush() {
 	if d.flushTimer != nil {
 		d.flushTimer.Stop()
 	}
-	d.flushTimer = time.AfterFunc(tuiFrameFlushDelay, d.flushPendingFrame)
+	d.flushGen++
+	gen := d.flushGen
+	d.flushTimer = time.AfterFunc(tuiFrameFlushDelay, func() { d.flushPendingFrame(gen) })
 }
 
 // flushPendingFrame commits the current pending frame as lastFrame. It is called
 // by the flush timer when no second repaint marker has arrived within tuiFrameFlushDelay.
-func (d *DashboardTUI) flushPendingFrame() {
+// gen is the generation at the time the timer was armed; if d.flushGen has advanced
+// the callback is stale and must not overwrite a properly committed lastFrame.
+func (d *DashboardTUI) flushPendingFrame(gen uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.flushGen != gen {
+		return
+	}
 	if d.inFrame && len(d.pending) > 0 {
 		d.lastFrame = d.pending
 	}
