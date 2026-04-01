@@ -51,6 +51,10 @@ type CisternClient interface {
 	// SetOutcome records the agent outcome on a droplet. Used by stuck-delivery
 	// recovery to write an outcome directly so the observe phase can route it.
 	SetOutcome(id, outcome string) error
+	// ListIssues returns issues for a droplet. If openOnly is true only open
+	// issues are returned; if flaggedBy is non-empty only matching issues are
+	// returned.
+	ListIssues(dropletID string, openOnly bool, flaggedBy string) ([]cistern.DropletIssue, error)
 	// SetAssignedAqueduct records the aqueduct operator currently holding this
 	// droplet. Called after each dispatch so in_progress droplets always carry a
 	// non-empty assigned_aqueduct for status display.
@@ -857,19 +861,64 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 			next = route(*step, result)
 		}
 
-		// When a step signals recirculate but has no on_recirculate route, restart the
-		// droplet at implement (the first cataractae in the workflow) so the work is
-		// re-attempted. A single structured note records the routing anomaly.
-		if next == "" && result == ResultRecirculate && len(wf.Cataractae) > 0 {
-			implementStep := wf.Cataractae[0].Name
-			note := fmt.Sprintf(
-				"[scheduler:routing] cataractae=%s signaled recirculate but has no on_recirculate route — restarting at %s",
-				step.Name, implementStep,
-			)
-			s.logger.Warn("observe: recirculate with no on_recirculate route — restarting at implement",
-				"droplet", item.ID, "step", step.Name, "restart", implementStep)
-			s.addNote(client, item.ID, "scheduler", note)
-			next = implementStep
+		// Reviewer-issue loop recovery: when a non-reviewer step recirculates back to
+		// itself while a reviewer-opened issue remains open, detect the loop and break
+		// it by routing directly to the reviewer cataractae so it can verify the fix
+		// and close the issue.
+		if result == ResultRecirculate && next == step.Name {
+			issues, issErr := client.ListIssues(item.ID, true, "")
+			if issErr != nil {
+				s.logger.Warn("observe: list issues failed for loop detection",
+					"droplet", item.ID, "error", issErr)
+			} else {
+				notes, _ := client.GetNotes(item.ID)
+				for _, issue := range issues {
+					if issue.FlaggedBy == step.Name {
+						continue // skip issues filed by the current step
+					}
+					if lookupCataracta(wf, issue.FlaggedBy) == nil {
+						continue // reviewer step not in workflow
+					}
+					pendingCount := loopRecoveryPendingCount(notes, issue.ID)
+					if pendingCount >= loopDetectN-1 {
+						// Loop confirmed — route to the reviewer cataractae.
+						recoveryNote := fmt.Sprintf(
+							"[scheduler:loop-recovery] detected implement\u2192implement loop on reviewer issue %s — routing to reviewer",
+							issue.ID,
+						)
+						s.logger.Info("observe: loop recovery — routing to reviewer",
+							"droplet", item.ID, "step", step.Name,
+							"reviewer", issue.FlaggedBy, "issue", issue.ID)
+						s.addNote(client, item.ID, "scheduler", recoveryNote)
+						next = issue.FlaggedBy
+						break
+					}
+					// First (or sub-threshold) recirculation with open reviewer issue:
+					// record a pending marker so the next cycle can confirm the loop.
+					pendingNote := fmt.Sprintf(
+						"[scheduler:loop-recovery-pending] issue=%s — open reviewer issue found at %s, routing back to %s (cycle %d/%d)",
+						issue.ID, step.Name, step.Name, pendingCount+1, loopDetectN,
+					)
+					s.addNote(client, item.ID, "scheduler", pendingNote)
+					break // handle one qualifying issue per observation
+				}
+			}
+		}
+
+		// Auto-promote: when a step signals recirculate but has no on_recirculate route,
+		// treat it as pass. The work is almost certainly complete — the agent chose the
+		// wrong signal. Log at WARN so the pattern is visible without failing anything.
+		if next == "" && result == ResultRecirculate {
+			if passNext := route(*step, ResultPass); passNext != "" {
+				note := fmt.Sprintf(
+					"Auto-promoted: cataractae %q signaled recirculate but has no on_recirculate route — treated as pass. Review agent behavior if this recurs.",
+					step.Name,
+				)
+				s.logger.Warn("observe: auto-promoting recirculate to pass",
+					"droplet", item.ID, "step", step.Name)
+				s.addNote(client, item.ID, "scheduler", note)
+				next = passNext
+			}
 		}
 
 		if next == "" {
@@ -1129,6 +1178,23 @@ func (s *Castellarius) totalBusy() int {
 		total += pool.FlowingCount()
 	}
 	return total
+}
+
+// loopDetectN is the number of consecutive recirculate-to-self cycles with an
+// open reviewer issue that triggers automatic routing to the reviewer cataractae.
+const loopDetectN = 2
+
+// loopRecoveryPendingCount returns the number of [scheduler:loop-recovery-pending]
+// notes for the given issue ID previously written by the scheduler.
+func loopRecoveryPendingCount(notes []cistern.CataractaeNote, issueID string) int {
+	marker := "[scheduler:loop-recovery-pending] issue=" + issueID
+	count := 0
+	for _, n := range notes {
+		if n.CataractaeName == "scheduler" && strings.Contains(n.Content, marker) {
+			count++
+		}
+	}
+	return count
 }
 
 // parseOutcome parses a DB outcome string into a Result and optional target step.
