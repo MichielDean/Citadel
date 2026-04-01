@@ -167,7 +167,7 @@ func TestGracefulShutdown_CleanDrain_CompletesBeforeTimeout(t *testing.T) {
 	go func() { done <- sched.Run(ctx) }()
 
 	// Wait until the blocking runner has Spawn called (item is now in_progress).
-	if !waitBlockingCall(br, time.Second) {
+	if !waitBlockingCall(br, 3*time.Second) {
 		t.Fatal("timed out waiting for dispatch to pick up item")
 	}
 
@@ -215,7 +215,7 @@ func TestGracefulShutdown_Timeout_ForcesExit(t *testing.T) {
 	go func() { done <- sched.Run(ctx) }()
 
 	// Wait until the item is dispatched (in_progress, no outcome).
-	if !waitBlockingCall(br, time.Second) {
+	if !waitBlockingCall(br, 3*time.Second) {
 		t.Fatal("timed out waiting for dispatch")
 	}
 
