@@ -1,162 +1,355 @@
-package tracker
+package tracker_test
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/MichielDean/cistern/internal/tracker"
 )
 
-// fakeProvider is a test double implementing TrackerProvider.
-type fakeProvider struct {
-	name   string
-	issues map[string]*ExternalIssue
-	err    error
-}
+// --- Registry tests ---
 
-func (f *fakeProvider) Name() string { return f.name }
+func TestRegister_AndResolve_ReturnsRegisteredConstructor(t *testing.T) {
+	const name = "test-register-resolve"
+	want := &fakeProvider{}
+	tracker.Register(name, func(cfg tracker.TrackerConfig) (tracker.TrackerProvider, error) {
+		return want, nil
+	})
 
-func (f *fakeProvider) FetchIssue(key string) (*ExternalIssue, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	issue, ok := f.issues[key]
+	ctor, ok := tracker.Resolve(name)
 	if !ok {
-		return nil, errors.New("tracker: issue not found: " + key)
+		t.Fatal("expected constructor to be found after Register")
 	}
-	return issue, nil
+	got, err := ctor(tracker.TrackerConfig{Name: name})
+	if err != nil {
+		t.Fatalf("constructor error: %v", err)
+	}
+	if got != want {
+		t.Errorf("constructor returned wrong provider instance")
+	}
 }
 
-// TestExternalIssue_FieldsAreMappedCorrectly verifies all ExternalIssue fields can be set and read.
-func TestExternalIssue_FieldsAreMappedCorrectly(t *testing.T) {
-	issue := ExternalIssue{
-		Key:         "PROJ-123",
-		Title:       "Fix the login bug",
-		Description: "The login page crashes on submit",
-		Priority:    2,
-		Labels:      []string{"bug", "login"},
-		SourceURL:   "https://example.atlassian.net/browse/PROJ-123",
+func TestResolve_ReturnsFalseForUnknownProvider(t *testing.T) {
+	_, ok := tracker.Resolve("no-such-provider-xyz-abc")
+	if ok {
+		t.Error("expected false for unknown provider name, got true")
+	}
+}
+
+// --- Jira provider tests ---
+
+func TestJiraProvider_FetchIssue_ReturnsSummaryAndDescription(t *testing.T) {
+	srv := jiraServer("PROJ-1", "Fix the bug", "Bug description text", "High", http.StatusOK)
+	defer srv.Close()
+
+	ctor, ok := tracker.Resolve("jira")
+	if !ok {
+		t.Fatal("jira provider not registered")
+	}
+	t.Setenv("JIRA_TOKEN", "test-token")
+	t.Setenv("JIRA_USER", "test@example.com")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN",
+		UserEnv:  "JIRA_USER",
+	})
+	if err != nil {
+		t.Fatalf("constructor: %v", err)
 	}
 
-	if issue.Key != "PROJ-123" {
-		t.Errorf("Key = %q, want %q", issue.Key, "PROJ-123")
+	issue, err := p.FetchIssue("PROJ-1")
+	if err != nil {
+		t.Fatalf("FetchIssue: %v", err)
 	}
-	if issue.Title != "Fix the login bug" {
-		t.Errorf("Title = %q, want %q", issue.Title, "Fix the login bug")
+
+	if issue.Title != "Fix the bug" {
+		t.Errorf("Title = %q, want %q", issue.Title, "Fix the bug")
 	}
-	if issue.Description != "The login page crashes on submit" {
-		t.Errorf("Description = %q, want %q", issue.Description, "The login page crashes on submit")
+	if issue.Description != "Bug description text" {
+		t.Errorf("Description = %q, want %q", issue.Description, "Bug description text")
+	}
+	if issue.Priority != 1 {
+		t.Errorf("Priority = %d, want 1 (High maps to 1 by default)", issue.Priority)
+	}
+}
+
+func TestJiraProvider_FetchIssue_MapsDefaultPriority_Medium(t *testing.T) {
+	srv := jiraServer("PROJ-2", "Medium task", "", "Medium", http.StatusOK)
+	defer srv.Close()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_MED", "test-token")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_MED",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := p.FetchIssue("PROJ-2")
+	if err != nil {
+		t.Fatalf("FetchIssue: %v", err)
 	}
 	if issue.Priority != 2 {
-		t.Errorf("Priority = %d, want 2", issue.Priority)
-	}
-	if len(issue.Labels) != 2 || issue.Labels[0] != "bug" || issue.Labels[1] != "login" {
-		t.Errorf("Labels = %v, want [bug login]", issue.Labels)
-	}
-	if issue.SourceURL != "https://example.atlassian.net/browse/PROJ-123" {
-		t.Errorf("SourceURL = %q, want expected URL", issue.SourceURL)
+		t.Errorf("Priority = %d, want 2 (Medium)", issue.Priority)
 	}
 }
 
-// TestExternalIssue_PriorityRange verifies all normalized priority values (1–4) are representable.
-func TestExternalIssue_PriorityRange(t *testing.T) {
-	for _, p := range []int{1, 2, 3, 4} {
-		issue := ExternalIssue{Priority: p}
-		if issue.Priority != p {
-			t.Errorf("Priority = %d, want %d", issue.Priority, p)
-		}
-	}
-}
+func TestJiraProvider_FetchIssue_UsesPriorityMapOverride(t *testing.T) {
+	srv := jiraServer("PROJ-3", "Urgent", "", "High", http.StatusOK)
+	defer srv.Close()
 
-// TestExternalIssue_EmptyLabels verifies that zero-value Labels is nil and safe to range over.
-func TestExternalIssue_EmptyLabels(t *testing.T) {
-	var issue ExternalIssue
-	count := 0
-	for range issue.Labels {
-		count++
-	}
-	if count != 0 {
-		t.Errorf("ranging over nil Labels yielded %d iterations, want 0", count)
-	}
-}
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_OVR", "tok")
 
-// TestTrackerProvider_Name_ReturnsProviderName verifies Name() returns the provider identifier.
-func TestTrackerProvider_Name_ReturnsProviderName(t *testing.T) {
-	tests := []struct {
-		name string
-	}{
-		{"jira"},
-		{"linear"},
-		{"github"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var p TrackerProvider = &fakeProvider{name: tt.name}
-			if got := p.Name(); got != tt.name {
-				t.Errorf("Name() = %q, want %q", got, tt.name)
-			}
-		})
-	}
-}
-
-// TestTrackerProvider_FetchIssue_ReturnsIssueForValidKey verifies FetchIssue returns the correct issue.
-func TestTrackerProvider_FetchIssue_ReturnsIssueForValidKey(t *testing.T) {
-	want := &ExternalIssue{
-		Key:      "PROJ-1",
-		Title:    "Test issue",
-		Priority: 1,
-	}
-	var p TrackerProvider = &fakeProvider{
-		name:   "jira",
-		issues: map[string]*ExternalIssue{"PROJ-1": want},
-	}
-
-	got, err := p.FetchIssue("PROJ-1")
+	p, err := ctor(tracker.TrackerConfig{
+		Name:        "jira",
+		BaseURL:     srv.URL,
+		TokenEnv:    "JIRA_TOKEN_OVR",
+		PriorityMap: map[string]int{"High": 3},
+	})
 	if err != nil {
-		t.Fatalf("FetchIssue: unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if got.Key != want.Key {
-		t.Errorf("Key = %q, want %q", got.Key, want.Key)
+
+	issue, err := p.FetchIssue("PROJ-3")
+	if err != nil {
+		t.Fatalf("FetchIssue: %v", err)
 	}
-	if got.Title != want.Title {
-		t.Errorf("Title = %q, want %q", got.Title, want.Title)
-	}
-	if got.Priority != want.Priority {
-		t.Errorf("Priority = %d, want %d", got.Priority, want.Priority)
+	if issue.Priority != 3 {
+		t.Errorf("Priority = %d, want 3 (overridden via PriorityMap)", issue.Priority)
 	}
 }
 
-// TestTrackerProvider_FetchIssue_ReturnsErrorForUnknownKey verifies FetchIssue
-// returns an error when the key is not found.
-func TestTrackerProvider_FetchIssue_ReturnsErrorForUnknownKey(t *testing.T) {
-	var p TrackerProvider = &fakeProvider{
-		name:   "jira",
-		issues: map[string]*ExternalIssue{},
+func TestJiraProvider_FetchIssue_ReturnsErrorOnHTTPNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintln(w, `{"errorMessages":["Issue does not exist"],"errors":{}}`)
+	}))
+	defer srv.Close()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_404", "tok")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_404",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	_, err := p.FetchIssue("UNKNOWN-999")
+	_, err = p.FetchIssue("MISSING-1")
 	if err == nil {
-		t.Fatal("FetchIssue: expected error for unknown key, got nil")
+		t.Fatal("expected error for 404 response, got nil")
 	}
 }
 
-// TestTrackerProvider_FetchIssue_PropagatesProviderError verifies FetchIssue
-// surfaces errors returned by the underlying provider.
-func TestTrackerProvider_FetchIssue_PropagatesProviderError(t *testing.T) {
-	wantErr := errors.New("connection refused")
-	var p TrackerProvider = &fakeProvider{name: "jira", err: wantErr}
+func TestJiraProvider_FetchIssue_ReturnsErrorWhenTokenEnvNotSet(t *testing.T) {
+	ctor, _ := tracker.Resolve("jira")
 
-	_, err := p.FetchIssue("PROJ-1")
-	if !errors.Is(err, wantErr) {
-		t.Errorf("FetchIssue: error = %v, want %v", err, wantErr)
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  "https://example.atlassian.net",
+		TokenEnv: "JIRA_TOKEN_NOT_SET_XYZ_UNIQUE",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = p.FetchIssue("PROJ-1")
+	if err == nil {
+		t.Fatal("expected error when token env var is unset, got nil")
 	}
 }
 
-// TestTrackerProvider_FetchIssue_ReturnsNilResultOnError verifies FetchIssue
-// returns a nil issue pointer when an error occurs.
-func TestTrackerProvider_FetchIssue_ReturnsNilResultOnError(t *testing.T) {
-	var p TrackerProvider = &fakeProvider{name: "jira", err: errors.New("timeout")}
+func TestJiraProvider_FetchIssue_DefaultPriority_UnknownName(t *testing.T) {
+	srv := jiraServer("PROJ-4", "Task", "", "Blocker", http.StatusOK)
+	defer srv.Close()
 
-	got, _ := p.FetchIssue("PROJ-1")
-	if got != nil {
-		t.Errorf("FetchIssue: result = %+v, want nil on error", got)
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_UNK", "tok")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_UNK",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	issue, err := p.FetchIssue("PROJ-4")
+	if err != nil {
+		t.Fatalf("FetchIssue: %v", err)
+	}
+	if issue.Priority != 2 {
+		t.Errorf("Priority = %d, want 2 (default for unknown priority name)", issue.Priority)
+	}
+}
+
+func TestJiraProvider_FetchIssue_ReturnsErrorWhenUserEnvSetButEmpty(t *testing.T) {
+	// Given: UserEnv is configured but the env var resolves to an empty string.
+	srv := jiraServer("PROJ-5", "Some issue", "", "Medium", http.StatusOK)
+	defer srv.Close()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_USERENV", "test-token")
+	// JIRA_USER_EMPTY is deliberately not set so os.Getenv returns "".
+	t.Setenv("JIRA_USER_EMPTY", "")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_USERENV",
+		UserEnv:  "JIRA_USER_EMPTY",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When: FetchIssue is called.
+	_, err = p.FetchIssue("PROJ-5")
+
+	// Then: an error is returned mentioning the env var, not a silent broken request.
+	if err == nil {
+		t.Fatal("expected error when UserEnv is set but env var is empty, got nil")
+	}
+	if !strings.Contains(err.Error(), "JIRA_USER_EMPTY") {
+		t.Errorf("error %q does not mention the env var name", err.Error())
+	}
+}
+
+func TestJiraProvider_FetchIssue_TimesOutOnSlowServer(t *testing.T) {
+	// Given: a server that blocks indefinitely (simulates unreachable server).
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-done // block until the test ends
+	}))
+	defer srv.Close()
+	defer close(done)
+
+	// Override the package-level timeout to a short value for this test.
+	orig := tracker.JiraHTTPTimeout
+	tracker.JiraHTTPTimeout = 50 * time.Millisecond
+	defer func() { tracker.JiraHTTPTimeout = orig }()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_TIMEOUT", "test-token")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_TIMEOUT",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When: FetchIssue is called.
+	_, err = p.FetchIssue("PROJ-X")
+
+	// Then: an error is returned (request timed out).
+	if err == nil {
+		t.Fatal("expected timeout error from slow server, got nil")
+	}
+}
+
+func TestJiraProvider_FetchIssue_WithADFDescription(t *testing.T) {
+	// Given: a Jira API server that returns an ADF object as the description.
+	adfPayload := map[string]any{
+		"type":    "doc",
+		"version": 1,
+		"content": []any{
+			map[string]any{
+				"type": "paragraph",
+				"content": []any{
+					map[string]any{
+						"type": "text",
+						"text": "This is an ADF description",
+					},
+				},
+			},
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp := map[string]any{
+			"key": "PROJ-10",
+			"fields": map[string]any{
+				"summary":     "ADF issue",
+				"description": adfPayload,
+				"priority":    map[string]string{"name": "Medium"},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_ADF", "test-token")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_ADF",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When: FetchIssue is called.
+	issue, err := p.FetchIssue("PROJ-10")
+
+	// Then: the description is extracted from the ADF structure.
+	if err != nil {
+		t.Fatalf("FetchIssue: %v", err)
+	}
+	want := "This is an ADF description"
+	if issue.Description != want {
+		t.Errorf("Description = %q, want %q", issue.Description, want)
+	}
+}
+
+// --- helpers ---
+
+type fakeProvider struct{}
+
+func (f *fakeProvider) Name() string {
+	return "fake"
+}
+
+func (f *fakeProvider) FetchIssue(key string) (*tracker.ExternalIssue, error) {
+	return &tracker.ExternalIssue{}, nil
+}
+
+// jiraServer returns an httptest.Server that returns a minimal Jira issue response.
+func jiraServer(key, summary, description, priority string, statusCode int) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		resp := map[string]any{
+			"key": key,
+			"fields": map[string]any{
+				"summary":     summary,
+				"description": description,
+				"priority": map[string]string{
+					"name": priority,
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
 }

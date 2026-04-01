@@ -65,3 +65,19 @@ drought_hooks:
 #     token_env: LINEAR_TOKEN                  # Reads from $LINEAR_TOKEN at runtime
 
 dashboard_font_family: 'Liberation Mono, DejaVu Sans Mono, Menlo, Consolas, monospace'
+
+# trackers configures external issue tracker integrations for ct import.
+# Each entry maps a provider name to its connection parameters.
+# Usage: ct import jira PROJ-123 --repo myrepo
+#
+# trackers:
+#   - name: jira
+#     base_url: https://yourcompany.atlassian.net
+#     token_env: JIRA_TOKEN       # env var holding your Jira API token
+#     user_env: JIRA_USER         # env var holding your Jira username (email)
+#     priority_map:               # optional: override default priority mapping
+#       Highest: 1
+#       High: 1
+#       Medium: 2
+#       Low: 3
+#       Lowest: 3

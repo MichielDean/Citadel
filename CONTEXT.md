@@ -1,14 +1,14 @@
 # Context
 
-## Item: ci-ikbj2
+## Item: ci-7ecn4
 
-**Title:** Add external_ref column to droplets schema
+**Title:** Add ct import CLI subcommand
 **Status:** in_progress
 **Priority:** 1
 
 ### Description
 
-Add 'external_ref' TEXT column to the droplets table in schema.sql and migration. Format: 'provider:key' (e.g. 'jira:DPF-456', 'linear:LIN-789'). Column is nullable - only populated for imported issues. Add ExternalRef field to the Droplet Go struct in client.go. Update all CRUD operations (insert, update, scan) to include external_ref. When external_ref is set, delivery cataractae uses it for: (1) PR branch name feat/DPF-456 instead of feat/ci-xxxx, (2) PR title 'DPF-456: description' instead of 'ci-xxxx: description'. Update the delivery CLAUDE.md and gate logic to check for external_ref.
+Add 'ct import' subcommand in cmd/ct/import.go. Usage: ct import <provider> <issue-key> [flags]. Flags: --repo (target repo, required), --filter (run through filtration before filing), --priority (override mapped priority), --complexity (override, default 1). Flow: (1) resolve provider from first arg (e.g. 'jira'), (2) load provider config from cistern.yaml trackers section, (3) call provider.FetchIssue(key), (4) map ExternalIssue fields to droplet fields, (5) set external_ref to 'provider:key', (6) if --filter flag: run ct filter with pre-populated title/description, (7) else: add droplet directly via client.AddDroplet(). Print created droplet ID on success. Provider registry maps string names to TrackerProvider constructors. Depends on ci-xrgv2, ci-ikbj2, ci-g6so3.
 
 ## Current Step: implement
 
@@ -39,16 +39,16 @@ Add 'external_ref' TEXT column to the droplets table in schema.sql and migration
 When your work is done, signal your outcome using the `ct` CLI:
 
 **Pass (work complete, move to next step):**
-    ct droplet pass ci-ikbj2
+    ct droplet pass ci-7ecn4
 
 **Recirculate (needs rework — send back upstream):**
-    ct droplet recirculate ci-ikbj2
-    ct droplet recirculate ci-ikbj2 --to implement
+    ct droplet recirculate ci-7ecn4
+    ct droplet recirculate ci-7ecn4 --to implement
 
 **Pool (cannot currently proceed):**
-    ct droplet pool ci-ikbj2
+    ct droplet pool ci-7ecn4
 
 Add notes before signaling:
-    ct droplet note ci-ikbj2 "What you did / found"
+    ct droplet note ci-7ecn4 "What you did / found"
 
 The `ct` binary is on your PATH.

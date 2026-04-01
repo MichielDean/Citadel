@@ -252,6 +252,19 @@ func (c *Client) Add(repo, title, description string, priority, complexity int, 
 	}, nil
 }
 
+// AddDroplet is a convenience method that adds a droplet and sets its external reference.
+func (c *Client) AddDroplet(repo, title, description, externalRef string, priority, complexity int) (*Droplet, error) {
+	droplet, err := c.Add(repo, title, description, priority, complexity)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.SetExternalRef(droplet.ID, externalRef); err != nil {
+		return nil, err
+	}
+	droplet.ExternalRef = externalRef
+	return droplet, nil
+}
+
 // GetReady atomically selects the next open droplet for a repo and marks it
 // in-progress within a single transaction. Ordered by priority (lower number =
 // higher priority) then FIFO within the same priority. Returns nil if no work
