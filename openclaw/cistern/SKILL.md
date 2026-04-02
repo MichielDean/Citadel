@@ -177,10 +177,13 @@ systemctl --user start cistern-ttyd.service
 
 ## Troubleshooting
 
+Run `ct doctor` first — it checks daemon status, claude CLI auth, and common config issues automatically.
+
 | Symptom | Check |
 |---------|-------|
 | Castellarius not running | `systemctl --user status cistern-castellarius` → start it |
-| Sessions failing auth / ct filter exits with usage help | `claude auth status` — if logged in, Claude's own auth is fine. **Unset ANTHROPIC_API_KEY** — if it's exported, claude switches from OAuth to API key mode and fails. Run `unset ANTHROPIC_API_KEY` before any ct command. |
+| Castellarius hung/log quiet | `ct doctor` flags it automatically; manual check: `cat ~/.cistern/castellarius.health` (shows last tick time + poll interval) |
+| Sessions failing auth | `ct doctor` checks claude CLI authenticated automatically; also verify nothing sets ANTHROPIC_API_KEY in env — if set, claude switches from OAuth to API key mode and fails |
 | Droplet stuck | `ct droplet show <id>` — check notes; `ct droplet restart <id>` |
 | Logs | `journalctl --user -u cistern-castellarius -f` or `cat ~/.cistern/castellarius.log` |
 | Dashboard stale after rebuild | Kill old process on port 5737, restart cistern-ttyd.service |
