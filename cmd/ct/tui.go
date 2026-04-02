@@ -209,6 +209,10 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 				execErr = err
 				break
 			}
+			if item.Status == "delivered" || item.Status == "cancelled" {
+				execErr = fmt.Errorf("cannot approve: droplet %s has terminal status %q", dropletID, item.Status)
+				break
+			}
 			if item.CurrentCataractae != "human" {
 				execErr = fmt.Errorf("%s is not awaiting human approval (cataractae: %s)", dropletID, item.CurrentCataractae)
 				break

@@ -2561,6 +2561,60 @@ func TestExecActionCmd_Recirculate_OnTerminalDroplet_ReturnsError(t *testing.T) 
 	}
 }
 
+// TestExecActionCmd_Approve_OnTerminalDroplet_ReturnsError verifies that
+// execActionCmd with actionApprove on a terminal (cancelled) droplet returns
+// an error and does not reopen the droplet — guarding against TOCTOU races
+// where the droplet is cancelled after the palette renders but before confirm.
+// Cancel does not clear current_cataractae, so a cancelled droplet at "human"
+// would otherwise pass the CurrentCataractae check and be silently reopened.
+//
+// Given: a real cistern DB with a cancelled droplet at cataractae "human"
+// When:  execActionCmd with actionApprove is executed
+// Then:  tuiActionResultMsg.err is non-nil and droplet status remains "cancelled"
+func TestExecActionCmd_Approve_OnTerminalDroplet_ReturnsError(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	// Set cataractae to "human" and then cancel — simulates the TOCTOU window.
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetCataractae(id, "human"); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	if err := c.Cancel(id, ""); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	c.Close()
+
+	m := newTabAppModel("", dbPath)
+	cmd := m.execActionCmd(id, actionApprove, "")
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err == nil {
+		t.Error("err = nil, want non-nil error for terminal droplet")
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	d, err := c2.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Status != "cancelled" {
+		t.Errorf("status = %q, want %q (cancelled droplet must not be reopened)", d.Status, "cancelled")
+	}
+}
+
 // TestExecActionCmd_Approve_WhenNotHumanGated_ReturnsError verifies that
 // execActionCmd with actionApprove on a droplet not at the "human" cataractae
 // returns an error and does not force the droplet to the delivery step —
