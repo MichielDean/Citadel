@@ -39,16 +39,16 @@ func TestCockpit_NewModel_DropletsPreSelected(t *testing.T) {
 	}
 }
 
-// TestCockpit_NewModel_HasFivePanels verifies the cockpit ships with the expected
+// TestCockpit_NewModel_HasSevenPanels verifies the cockpit ships with the expected
 // set of panels.
 //
 // Given: a new cockpitModel
 // When:  panels are inspected
-// Then:  six panels are registered
-func TestCockpit_NewModel_HasFivePanels(t *testing.T) {
+// Then:  seven panels are registered
+func TestCockpit_NewModel_HasSevenPanels(t *testing.T) {
 	m := newCockpitModel("", "")
-	if len(m.panels) != 6 {
-		t.Errorf("len(panels) = %d, want 6", len(m.panels))
+	if len(m.panels) != 7 {
+		t.Errorf("len(panels) = %d, want 7", len(m.panels))
 	}
 }
 
