@@ -109,9 +109,8 @@ func (p dropletsPanel) PaletteActions(droplet *cistern.Droplet) []PaletteAction 
 		return nil
 	}
 	id := droplet.ID
-	isTerminal := droplet.Status == "delivered" || droplet.Status == "cancelled"
 
-	if isTerminal {
+	if isTerminalStatus(droplet.Status) {
 		return []PaletteAction{
 			dropletPaletteAction("reopen", "return to cistern", id, actionReopen),
 		}

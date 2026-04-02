@@ -38,6 +38,13 @@ const (
 	actionApprove     = "approve"
 )
 
+// isTerminalStatus reports whether a droplet status string is terminal
+// (delivered or cancelled). Used to guard actions that must not run on
+// terminal droplets.
+func isTerminalStatus(status string) bool {
+	return status == "delivered" || status == "cancelled"
+}
+
 // tuiDetailDataMsg carries notes fetched for the Detail panel.
 // The dropletID field lets the handler discard stale responses when the user
 // navigates away before the fetch completes.
@@ -165,8 +172,8 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 				execErr = err
 				break
 			}
-			if item.Status == "delivered" || item.Status == "cancelled" {
-				execErr = fmt.Errorf("cannot pass: droplet %s has terminal status %q", dropletID, item.Status)
+			if isTerminalStatus(item.Status) {
+				execErr = fmt.Errorf("cannot %s: droplet %s has terminal status %q", action, dropletID, item.Status)
 				break
 			}
 			if err := c.SetOutcome(dropletID, "pass"); err != nil {
@@ -182,8 +189,8 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 				execErr = err
 				break
 			}
-			if item.Status == "delivered" || item.Status == "cancelled" {
-				execErr = fmt.Errorf("cannot recirculate: droplet %s has terminal status %q", dropletID, item.Status)
+			if isTerminalStatus(item.Status) {
+				execErr = fmt.Errorf("cannot %s: droplet %s has terminal status %q", action, dropletID, item.Status)
 				break
 			}
 			if item.Status != "in_progress" {
@@ -209,8 +216,8 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 				execErr = err
 				break
 			}
-			if item.Status == "delivered" || item.Status == "cancelled" {
-				execErr = fmt.Errorf("cannot approve: droplet %s has terminal status %q", dropletID, item.Status)
+			if isTerminalStatus(item.Status) {
+				execErr = fmt.Errorf("cannot %s: droplet %s has terminal status %q", action, dropletID, item.Status)
 				break
 			}
 			if item.CurrentCataractae != "human" {
