@@ -187,8 +187,8 @@ func newCockpitModel(cfgPath, dbPath string) cockpitModel {
 		newDashboardPanel(cfgPath, dbPath),
 		newStatusPanel(cfgPath, dbPath),
 		placeholderPanel{title: "Aqueducts"},
+		newDoctorPanel(),
 		placeholderPanel{title: "Inspect"},
-		placeholderPanel{title: "Audit"},
 	}
 	// Only panel[0] is initialized in Init(). All others are lazily initialized
 	// on first activation to prevent their tick chains from firing into the wrong
@@ -313,14 +313,21 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// All other panel-focused keys fall through to forwarding below.
 	}
 
-	// statusDataMsg and statusTickMsg always route to panels[2] (statusPanel)
-	// regardless of which panel is currently focused, so the background refresh
-	// loop continues running when the user is on a different panel.
+	// Certain message types always route to a specific panel regardless of which
+	// panel is currently focused, so background runs continue when the user is
+	// on a different panel.
 	switch msg.(type) {
 	case statusDataMsg, statusTickMsg:
 		if len(m.panels) > 2 {
 			updated, cmd := m.panels[2].Update(msg)
 			m.panels[2] = updated.(TUIPanel)
+			return m, cmd
+		}
+		return m, nil
+	case doctorOutputMsg:
+		if len(m.panels) > 4 {
+			updated, cmd := m.panels[4].Update(msg)
+			m.panels[4] = updated.(TUIPanel)
 			return m, cmd
 		}
 		return m, nil
