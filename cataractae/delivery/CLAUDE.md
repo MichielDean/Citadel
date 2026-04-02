@@ -13,7 +13,11 @@ go build ./...
 ```
 If go mod tidy changed go.mod/go.sum:
 ```bash
-git add go.mod go.sum -- ':!CONTEXT.md' && git commit -m "chore: go mod tidy"
+git add go.mod go.sum -- ':!CONTEXT.md'
+if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
+  git rm --cached CONTEXT.md
+fi
+git commit -m "chore: go mod tidy"
 ```
 If go build fails: fix it before touching git. A broken build should not reach a PR.
 
@@ -47,16 +51,7 @@ COMMIT_COUNT=$(git log origin/main..HEAD --oneline | wc -l)
 DROPLET_ID=$(grep '^## Item:' CONTEXT.md | awk '{print $3}')
 BRANCH=$(git branch --show-current)
 BASE=main
-
-# When external_ref is set (e.g. 'jira:DPF-456'), use the key part as the
-# branch suffix and prefix the PR title with the key.
-EXTERNAL_REF=$(grep '^\*\*External Ref:\*\*' CONTEXT.md | awk '{print $3}' | tr -d '[:space:]')
-REF_KEY=""
-if [ -n "$EXTERNAL_REF" ]; then
-  REF_KEY=$(echo "$EXTERNAL_REF" | cut -d: -f2-)
-fi
-
-echo "Delivering $DROPLET_ID from $BRANCH (external_ref: ${EXTERNAL_REF:-none})"
+echo "Delivering $DROPLET_ID from $BRANCH"
 ```
 
 Do NOT git stash. Per-droplet worktrees are clean by design. Stashing discards
@@ -86,6 +81,11 @@ If conflicts arise during rebase, resolve them — see Conflict Resolution below
 After fetch and any rebase:
 ```bash
 go build ./... && go test ./...
+if grep -rq '^<<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+  echo 'ERROR: conflict markers found after rebase — resolve before pushing'
+  ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
+  exit 1
+fi
 git push --force-with-lease origin $BRANCH
 ```
 
@@ -105,20 +105,23 @@ For each file:
 After resolving all files:
 ```bash
 git add $(git diff --name-only --diff-filter=U)
+if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
+  git rm --cached CONTEXT.md
+fi
 git rebase --continue
 go build ./... && go test ./...
+if grep -rq '^<<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+  echo 'ERROR: conflict markers found after rebase — resolve before pushing'
+  ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
+  exit 1
+fi
 git push --force-with-lease origin $BRANCH
 ```
 
 ## Step 3 — Open or locate the PR
 
 ```bash
-BASE_TITLE=$(grep '^\*\*Title:\*\*' CONTEXT.md | sed 's/\*\*Title:\*\* //')
-if [ -n "$REF_KEY" ]; then
-  PR_TITLE="$REF_KEY: $BASE_TITLE"
-else
-  PR_TITLE="$BASE_TITLE"
-fi
+PR_TITLE=$(grep '^\*\*Title:\*\*' CONTEXT.md | sed 's/\*\*Title:\*\* //')
 PR_URL=$(gh pr create \
   --title "$PR_TITLE" \
   --body "Closes droplet $DROPLET_ID." \
@@ -203,7 +206,11 @@ For each recirculate-eligible failing check:
 
 After each fix commit:
 ```bash
-git add -A -- ':!CONTEXT.md' && git commit -m "fix: <specific issue>" && git push
+git add -A -- ':!CONTEXT.md'
+if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
+  git rm --cached CONTEXT.md
+fi
+git commit -m "fix: <specific issue>" && git push
 ```
 
 Wait for the check to complete, then return to step 1 of the loop for any remaining failures.
@@ -235,10 +242,13 @@ Wait for all checks to pass before merging. If `gh pr checks` returns no output,
 ## Step 5 — Merge
 
 ```bash
-git fetch origin \
-  && git rebase origin/$BASE \
-  && git push --force-with-lease \
-  && gh pr merge "$PR_URL" --squash --delete-branch
+git fetch origin && git rebase origin/$BASE
+if grep -rq '^<<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+  echo 'ERROR: conflict markers found after rebase — resolve before pushing'
+  ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
+  exit 1
+fi
+git push --force-with-lease && gh pr merge "$PR_URL" --squash --delete-branch
 STATE=$(gh pr view "$PR_URL" --json state --jq '.state')
 if [ "$STATE" != "MERGED" ]; then
   echo "ERROR: merge failed — state is $STATE"
@@ -267,3 +277,5 @@ ct droplet pool $DROPLET_ID --notes "Cannot merge: <exact reason> — $PR_URL"
 - Fix CI, conflicts, and review comments yourself — do not recirculate for routine failures
 - Recirculate after 2 failed fix attempts on the same code-level CI check (see Step 4 recirculate path)
 - Recirculate only for code-level failures — never recirculate for infrastructure/pooled failures (pool instead)
+- Never run git add CONTEXT.md or git add -f CONTEXT.md under any circumstances
+- CONTEXT.md is pipeline state injected at dispatch time; it must never be committed
