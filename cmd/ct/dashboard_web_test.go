@@ -1516,6 +1516,224 @@ func TestDashboardTUI_FrameAccumulate_TwoMarkersInOneChunkCommitsBothFrames(t *t
 	}
 }
 
+// TestDashboardTUI_Resize_InjectsRepaintMarkerBeforeResize verifies that resize()
+// injects a repaintMarker into frameAccumulate before calling the PTY resize callback,
+// forcing the current pending frame to be committed as lastFrame so the upcoming
+// Bubble Tea redraw triggered by SIGWINCH starts from a clean frame boundary.
+//
+// Given: a DashboardTUI with inFrame=true and pending = marker+"frame-one-content"
+//
+//	(flush timer stopped so no background commit occurs)
+//
+// When:  resize(80, 24) is called
+// Then:  lastFrame == marker+"frame-one-content"  (pending committed via injected marker)
+// And:   pending starts with repaintMarker         (fresh boundary for upcoming redraw)
+// And:   the resize callback is called with cols=80, rows=24
+func TestDashboardTUI_Resize_InjectsRepaintMarkerBeforeResize(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Establish inFrame=true with pending = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+
+	// Stop the flush timer so no background commit races with the assertion.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+
+	// Inject a resize callback so resize() has a non-nil fn to call.
+	var resizeCols, resizeRows uint16
+	var resizeCalled bool
+	tui.resizeFn = func(cols, rows uint16) {
+		resizeCalled = true
+		resizeCols, resizeRows = cols, rows
+	}
+	tui.mu.Unlock()
+
+	tui.resize(80, 24)
+
+	tui.mu.Lock()
+	gotLastFrame := bytes.Clone(tui.lastFrame)
+	gotPending := bytes.Clone(tui.pending)
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	if !resizeCalled {
+		t.Error("resize callback was not called")
+	}
+	if resizeCols != 80 || resizeRows != 24 {
+		t.Errorf("resize called with cols=%d rows=%d, want 80 24", resizeCols, resizeRows)
+	}
+	wantLastFrame := []byte(marker + "frame-one-content")
+	if !bytes.Equal(gotLastFrame, wantLastFrame) {
+		t.Errorf("lastFrame = %q, want %q", gotLastFrame, wantLastFrame)
+	}
+	if !bytes.HasPrefix(gotPending, repaintMarker) {
+		t.Errorf("pending after resize does not start with repaint marker: %q", gotPending)
+	}
+}
+
+// TestDashboardTUI_Resize_NoCallbackWhenNoChildRunning verifies that resize()
+// does not inject a repaintMarker or call frameAccumulate when there is no
+// active PTY (resizeFn is nil), leaving lastFrame and pending unchanged.
+//
+// Given: a DashboardTUI with inFrame=true and pending = marker+"frame-one-content"
+//
+//	and no PTY running (resizeFn is nil by default)
+//
+// When:  resize(80, 24) is called
+// Then:  lastFrame is unchanged (nil)
+// And:   pending is unchanged (marker+"frame-one-content")
+func TestDashboardTUI_Resize_NoCallbackWhenNoChildRunning(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	tui.broadcast([]byte(marker + "frame-one-content"))
+
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	// resizeFn is nil — no PTY running.
+	tui.resize(80, 24)
+
+	tui.mu.Lock()
+	gotLastFrame := bytes.Clone(tui.lastFrame)
+	gotPending := bytes.Clone(tui.pending)
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	if gotLastFrame != nil {
+		t.Errorf("lastFrame = %q, want nil (resize with no PTY must not commit frame)", gotLastFrame)
+	}
+	wantPending := []byte(marker + "frame-one-content")
+	if !bytes.Equal(gotPending, wantPending) {
+		t.Errorf("pending = %q, want %q (resize with no PTY must not modify pending)", gotPending, wantPending)
+	}
+}
+
+// TestDashboardTUI_Resize_DoesNotDeliverSyntheticMarkerToClients verifies that
+// the repaintMarker injected by resize() goes through frameAccumulate only and
+// is NOT broadcast to connected clients. A regression to broadcast() would send
+// the synthetic clear-screen to every active WebSocket connection on each resize.
+//
+// Given: a DashboardTUI with a frame in progress and an attached client,
+//
+//	resizeFn set to a non-nil callback
+//
+// When:  resize(80, 24) is called
+// Then:  the client's channel remains empty (no bytes delivered)
+func TestDashboardTUI_Resize_DoesNotDeliverSyntheticMarkerToClients(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Establish inFrame=true with some pending content.
+	// broadcast() sends the chunk to all registered clients — none are attached yet,
+	// so this only sets up the internal frame state.
+	tui.broadcast([]byte(marker + "frame-one-content"))
+
+	// Stop the flush timer to prevent background commits during the test.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	// Attach a client. attach() acquires d.mu internally; do not hold it here.
+	// lastFrame is nil at this point (pending not yet committed), so attach()
+	// returns a nil snapshot — nothing is queued on client.ch.
+	client, _ := tui.attach()
+
+	// Set a non-nil resizeFn so resize() actually injects the marker.
+	tui.mu.Lock()
+	tui.resizeFn = func(cols, rows uint16) {}
+	tui.mu.Unlock()
+
+	tui.resize(80, 24)
+
+	// The client channel must be empty — the synthetic repaintMarker injected
+	// into frameAccumulate must not have been broadcast to connected clients.
+	if len(client.ch) != 0 {
+		t.Errorf("client received %d unexpected chunk(s) from resize(); synthetic repaintMarker must not be broadcast", len(client.ch))
+	}
+}
+
+// TestDashboardTUI_Attach_SnapshotAlwaysPrependsRepaintMarker verifies that
+// attach() prepends repaintMarker to the snapshot unconditionally — even when
+// lastFrame already starts with one — so xterm.js always begins from a clean
+// erase+cursor-home state regardless of prior render history.
+//
+// Given: a DashboardTUI where two repaint frames have been committed
+//
+//	(so lastFrame starts with repaintMarker)
+//
+// When:  attach() is called
+// Then:  snapshot == repaintMarker + lastFrame
+//
+//	(repaintMarker is prepended even though lastFrame already starts with it)
+func TestDashboardTUI_Attach_SnapshotAlwaysPrependsRepaintMarker(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Broadcast two frames so lastFrame is committed via the marker boundary path.
+	// After this: lastFrame = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+	tui.broadcast([]byte(marker + "frame-two-content"))
+
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	lastFrame := bytes.Clone(tui.lastFrame)
+	tui.mu.Unlock()
+
+	_, snapshot := tui.attach()
+
+	if snapshot == nil {
+		t.Fatal("snapshot is nil; want repaintMarker+lastFrame")
+	}
+
+	// snapshot must start with repaintMarker.
+	if !bytes.HasPrefix(snapshot, repaintMarker) {
+		t.Errorf("snapshot does not start with repaint marker: %q", snapshot)
+	}
+
+	// snapshot must equal repaintMarker + lastFrame (marker prepended even though
+	// lastFrame already begins with one).
+	wantSnapshot := append(bytes.Clone(repaintMarker), lastFrame...)
+	if !bytes.Equal(snapshot, wantSnapshot) {
+		t.Errorf("snapshot = %q, want %q", snapshot, wantSnapshot)
+	}
+}
+
+// TestDashboardTUI_Attach_NilSnapshotWhenNoFrameCommitted verifies that attach()
+// returns nil when no frame has been committed yet, preserving the existing
+// behaviour that new clients wait for the first real frame before rendering.
+//
+// Given: a DashboardTUI with no broadcast data
+// When:  attach() is called
+// Then:  snapshot is nil
+func TestDashboardTUI_Attach_NilSnapshotWhenNoFrameCommitted(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	_, snapshot := tui.attach()
+	if snapshot != nil {
+		t.Errorf("snapshot = %q, want nil (no frame committed)", snapshot)
+	}
+}
+
 // readWSTextFrame reads one unmasked WebSocket text frame from br and returns the payload.
 func readWSTextFrame(br *bufio.Reader) (string, error) {
 	header := make([]byte, 2)

@@ -594,16 +594,23 @@ func (d *DashboardTUI) flushPendingFrame(gen uint64) {
 	d.flushTimer = nil
 }
 
-// attach registers a new WebSocket client. It returns the client handle and a
-// copy of the last complete repaint frame (nil if none has been seen yet) to
-// send as the initial snapshot on connect or reconnect.
+// attach registers a new WebSocket client. It returns the client handle and the
+// initial snapshot to send on connect or reconnect. The snapshot is repaintMarker
+// prepended to lastFrame (nil if no frame has been committed yet). The leading
+// marker is injected unconditionally — even when lastFrame already starts with one
+// — so xterm.js always begins from a clean erase+cursor-home state regardless of
+// prior render history.
 // The caller must call detach when the WebSocket closes.
 func (d *DashboardTUI) attach() (*tuiClient, []byte) {
 	c := &tuiClient{ch: make(chan []byte, tuiClientChanSize)}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.clients[c] = struct{}{}
-	return c, bytes.Clone(d.lastFrame)
+	var snapshot []byte
+	if len(d.lastFrame) > 0 {
+		snapshot = append(bytes.Clone(repaintMarker), d.lastFrame...)
+	}
+	return c, snapshot
 }
 
 // detach unregisters the client. The child process continues running.
@@ -614,9 +621,16 @@ func (d *DashboardTUI) detach(c *tuiClient) {
 }
 
 // resize updates the PTY dimensions if the child process is running.
+// It injects a repaintMarker into frameAccumulate before calling the PTY resize
+// callback so the current pending frame is committed as lastFrame. This ensures
+// the Bubble Tea redraw triggered by SIGWINCH starts from a fresh frame boundary,
+// preventing stale compound frames from being delivered to new clients.
 func (d *DashboardTUI) resize(cols, rows uint16) {
 	d.mu.Lock()
 	fn := d.resizeFn
+	if fn != nil {
+		d.frameAccumulate(repaintMarker)
+	}
 	d.mu.Unlock()
 	if fn != nil {
 		fn(cols, rows)
