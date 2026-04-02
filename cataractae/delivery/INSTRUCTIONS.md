@@ -6,7 +6,11 @@ go build ./...
 ```
 If go mod tidy changed go.mod/go.sum:
 ```bash
-git add go.mod go.sum -- ':!CONTEXT.md' && git commit -m "chore: go mod tidy"
+git add go.mod go.sum -- ':!CONTEXT.md'
+if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
+  git rm --cached CONTEXT.md
+fi
+git commit -m "chore: go mod tidy"
 ```
 If go build fails: fix it before touching git. A broken build should not reach a PR.
 
@@ -70,6 +74,11 @@ If conflicts arise during rebase, resolve them — see Conflict Resolution below
 After fetch and any rebase:
 ```bash
 go build ./... && go test ./...
+if grep -rq '<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+  echo 'ERROR: conflict markers found after rebase — resolve before pushing'
+  ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
+  exit 1
+fi
 git push --force-with-lease origin $BRANCH
 ```
 
@@ -89,8 +98,16 @@ For each file:
 After resolving all files:
 ```bash
 git add $(git diff --name-only --diff-filter=U)
+if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
+  git rm --cached CONTEXT.md
+fi
 git rebase --continue
 go build ./... && go test ./...
+if grep -rq '<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+  echo 'ERROR: conflict markers found after rebase — resolve before pushing'
+  ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
+  exit 1
+fi
 git push --force-with-lease origin $BRANCH
 ```
 
@@ -182,7 +199,11 @@ For each recirculate-eligible failing check:
 
 After each fix commit:
 ```bash
-git add -A -- ':!CONTEXT.md' && git commit -m "fix: <specific issue>" && git push
+git add -A -- ':!CONTEXT.md'
+if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
+  git rm --cached CONTEXT.md
+fi
+git commit -m "fix: <specific issue>" && git push
 ```
 
 Wait for the check to complete, then return to step 1 of the loop for any remaining failures.
@@ -246,3 +267,5 @@ ct droplet pool $DROPLET_ID --notes "Cannot merge: <exact reason> — $PR_URL"
 - Fix CI, conflicts, and review comments yourself — do not recirculate for routine failures
 - Recirculate after 2 failed fix attempts on the same code-level CI check (see Step 4 recirculate path)
 - Recirculate only for code-level failures — never recirculate for infrastructure/pooled failures (pool instead)
+- Never run git add CONTEXT.md or git add -f CONTEXT.md under any circumstances
+- CONTEXT.md is pipeline state injected at dispatch time; it must never be committed
