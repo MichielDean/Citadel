@@ -22,15 +22,11 @@ type reposSkillsData struct {
 // reposSkillsDataMsg carries freshly fetched repos/skills data into the panel.
 type reposSkillsDataMsg *reposSkillsData
 
-// Compile-time interface check.
-var _ TUIPanel = reposSkillsPanel{}
-
 // reposSkillsPanel is the Repos & Skills cockpit module (key: 7).
 // It renders two sections: registered repositories (ct repo list) and installed
 // skills (ct skills list). Read-only MVP; r force-refreshes.
 type reposSkillsPanel struct {
 	cfgPath string
-	dbPath  string
 	data    *reposSkillsData
 	width   int
 	height  int
