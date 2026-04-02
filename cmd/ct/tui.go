@@ -351,29 +351,6 @@ func (m tabAppModel) execMultiActionCmd(action string, values []string) tea.Cmd 
 	}
 }
 
-// execIssueActionCmd executes a resolve or reject action for the given issueID
-// using evidence as the supporting text. The result uses selectedID so the
-// caller can refresh the correct detail view.
-func (m tabAppModel) execIssueActionCmd(issueID, action, evidence string) tea.Cmd {
-	dbPath := m.dbPath
-	selectedID := m.selectedID
-	return func() tea.Msg {
-		c, err := cistern.New(dbPath, "")
-		if err != nil {
-			return tuiActionResultMsg{dropletID: selectedID, err: err}
-		}
-		defer c.Close()
-		var execErr error
-		switch action {
-		case actionResolveIssue:
-			execErr = c.ResolveIssue(issueID, evidence)
-		case actionRejectIssue:
-			execErr = c.RejectIssue(issueID, evidence)
-		}
-		return tuiActionResultMsg{dropletID: selectedID, err: execErr}
-	}
-}
-
 // valAt returns values[i] if i is within bounds, otherwise "".
 func valAt(values []string, i int) string {
 	if i < len(values) {
@@ -459,7 +436,7 @@ func (m tabAppModel) handleOverlayKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			issueID := m.pendingIssueID
 			m = closeOverlay(m)
 			if action == actionResolveIssue || action == actionRejectIssue {
-				return m, m.execIssueActionCmd(issueID, action, input)
+				return m, m.execMultiActionCmd(action, []string{issueID, input})
 			}
 			return m, m.execActionCmd(id, action, input)
 		case "backspace":
