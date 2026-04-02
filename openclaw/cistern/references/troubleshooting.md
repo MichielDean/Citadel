@@ -310,7 +310,7 @@ Castellarius self-restarts when it detects a new binary (mtime check). To force:
 ```bash
 # Rebuild
 cd <worktree-path>
-PATH="/usr/local/go/bin:$PATH" go build -o ~/go/bin/ct ./cmd/ct/
+COMMIT=$(git rev-parse --short HEAD) && PATH="/usr/local/go/bin:$PATH" go build -ldflags "-X main.version=${COMMIT} -X main.commit=${COMMIT}" -o ~/go/bin/ct ./cmd/ct/
 
 # Then restart
 ct castellarius restart
