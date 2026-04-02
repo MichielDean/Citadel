@@ -38,16 +38,16 @@ func TestCockpit_NewModel_DropletsPreSelected(t *testing.T) {
 	}
 }
 
-// TestCockpit_NewModel_HasSixPanels verifies the cockpit ships with the expected
+// TestCockpit_NewModel_HasNinePanels verifies the cockpit ships with the expected
 // set of panels.
 //
 // Given: a new cockpitModel
 // When:  panels are inspected
-// Then:  eight panels are registered
-func TestCockpit_NewModel_HasEightPanels(t *testing.T) {
+// Then:  nine panels are registered
+func TestCockpit_NewModel_HasNinePanels(t *testing.T) {
 	m := newCockpitModel("", "")
-	if len(m.panels) != 8 {
-		t.Errorf("len(panels) = %d, want 8", len(m.panels))
+	if len(m.panels) != 9 {
+		t.Errorf("len(panels) = %d, want 9", len(m.panels))
 	}
 }
 
@@ -238,7 +238,7 @@ func TestCockpit_NumberKey_OutOfRange_NoChange(t *testing.T) {
 	m.cursor = 0
 	m.panelFocused = false
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
 	um := updated.(cockpitModel)
 
 	if um.cursor != 0 {
