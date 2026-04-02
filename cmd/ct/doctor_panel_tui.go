@@ -56,15 +56,16 @@ func (p doctorPanel) execDoctorCmd() tea.Cmd {
 		}
 		cmd := exec.Command(exe, "doctor")
 		out, err := cmd.CombinedOutput()
+		output := string(out)
 		if err != nil {
 			var exitErr *exec.ExitError
 			if !errors.As(err, &exitErr) {
 				// Non-ExitError: exec not found, permission denied, etc.
-				return doctorOutputMsg{output: fmt.Sprintf("error: %s", err), runAt: time.Now()}
+				output = fmt.Sprintf("error: %s", err)
 			}
 			// ExitError: non-zero exit is expected when checks fail; output carries the details.
 		}
-		return doctorOutputMsg{output: string(out), runAt: time.Now()}
+		return doctorOutputMsg{output: output, runAt: time.Now()}
 	}
 }
 
