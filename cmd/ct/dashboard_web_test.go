@@ -1693,6 +1693,10 @@ func TestDashboardTUI_Attach_SnapshotAlwaysPrependsRepaintMarker(t *testing.T) {
 	tui.broadcast([]byte(marker + "frame-two-content"))
 
 	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
 	lastFrame := bytes.Clone(tui.lastFrame)
 	tui.mu.Unlock()
 
