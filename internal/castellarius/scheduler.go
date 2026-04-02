@@ -101,7 +101,14 @@ type Castellarius struct {
 	// heartbeatInterval controls how often orphaned in-progress droplets are
 	// checked. Independent of pollInterval so it fires even when the main tick
 	// is busy. Defaults to 30s.
-	heartbeatInterval  time.Duration
+	heartbeatInterval time.Duration
+
+	// zombieGraceInterval is the minimum age a session must be before the
+	// zombie liveness check will reset it. This prevents false-positive zombie
+	// detection during startup when tmux may not yet be visible. Defaults to
+	// 2 × heartbeatInterval (typically 60s). Override via WithZombieGraceInterval
+	// in tests.
+	zombieGraceInterval time.Duration
 	sandboxRoot        string
 	cleanupInterval    time.Duration
 	dbPath             string
@@ -216,6 +223,14 @@ func WithDrainTimeout(d time.Duration) Option {
 // in-progress droplets. Defaults to 30s; pass a shorter duration in tests.
 func WithHeartbeatInterval(d time.Duration) Option {
 	return func(s *Castellarius) { s.heartbeatInterval = d }
+}
+
+// WithZombieGraceInterval overrides the minimum session age before the zombie
+// liveness check can reset a droplet. Defaults to 2× heartbeatInterval.
+// Use in tests to prevent false-positive zombie detection when using short
+// heartbeat intervals.
+func WithZombieGraceInterval(d time.Duration) Option {
+	return func(s *Castellarius) { s.zombieGraceInterval = d }
 }
 
 // New creates a Castellarius from an AqueductConfig.
@@ -346,6 +361,13 @@ func NewFromParts(
 	}
 	for _, o := range opts {
 		o(s)
+	}
+	// Default zombie grace to 2× heartbeatInterval so a freshly dispatched
+	// session always gets at least one full heartbeat cycle before it can be
+	// considered a zombie. Applied after options so callers can override via
+	// WithZombieGraceInterval.
+	if s.zombieGraceInterval == 0 {
+		s.zombieGraceInterval = 2 * s.heartbeatInterval
 	}
 
 	for _, repo := range config.Repos {
@@ -1417,12 +1439,13 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 		// the droplet to open for re-dispatch. This runs on every heartbeat
 		// tick (~30s) — no threshold, no waiting.
 		//
-		// Minimum age guard: skip sessions dispatched < 2× pollInterval ago.
-		// During the startup window tmux may not yet be visible and the agent
+		// Minimum age guard: skip sessions dispatched within the zombie grace
+		// interval. During startup tmux may not yet be visible and the agent
 		// process may not yet be forked — both checks would be false positives.
+		// Grace defaults to 2× heartbeatInterval; override via WithZombieGraceInterval.
 		if item.Assignee != "" {
 			sessionID := repo.Name + "-" + item.Assignee
-			if time.Since(item.UpdatedAt) < 2*s.pollInterval {
+			if time.Since(item.UpdatedAt) < s.zombieGraceInterval {
 				continue
 			}
 			if !isTmuxAlive(sessionID) {

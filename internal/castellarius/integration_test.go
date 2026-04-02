@@ -220,6 +220,10 @@ func newIntScheduler(client *cistern.Client, runner castellarius.CataractaeRunne
 		castellarius.WithPollInterval(500*time.Millisecond),
 		castellarius.WithHeartbeatInterval(time.Second),
 		castellarius.WithDrainTimeout(3*time.Second),
+		// Prevent false-positive zombie detection: fakeagent signals pass in
+		// ~200ms but the heartbeat fires every 1s. Set grace to 15s so no
+		// legitimate in-flight session is reset before it has time to signal.
+		castellarius.WithZombieGraceInterval(15*time.Second),
 	)
 }
 
