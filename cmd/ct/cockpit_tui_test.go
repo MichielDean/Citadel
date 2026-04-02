@@ -686,6 +686,33 @@ type overlayActivePanel struct {
 
 func (p overlayActivePanel) OverlayActive() bool { return true }
 
+// Update overrides placeholderPanel.Update to preserve the overlayActivePanel
+// type after forwarding — without this, any Update call demotes the receiver
+// back to placeholderPanel, silently breaking OverlayActive().
+func (p overlayActivePanel) Update(_ tea.Msg) (tea.Model, tea.Cmd) { return p, nil }
+
+// TestOverlayActivePanel_Update_PreservesType verifies that Update returns an
+// overlayActivePanel, not a placeholderPanel — preventing type demotion when
+// cockpit forwards messages to a panel with an active overlay.
+//
+// Given: an overlayActivePanel installed as the active cockpit panel
+// When:  a key message is forwarded to it via cockpit.Update
+// Then:  the panel at cursor is still an overlayActivePanel
+func TestOverlayActivePanel_Update_PreservesType(t *testing.T) {
+	m := newCockpitModel("", "")
+	m.cursor = 0
+	m.panelFocused = true
+	m.panels[0] = overlayActivePanel{placeholderPanel{title: "Test"}} // OverlayActive() == true
+
+	// Send a key that falls through to panel forwarding (overlay active blocks number-key intercept).
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	um := updated.(cockpitModel)
+
+	if _, ok := um.panels[0].(overlayActivePanel); !ok {
+		t.Errorf("panels[0] type = %T, want overlayActivePanel (type was demoted after Update)", um.panels[0])
+	}
+}
+
 // TestPlaceholderPanel_OverlayActive_ReturnsFalse verifies that the placeholder
 // panel always reports no active overlay.
 //
