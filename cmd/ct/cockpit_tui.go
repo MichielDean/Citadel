@@ -503,11 +503,10 @@ func filterPaletteActions(all []PaletteAction, query string) []PaletteAction {
 // openPalette collects actions from the active panel and opens the command
 // palette with a cleared query and cursor reset to 0.
 func (m cockpitModel) openPalette() cockpitModel {
+	m.paletteAll = nil
 	if m.cursor < len(m.panels) {
 		selected := m.panels[m.cursor].SelectedDroplet()
 		m.paletteAll = m.panels[m.cursor].PaletteActions(selected)
-	} else {
-		m.paletteAll = nil
 	}
 	m.paletteActive = true
 	m.paletteQuery = ""
@@ -530,7 +529,7 @@ func (m cockpitModel) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.paletteActive = false
 	case "enter":
-		if len(m.paletteFiltered) > 0 && m.paletteCursor < len(m.paletteFiltered) {
+		if m.paletteCursor < len(m.paletteFiltered) {
 			action := m.paletteFiltered[m.paletteCursor]
 			m.paletteActive = false
 			m.panelFocused = true
@@ -549,9 +548,7 @@ func (m cockpitModel) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(runes) > 0 {
 			m.paletteQuery = string(runes[:len(runes)-1])
 			m.paletteFiltered = filterPaletteActions(m.paletteAll, m.paletteQuery)
-			if m.paletteCursor >= len(m.paletteFiltered) {
-				m.paletteCursor = max(0, len(m.paletteFiltered)-1)
-			}
+			m.paletteCursor = min(m.paletteCursor, max(0, len(m.paletteFiltered)-1))
 		}
 	default:
 		if msg.Type == tea.KeyRunes {
