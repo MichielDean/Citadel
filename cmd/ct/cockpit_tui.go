@@ -48,6 +48,8 @@ var (
 	_ TUIPanel = dashboardPanel{}
 	_ TUIPanel = logPanel{}
 	_ TUIPanel = reposSkillsPanel{}
+	_ TUIPanel = filterPanel{}
+))
 )
 
 // ── dropletsPanel ────────────────────────────────────────────────────────────
@@ -236,6 +238,7 @@ func newCockpitModel(cfgPath, dbPath string) cockpitModel {
 		newLogPanel(defaultLogReader, nil),
 		placeholderPanel{title: "Audit"},
 		newReposSkillsPanel(cfgPath, dbPath),
+		newFilterPanel(),
 	}
 	// Only panel[0] is initialized in Init(). All others are lazily initialized
 	// on first activation to prevent their tick chains from firing into the wrong
@@ -393,6 +396,7 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case reposSkillsDataMsg:
+	case filterAgentMsg:
 		if len(m.panels) > 7 {
 			updated, cmd := m.panels[7].Update(msg)
 			m.panels[7] = updated.(TUIPanel)
