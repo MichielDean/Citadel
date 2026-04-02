@@ -17,7 +17,7 @@ import (
 //
 // Given: a dashboard model with one active aqueduct
 // When:  the 'p' key is pressed and tmuxAttachFunc succeeds
-// Then:  tmuxAttachFunc is called with the correct dropletID and session,
+// Then:  tmuxAttachFunc is called with the correct session name,
 //
 //	and peekActive remains false (no inline overlay opened)
 func TestDashboard_PeekKey_AlwaysCallsTmuxAttach(t *testing.T) {
@@ -69,7 +69,7 @@ func TestDashboard_PeekKey_AlwaysCallsTmuxAttach(t *testing.T) {
 //
 // Given: a dashboard model with one active aqueduct and tmuxAttachFunc returning an error
 // When:  the 'p' key is pressed and tmuxAttachFunc fails
-// Then:  the returned tea.Cmd yields a tuiPeekNewWindowErrMsg which, when
+// Then:  the returned tea.Cmd yields a tuiPeekAttachErrMsg which, when
 //
 //	processed, causes peekActive to be true (inline overlay opened),
 //	and the header mentions "tmux attach-session failed" (not "not inside tmux")
@@ -98,11 +98,11 @@ func TestDashboard_PeekKey_AttachFails_FallsBackToInline(t *testing.T) {
 		t.Fatal("expected a tea.Cmd, got nil")
 	}
 
-	// Execute the cmd; it should return a tuiPeekNewWindowErrMsg.
+	// Execute the cmd; it should return a tuiPeekAttachErrMsg.
 	msg := cmd()
-	errMsg, ok := msg.(tuiPeekNewWindowErrMsg)
+	errMsg, ok := msg.(tuiPeekAttachErrMsg)
 	if !ok {
-		t.Fatalf("cmd returned %T, want tuiPeekNewWindowErrMsg", msg)
+		t.Fatalf("cmd returned %T, want tuiPeekAttachErrMsg", msg)
 	}
 	if errMsg.err != simulatedErr {
 		t.Errorf("errMsg.err = %v, want %v", errMsg.err, simulatedErr)

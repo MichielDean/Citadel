@@ -49,9 +49,9 @@ type tuiTickMsg time.Time
 type tuiAnimMsg time.Time
 type tuiDataMsg *DashboardData
 
-// tuiPeekNewWindowErrMsg is sent when tmuxAttachFunc fails, triggering a
+// tuiPeekAttachErrMsg is sent when tmuxAttachFunc fails, triggering a
 // fallback to the inline capture-pane overlay.
-type tuiPeekNewWindowErrMsg struct {
+type tuiPeekAttachErrMsg struct {
 	ch  CataractaeInfo
 	err error
 }
@@ -145,10 +145,9 @@ func activeAqueducts(cataractae []CataractaeInfo) []CataractaeInfo {
 func (m dashboardTUIModel) openPeekOn(ch CataractaeInfo) (dashboardTUIModel, tea.Cmd) {
 	session := ch.RepoName + "-" + ch.Name
 	m.peekSelectMode = false
-	// Always attempt direct tmux attach; falls back to inline overlay on failure.
 	return m, func() tea.Msg {
 		if err := tmuxAttachFunc(session); err != nil {
-			return tuiPeekNewWindowErrMsg{ch: ch, err: err}
+			return tuiPeekAttachErrMsg{ch: ch, err: err}
 		}
 		return nil
 	}
@@ -158,14 +157,8 @@ func (m dashboardTUIModel) openPeekOn(ch CataractaeInfo) (dashboardTUIModel, tea
 // Called as a fallback when tmuxAttachFunc fails; err carries the attach error.
 func (m dashboardTUIModel) openInlinePeek(ch CataractaeInfo, err error) (dashboardTUIModel, tea.Cmd) {
 	session := ch.RepoName + "-" + ch.Name
-	var header string
-	if err != nil {
-		header = fmt.Sprintf("[%s] %s — flowing %s\ntmux attach-session failed (%v) — showing capture-pane snapshot",
-			ch.DropletID, ch.Step, formatElapsed(ch.Elapsed), err)
-	} else {
-		header = fmt.Sprintf("[%s] %s — flowing %s",
-			ch.DropletID, ch.Step, formatElapsed(ch.Elapsed))
-	}
+	header := fmt.Sprintf("[%s] %s — flowing %s\ntmux attach-session failed (%v) — showing capture-pane snapshot",
+		ch.DropletID, ch.Step, formatElapsed(ch.Elapsed), err)
 	pk := newPeekModel(defaultCapturer, session, header, 0)
 	pk.width = m.width
 	pk.height = m.height
@@ -265,7 +258,7 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.peekSelectIndex = len(active) - 1
 			}
 			return m, cmd
-		case tuiPeekNewWindowErrMsg:
+		case tuiPeekAttachErrMsg:
 			return m.openInlinePeek(msg.ch, msg.err)
 		}
 		return m, nil
@@ -287,7 +280,7 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tuiDataMsg:
 		return m.applyDataMsg(msg)
 
-	case tuiPeekNewWindowErrMsg:
+	case tuiPeekAttachErrMsg:
 		return m.openInlinePeek(msg.ch, msg.err)
 
 	case tea.KeyMsg:
