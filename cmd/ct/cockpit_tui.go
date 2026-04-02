@@ -175,11 +175,13 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		panelMsg := tea.WindowSizeMsg{Width: m.panelWidth(), Height: m.height}
+		var cmds []tea.Cmd
 		for i, p := range m.panels {
-			updated, _ := p.Update(panelMsg)
+			updated, cmd := p.Update(panelMsg)
 			m.panels[i] = updated.(TUIPanel)
+			cmds = append(cmds, cmd)
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
 		s := msg.String()

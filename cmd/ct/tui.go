@@ -810,14 +810,6 @@ func (m tabAppModel) viewPeek() string {
 	return m.peek.View() + "\n" + footer
 }
 
-// RunTabbedTUI launches the ct tui interactive panel using the alternate screen.
-func RunTabbedTUI(cfgPath, dbPath string) error {
-	m := newTabAppModel(cfgPath, dbPath)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
-	_, err := p.Run()
-	return err
-}
-
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Interactive TUI — navigate droplets and inspect detail with notes timeline",
