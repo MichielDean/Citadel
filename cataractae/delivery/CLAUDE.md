@@ -81,7 +81,7 @@ If conflicts arise during rebase, resolve them — see Conflict Resolution below
 After fetch and any rebase:
 ```bash
 go build ./... && go test ./...
-if grep -rq '<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+if grep -rq '^<<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
   echo 'ERROR: conflict markers found after rebase — resolve before pushing'
   ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
   exit 1
@@ -110,7 +110,7 @@ if git ls-files CONTEXT.md | grep -q CONTEXT.md; then
 fi
 git rebase --continue
 go build ./... && go test ./...
-if grep -rq '<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+if grep -rq '^<<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
   echo 'ERROR: conflict markers found after rebase — resolve before pushing'
   ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
   exit 1
@@ -243,7 +243,7 @@ Wait for all checks to pass before merging. If `gh pr checks` returns no output,
 
 ```bash
 git fetch origin && git rebase origin/$BASE
-if grep -rq '<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
+if grep -rq '^<<<<<<<' . --include='*.md' --include='*.go' --include='*.yaml'; then
   echo 'ERROR: conflict markers found after rebase — resolve before pushing'
   ct droplet pool $DROPLET_ID --notes 'Pooled: conflict markers present after rebase — manual resolution required'
   exit 1
