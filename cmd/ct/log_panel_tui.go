@@ -191,11 +191,10 @@ func (p logPanel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, p.fetchCmd()
 
 	case logContentMsg:
-		newContent := string(msg)
-		p.content = newContent
+		p.content = string(msg)
 		if !p.pinned {
 			// Auto-scroll to bottom, mirroring peekModel behaviour.
-			contentLines := len(strings.Split(newContent, "\n"))
+			contentLines := len(strings.Split(p.content, "\n"))
 			visible := max(p.height-4, 1)
 			if contentLines > visible {
 				p.scrollY = contentLines - visible

@@ -368,9 +368,8 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// All other panel-focused keys fall through to forwarding below.
 	}
 
-	// Certain message types always route to a specific panel regardless of which
-	// panel is currently focused, so background runs continue when the user is
-	// on a different panel.
+	// Background messages always route to their dedicated panels regardless of
+	// which panel is focused, so each panel's refresh loop keeps running.
 	switch msg.(type) {
 	case statusDataMsg, statusTickMsg:
 		if len(m.panels) > 2 {
@@ -379,29 +378,24 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
-		case doctorOutputMsg:
-			if len(m.panels) > 4 {
-				updated, cmd := m.panels[4].Update(msg)
-				m.panels[4] = updated.(TUIPanel)
-				return m, cmd
-			}
-			return m, nil
-		case reposSkillsDataMsg:
-			if len(m.panels) > 7 {
-				updated, cmd := m.panels[7].Update(msg)
-				m.panels[7] = updated.(TUIPanel)
-				return m, cmd
-			}
-			return m, nil
-	}
-
-	// logTickMsg and logContentMsg always route to panels[5] (logPanel)
-	// so the tail refresh loop continues when the user is on another panel.
-	switch msg.(type) {
+	case doctorOutputMsg:
+		if len(m.panels) > 4 {
+			updated, cmd := m.panels[4].Update(msg)
+			m.panels[4] = updated.(TUIPanel)
+			return m, cmd
+		}
+		return m, nil
 	case logTickMsg, logContentMsg:
-		if len(m.panels) > 5 {
-			updated, cmd := m.panels[5].Update(msg)
-			m.panels[5] = updated.(TUIPanel)
+		if len(m.panels) > 6 {
+			updated, cmd := m.panels[6].Update(msg)
+			m.panels[6] = updated.(TUIPanel)
+			return m, cmd
+		}
+		return m, nil
+	case reposSkillsDataMsg:
+		if len(m.panels) > 7 {
+			updated, cmd := m.panels[7].Update(msg)
+			m.panels[7] = updated.(TUIPanel)
 			return m, cmd
 		}
 		return m, nil
