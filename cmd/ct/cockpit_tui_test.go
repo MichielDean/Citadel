@@ -24,16 +24,17 @@ func TestCockpit_NewModel_CursorStartsAtZero(t *testing.T) {
 	}
 }
 
-// TestCockpit_NewModel_SidebarFocusedInitially verifies that the cockpit starts
-// in sidebar navigation mode (panelFocused = false).
+// TestCockpit_NewModel_DropletsPreSelected verifies that the cockpit starts with
+// the Droplets panel already focused, so ct tui lands the user in the droplets
+// list without requiring an extra keypress (identical UX to the pre-cockpit tui).
 //
 // Given: a new cockpitModel
 // When:  no messages have been processed
-// Then:  panelFocused = false
-func TestCockpit_NewModel_SidebarFocusedInitially(t *testing.T) {
+// Then:  panelFocused = true (Droplets panel is pre-selected)
+func TestCockpit_NewModel_DropletsPreSelected(t *testing.T) {
 	m := newCockpitModel("", "")
-	if m.panelFocused {
-		t.Error("panelFocused = true, want false (sidebar should have initial focus)")
+	if !m.panelFocused {
+		t.Error("panelFocused = false, want true (Droplets panel should be pre-selected)")
 	}
 }
 
@@ -61,6 +62,7 @@ func TestCockpit_NewModel_HasFivePanels(t *testing.T) {
 func TestCockpit_Sidebar_Down_MovesToNextPanel(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 0
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	um := updated.(cockpitModel)
@@ -79,6 +81,7 @@ func TestCockpit_Sidebar_Down_MovesToNextPanel(t *testing.T) {
 func TestCockpit_Sidebar_DownArrow_MovesToNextPanel(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 0
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	um := updated.(cockpitModel)
@@ -98,6 +101,7 @@ func TestCockpit_Sidebar_Down_AtLastPanel_Stays(t *testing.T) {
 	m := newCockpitModel("", "")
 	last := len(m.panels) - 1
 	m.cursor = last
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	um := updated.(cockpitModel)
@@ -116,6 +120,7 @@ func TestCockpit_Sidebar_Down_AtLastPanel_Stays(t *testing.T) {
 func TestCockpit_Sidebar_Up_MovesToPreviousPanel(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 1
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	um := updated.(cockpitModel)
@@ -134,6 +139,7 @@ func TestCockpit_Sidebar_Up_MovesToPreviousPanel(t *testing.T) {
 func TestCockpit_Sidebar_Up_AtFirstPanel_Stays(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 0
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	um := updated.(cockpitModel)
@@ -151,6 +157,7 @@ func TestCockpit_Sidebar_Up_AtFirstPanel_Stays(t *testing.T) {
 // Then:  panelFocused = true
 func TestCockpit_Sidebar_Enter_ActivatesPanelFocus(t *testing.T) {
 	m := newCockpitModel("", "")
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	um := updated.(cockpitModel)
@@ -169,6 +176,7 @@ func TestCockpit_Sidebar_Enter_ActivatesPanelFocus(t *testing.T) {
 func TestCockpit_Sidebar_Enter_CursorUnchanged(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 2
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	um := updated.(cockpitModel)
@@ -221,12 +229,13 @@ func TestCockpit_NumberKey_1_ActivatesFirstPanel(t *testing.T) {
 // TestCockpit_NumberKey_OutOfRange_NoChange verifies that pressing '9' when fewer
 // than 9 panels exist does not change cursor or focus.
 //
-// Given: cockpit with 5 panels, cursor=0, panelFocused=false
+// Given: cockpit with 5 panels, cursor=0, panelFocused=false (sidebar mode)
 // When:  '9' is pressed
 // Then:  cursor=0, panelFocused=false (unchanged)
 func TestCockpit_NumberKey_OutOfRange_NoChange(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 0
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
 	um := updated.(cockpitModel)
@@ -239,26 +248,70 @@ func TestCockpit_NumberKey_OutOfRange_NoChange(t *testing.T) {
 	}
 }
 
-// TestCockpit_NumberKey_ForwardedToPanel_WhenPanelFocused verifies that digit keys
-// are forwarded to the active panel when panelFocused=true, not intercepted by
-// the cockpit for panel switching.
+// TestCockpit_NumberKey_FromPanelMode_JumpsToPanel verifies that pressing a digit
+// key while a panel is focused switches to the corresponding panel, enabling
+// "press 1 from any module to return to Droplets" navigation.
 //
-// Given: panelFocused=true, cursor=0
+// Given: panelFocused=true, cursor=0, no overlay active
 // When:  '2' is pressed
-// Then:  cursor remains 0 and panelFocused remains true (digit was not intercepted)
-func TestCockpit_NumberKey_ForwardedToPanel_WhenPanelFocused(t *testing.T) {
+// Then:  cursor=1, panelFocused=true
+func TestCockpit_NumberKey_FromPanelMode_JumpsToPanel(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 0
 	m.panelFocused = true
+	m.panels[0] = placeholderPanel{title: "Test"} // OverlayActive() == false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	um := updated.(cockpitModel)
+
+	if um.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (digit key should jump to panel from panel mode)", um.cursor)
+	}
+	if !um.panelFocused {
+		t.Error("panelFocused = false, want true after panel-mode number key jump")
+	}
+}
+
+// TestCockpit_Key1_FromPanelMode_ReturnsToDroplets verifies the acceptance criterion:
+// pressing '1' from any module returns the user to the Droplets panel.
+//
+// Given: panelFocused=true, cursor=2 (some other panel), no overlay active
+// When:  '1' is pressed
+// Then:  cursor=0 (Droplets), panelFocused=true
+func TestCockpit_Key1_FromPanelMode_ReturnsToDroplets(t *testing.T) {
+	m := newCockpitModel("", "")
+	m.cursor = 2
+	m.panelFocused = true
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	um := updated.(cockpitModel)
+
+	if um.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (pressing 1 from any module should return to Droplets)", um.cursor)
+	}
+	if !um.panelFocused {
+		t.Error("panelFocused = false, want true")
+	}
+}
+
+// TestCockpit_NumberKey_ForwardedToPanel_WhenOverlayActive verifies that digit keys
+// are forwarded to the active panel when an overlay is open, so text overlays can
+// receive digit input without triggering panel switching.
+//
+// Given: panelFocused=true, cursor=0, overlay is active
+// When:  '2' is pressed
+// Then:  cursor remains 0 (digit was forwarded to panel, not intercepted)
+func TestCockpit_NumberKey_ForwardedToPanel_WhenOverlayActive(t *testing.T) {
+	m := newCockpitModel("", "")
+	m.cursor = 0
+	m.panelFocused = true
+	m.panels[0] = overlayActivePanel{placeholderPanel{title: "Test"}} // OverlayActive() == true
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	um := updated.(cockpitModel)
 
 	if um.cursor != 0 {
-		t.Errorf("cursor = %d, want 0 (digit should not switch panels when panel focused)", um.cursor)
-	}
-	if !um.panelFocused {
-		t.Error("panelFocused = false, want true")
+		t.Errorf("cursor = %d, want 0 (digit must not switch panels when overlay is active)", um.cursor)
 	}
 }
 
@@ -272,6 +325,7 @@ func TestCockpit_NumberKey_ForwardedToPanel_WhenPanelFocused(t *testing.T) {
 // Then:  panelFocused=true
 func TestCockpit_Tab_EnablesPanelFocus(t *testing.T) {
 	m := newCockpitModel("", "")
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	um := updated.(cockpitModel)
@@ -310,6 +364,7 @@ func TestCockpit_Tab_ForwardedToPanel_WhenPanelFocused(t *testing.T) {
 // Then:  returned command is tea.Quit
 func TestCockpit_Q_Quits(t *testing.T) {
 	m := newCockpitModel("", "")
+	m.panelFocused = false
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
@@ -722,6 +777,7 @@ func TestCockpit_Esc_ForwardedToPanel_WhenOverlayActive(t *testing.T) {
 // Then:  output contains "tab→panel"
 func TestCockpit_View_Hint_ContainsTabToPanel_WhenSidebarFocused(t *testing.T) {
 	m := newCockpitModel("", "")
+	m.panelFocused = false
 
 	if !strings.Contains(m.View(), "tab→panel") {
 		t.Error("View() does not contain 'tab→panel' hint when sidebar is focused")
@@ -754,6 +810,7 @@ func TestCockpit_View_Hint_ContainsEscToSidebar_WhenPanelFocused(t *testing.T) {
 func TestCockpit_Sidebar_UpArrow_MovesToPreviousPanel(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.cursor = 1
+	m.panelFocused = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	um := updated.(cockpitModel)

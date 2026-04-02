@@ -132,10 +132,13 @@ type cockpitModel struct {
 // newCockpitModel builds the root cockpit model with all registered panels.
 // The Droplets panel is the only fully-implemented module; the rest ship as
 // placeholders ready for future implementation.
+// The cockpit starts with panelFocused=true so that ct tui lands the user
+// directly in the Droplets list — identical UX to the pre-cockpit tui.
 func newCockpitModel(cfgPath, dbPath string) cockpitModel {
 	m := cockpitModel{
-		width:  100,
-		height: 24,
+		width:        100,
+		height:       24,
+		panelFocused: true,
 	}
 	inner := newTabAppModel(cfgPath, dbPath)
 	inner.width = m.panelWidth()
@@ -196,9 +199,11 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
-		// Sidebar mode: all sidebar key handling consolidated here.
-		if !m.panelFocused {
-			if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		// Number keys switch panels from any mode — sidebar or panel — unless a
+		// panel overlay is currently consuming keyboard input (e.g. typing a note).
+		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+			overlayActive := m.cursor < len(m.panels) && m.panels[m.cursor].OverlayActive()
+			if !overlayActive {
 				idx := int(s[0] - '1')
 				if idx < len(m.panels) {
 					m.cursor = idx
@@ -206,6 +211,11 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			// overlay active: fall through to panel forwarding so the digit
+			// reaches the text input field.
+		}
+		// Sidebar mode: tab/enter/q/Q/up/down/j/k.
+		if !m.panelFocused {
 			switch s {
 			case "tab", "enter":
 				m.panelFocused = true
