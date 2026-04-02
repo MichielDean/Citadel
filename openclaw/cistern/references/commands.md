@@ -305,12 +305,12 @@ ct tui                           # Launch interactive cockpit (requires active t
 The cockpit provides a two-pane interface: persistent left sidebar for module navigation, and a right pane showing the active module's content.
 
 **Cockpit Layout**
-- **Left sidebar**: Lists all available modules (Droplets, Dashboard, Status, Inspect, Doctor) with keyboard shortcuts (1–9)
+- **Left sidebar**: Lists all available modules (Droplets, Dashboard, Status, Inspect, Filter, Doctor) with keyboard shortcuts (1–9)
   - Cursor highlight indicates focus: `▶` = panel focused (green), `▷` = sidebar focused (yellow)
-  - Currently, Droplets, Status, and Doctor modules are fully implemented; others ship as placeholders
-- **Left sidebar**: Lists all available modules (Droplets, Flow, Dashboard, Status, Aqueducts, Inspect, Audit, Repos & Skills) with keyboard shortcuts (1–9)
-  - Cursor highlight indicates focus: `▶` = panel focused (green), `▷` = sidebar focused (yellow)
-  - Currently, Droplets, Dashboard, Status, and Repos & Skills modules are fully implemented; others ship as placeholders
+  - Currently, Droplets, Status, Filter, and Doctor modules are fully implemented; others ship as placeholders others ship as placeholders
+=======
+  - Currently, Droplets, Status, Filter, and Doctor modules are fully implemented; others ship as placeholders
+>>>>>>> 28a2b06 (ci-o3yxk: docs: add Filter module documentation to cockpit)
 - **Right pane**: Displays the active module's content
 
 **Navigation**
@@ -400,6 +400,40 @@ The Repos & Skills module displays registered repositories and installed skills 
 
 - **Navigation**: `↑↓` or `jk` to scroll, `g` to jump to top, `G` to jump to bottom, `r` to refresh
 - **Auto-refresh**: Displays fetch timestamp and supports `r` to force immediate refresh
+
+**Filter Module** (key: 8)
+
+The Filter module provides an interactive multi-turn conversation for refining ideas and specifications. It's a thinking tool, not a filing tool — use it to clarify concepts before creating formal droplets with `ct droplet add`.
+
+**First Use (Initial Setup)**
+- On first activation, a single text box appears
+- Enter your idea in the format: `title\ndetailed context`
+  - First line becomes the session title
+  - Remaining lines are the initial context
+- Press `enter` to submit and begin the conversation
+
+**Conversation View**
+- **Message history**: Displays alternating user (you) and LLM (Claude) messages in a scrollable pane
+- **Text input**: Single-line input at the bottom; press `enter` to submit
+- **Session indicator**: Current session ID shown in the header (maintained for `--resume` across sessions)
+- **Submission feedback**: Brief spinner displays during processing; full LLM response renders when complete (no streaming)
+
+**Controls**
+- `enter` — **Submit** — Send your message and receive a response
+- `n` — **New Session** — Start a fresh conversation, clearing history and session ID
+- `↑↓` or `j/k` — **Scroll history** — Navigate through past messages
+- `esc` — **Return to sidebar** — Close the filter panel
+
+**Session Persistence**
+- Each session receives a unique ID from the Claude agent
+- Session ID is displayed at the top of the conversation
+- Use `ct filter --resume <session-id>` in the terminal to reconnect to a previous session and continue the conversation
+
+**Example Workflow**
+1. Open Filter module (press `8`)
+2. Enter: `Authorization refactor\nWe need to standardize auth across services. Currently using JWT in some, basic auth in others. SAML requirements coming Q3.`
+3. Have a multi-turn conversation to refine the spec
+4. When ready, use `ct droplet add` from the terminal to file a formal work item based on the session output
 
 ## Status & Health
 
