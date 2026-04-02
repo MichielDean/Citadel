@@ -242,7 +242,7 @@ If you see a droplet note like: `"Session zombie detected: tmux alive but claude
 If you want to understand why the agent exited:
 ```bash
 ct droplet show <id>              # View the note timestamp and cataractae
-ct droplet peek <id> --raw        # Read the session log file directly (if saved)
+ct droplet peek <id> --raw        # Read the session log file directly
 journalctl --user -u cistern-castellarius --since "1h ago" | grep <id>  # Check scheduler logs
 ```
 
