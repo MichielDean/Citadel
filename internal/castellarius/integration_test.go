@@ -8,6 +8,7 @@ package castellarius_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,9 +27,13 @@ import (
 // Prerequisites
 // ─────────────────────────────────────────────────────────────────────────────
 
-// checkIntegrationPrereqs skips the test if required binaries are unavailable.
+// checkIntegrationPrereqs skips the test if required binaries are unavailable
+// or if CISTERN_SKIP_INTEGRATION is set (allowing production machines to opt out).
 func checkIntegrationPrereqs(t *testing.T) {
 	t.Helper()
+	if os.Getenv("CISTERN_SKIP_INTEGRATION") != "" {
+		t.Skip("CISTERN_SKIP_INTEGRATION is set: skipping integration test")
+	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available: skipping integration test")
 	}
@@ -59,8 +64,8 @@ func buildCt(t *testing.T) string        { return buildBinary(t, "ct", "./cmd/ct
 // It creates a minimal CONTEXT.md in a temp workdir so fakeagent can read the
 // droplet ID and signal pass via `ct droplet pass <id>`.
 //
-// Session names follow the production convention (repo-aqueduct) so that
-// isTmuxAlive checks in the heartbeat goroutine behave correctly.
+// Session names are prefixed with a short hash derived from t.TempDir() to
+// prevent collision with production sessions and with other concurrent tests.
 type integrationRunner struct {
 	t        *testing.T
 	agentBin string            // absolute path to the fakeagent binary
@@ -78,6 +83,9 @@ type integrationRunner struct {
 	mu         sync.Mutex
 	sessions   []string // tmux session names for cleanup
 	spawnCount int      // incremented on each Spawn call, protected by mu
+
+	prefixOnce sync.Once
+	prefix     string // short hash prefix derived from t.TempDir() on first Spawn
 }
 
 // intShellQuote wraps s in single quotes, escaping any single quotes within.
@@ -88,9 +96,20 @@ func intShellQuote(s string) string {
 // Spawn creates a workdir, writes CONTEXT.md, and starts a tmux session running
 // fakeagent. Returns immediately (non-blocking).
 //
-// The session is named <repo>-<aqueduct> (matching the production convention)
-// so that isTmuxAlive checks in heartbeatRepo see accurate liveness.
+// Session names are prefixed with a short hash derived from t.TempDir() so they
+// cannot collide with production sessions regardless of repo or aqueduct name.
+// The heartbeat's isTmuxAlive check uses item.Outcome to skip items that have
+// already signaled, so the prefix mismatch is safe — see heartbeatRepo.
 func (r *integrationRunner) Spawn(_ context.Context, req castellarius.CataractaeRequest) error {
+	// Derive a stable per-test prefix from the first t.TempDir() call (6 hex
+	// chars of the SHA-256 of its basename).  sync.Once ensures the prefix is
+	// computed exactly once and is consistent across all Spawn calls in a test.
+	r.prefixOnce.Do(func() {
+		dir := r.t.TempDir()
+		sum := sha256.Sum256([]byte(filepath.Base(dir)))
+		r.prefix = fmt.Sprintf("%x", sum[:3]) // 3 bytes → 6 hex chars
+	})
+
 	dir, err := os.MkdirTemp("", "cistern-inttest-*")
 	if err != nil {
 		return fmt.Errorf("integrationRunner: mkdir: %w", err)
@@ -103,8 +122,9 @@ func (r *integrationRunner) Spawn(_ context.Context, req castellarius.Cataractae
 		return fmt.Errorf("integrationRunner: write CONTEXT.md: %w", err)
 	}
 
-	// Session name matches the production convention so isTmuxAlive works.
-	sessionID := req.RepoConfig.Name + "-" + req.AqueductName
+	// Session name: <prefix>-<repo>-<aqueduct>.  The prefix isolates test
+	// sessions from production and from concurrent test runs.
+	sessionID := r.prefix + "-" + req.RepoConfig.Name + "-" + req.AqueductName
 	r.mu.Lock()
 	r.sessions = append(r.sessions, sessionID)
 	n := r.spawnCount
