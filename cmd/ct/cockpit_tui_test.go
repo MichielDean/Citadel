@@ -763,6 +763,46 @@ func TestCockpit_Sidebar_UpArrow_MovesToPreviousPanel(t *testing.T) {
 	}
 }
 
+// recordingPanel is a test-only TUIPanel stub that captures the last
+// tea.WindowSizeMsg width it receives, allowing tests to assert that the
+// cockpit forwards the adjusted panel width rather than the raw terminal width.
+type recordingPanel struct {
+	placeholderPanel
+	receivedWidth int
+}
+
+func (p recordingPanel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		p.receivedWidth = wsm.Width
+	}
+	return p, nil
+}
+
+// TestCockpit_WindowSizeMsg_ForwardsPanelWidth_ToPanel verifies that a
+// WindowSizeMsg is forwarded to panels with the cockpit-adjusted panel width
+// (terminal width minus sidebar and separator), not the raw terminal width.
+//
+// Given: a cockpit with a recording stub at panels[0]
+// When:  WindowSizeMsg{Width:120, Height:40} is received
+// Then:  panels[0] received Width == m.panelWidth() (99), not 120
+func TestCockpit_WindowSizeMsg_ForwardsPanelWidth_ToPanel(t *testing.T) {
+	m := newCockpitModel("", "")
+	m.panels[0] = recordingPanel{placeholderPanel: placeholderPanel{title: "Test"}}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	um := updated.(cockpitModel)
+
+	want := um.panelWidth() // max(120-20-1, 20) = 99
+	got := um.panels[0].(recordingPanel).receivedWidth
+	if got != want {
+		t.Errorf("panel received Width=%d, want %d (panelWidth, not raw terminal width)", got, want)
+	}
+	// Sanity: panel width must differ from terminal width to prove the test is meaningful.
+	if want == 120 {
+		t.Errorf("panelWidth == terminal width (%d); test would not catch a regression", want)
+	}
+}
+
 // ── joinSideBySide unequal heights ───────────────────────────────────────────
 
 // TestJoinSideBySide_UnequalHeights_PadsShorterSide verifies that when the
