@@ -832,7 +832,7 @@ Press esc to return.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfgPath := resolveConfigPath()
 		dbPath := resolveDBPath()
-		return RunTabbedTUI(cfgPath, dbPath)
+		return RunCockpitTUI(cfgPath, dbPath)
 	},
 }
 
