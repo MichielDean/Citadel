@@ -64,9 +64,11 @@ func (p filterPanel) Init() tea.Cmd { return nil }
 // For a first-use session it parses the prompt (first line = title, rest =
 // description) and invokes invokeFilterNew. For resume sessions it calls
 // invokeFilterResume with the stored sessionID.
-func (p filterPanel) submitCmd(prompt string) tea.Cmd {
+//
+// firstUse must be captured by the caller before any history mutation so that
+// the correct routing is used even when history has already been updated.
+func (p filterPanel) submitCmd(prompt string, firstUse bool) tea.Cmd {
 	sessionID := p.sessionID
-	firstUse := p.isFirstUse()
 	return func() tea.Msg {
 		preset := resolveFilterPreset("")
 		var result filterSessionResult
@@ -98,8 +100,12 @@ func (p filterPanel) doSubmit() (tea.Model, tea.Cmd) {
 	if prompt == "" {
 		return p, nil
 	}
+	// Capture firstUse before appending to history so that submitCmd sees the
+	// correct routing: the first submission must call invokeFilterNew, not
+	// invokeFilterResume.
+	firstUse := p.isFirstUse()
 	p.history = append(p.history, filterConvEntry{role: "user", text: prompt})
-	cmd := p.submitCmd(prompt)
+	cmd := p.submitCmd(prompt, firstUse)
 	p.inputBuf = ""
 	p.running = true
 	p.errMsg = ""

@@ -533,6 +533,64 @@ func TestFilterPanel_Update_CtrlDKey_AppendsUserHistory(t *testing.T) {
 	}
 }
 
+// ── submitCmd routing ─────────────────────────────────────────────────────────
+
+// TestFilterPanel_SubmitCmd_FirstUse_ReturnsNonNilCmd verifies that submitCmd with
+// firstUse=true returns a non-nil cmd.
+//
+// Given: a new filterPanel (no history, no sessionID)
+// When:  submitCmd("title\ndesc", true) is called
+// Then:  a non-nil cmd is returned
+func TestFilterPanel_SubmitCmd_FirstUse_ReturnsNonNilCmd(t *testing.T) {
+	p := newFilterPanel()
+	cmd := p.submitCmd("title\ndesc", true)
+	if cmd == nil {
+		t.Error("submitCmd(prompt, firstUse=true) = nil, want non-nil cmd")
+	}
+}
+
+// TestFilterPanel_SubmitCmd_Resume_ReturnsNonNilCmd verifies that submitCmd with
+// firstUse=false returns a non-nil cmd.
+//
+// Given: a filterPanel with sessionID="sess-abc"
+// When:  submitCmd("follow up", false) is called
+// Then:  a non-nil cmd is returned
+func TestFilterPanel_SubmitCmd_Resume_ReturnsNonNilCmd(t *testing.T) {
+	p := newFilterPanel()
+	p.sessionID = "sess-abc"
+	cmd := p.submitCmd("follow up", false)
+	if cmd == nil {
+		t.Error("submitCmd(prompt, firstUse=false) = nil, want non-nil cmd")
+	}
+}
+
+// TestFilterPanel_IsFirstUse_MustBeCapturedBeforeHistoryAppend is a regression test
+// for the bug where isFirstUse() was evaluated after history was appended in doSubmit,
+// causing the first submission to incorrectly route to invokeFilterResume instead of
+// invokeFilterNew.
+//
+// Given: a new filterPanel (first-use mode)
+// When:  firstUse is captured before appending a history entry
+// Then:  the captured value is true, and isFirstUse() is false after the append
+func TestFilterPanel_IsFirstUse_MustBeCapturedBeforeHistoryAppend(t *testing.T) {
+	p := newFilterPanel()
+
+	if !p.isFirstUse() {
+		t.Fatal("precondition failed: isFirstUse() = false on new panel, want true")
+	}
+
+	// Capture firstUse before mutating history — this is what doSubmit must do.
+	firstUse := p.isFirstUse()
+	p.history = append(p.history, filterConvEntry{role: "user", text: "title"})
+
+	if !firstUse {
+		t.Error("firstUse captured before append = false, want true (routing bug: isFirstUse was evaluated after history mutation)")
+	}
+	if p.isFirstUse() {
+		t.Error("isFirstUse() = true after history append, want false")
+	}
+}
+
 // ── Update: key events — resume mode ─────────────────────────────────────────
 
 // TestFilterPanel_Update_EnterKey_ResumeMode_SetsRunning verifies that Enter in resume
