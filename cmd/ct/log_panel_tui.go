@@ -290,4 +290,6 @@ func (p logPanel) KeyHelp() string {
 
 func (p logPanel) OverlayActive() bool { return false }
 
+func (p logPanel) SelectedDroplet() *cistern.Droplet { return nil }
+
 func (p logPanel) PaletteActions(_ *cistern.Droplet) []PaletteAction { return nil }
