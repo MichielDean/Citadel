@@ -803,6 +803,26 @@ func TestCockpit_WindowSizeMsg_ForwardsPanelWidth_ToPanel(t *testing.T) {
 	}
 }
 
+// ── dropletsPanel KeyHelp ────────────────────────────────────────────────────
+
+// TestDropletsPanel_KeyHelp_ReturnsNavigationHint verifies that dropletsPanel
+// returns the expected non-empty navigation hint string.
+//
+// Given: a dropletsPanel
+// When:  KeyHelp() is called
+// Then:  the returned string contains navigation hint text
+func TestDropletsPanel_KeyHelp_ReturnsNavigationHint(t *testing.T) {
+	p := newDropletsPanel("", "")
+	got := p.KeyHelp()
+	if got == "" {
+		t.Error("KeyHelp() returned empty string, want navigation hint")
+	}
+	want := "↑↓/jk navigate  enter/d detail  p peek"
+	if got != want {
+		t.Errorf("KeyHelp() = %q, want %q", got, want)
+	}
+}
+
 // ── joinSideBySide unequal heights ───────────────────────────────────────────
 
 // TestJoinSideBySide_UnequalHeights_PadsShorterSide verifies that when the
@@ -819,6 +839,27 @@ func TestJoinSideBySide_UnequalHeights_PadsShorterSide(t *testing.T) {
 		t.Fatalf("got %d lines, want 3; result=%q", len(lines), result)
 	}
 	want := []string{"X  │1", "   │2", "   │3"}
+	for i, w := range want {
+		if lines[i] != w {
+			t.Errorf("line[%d] = %q, want %q", i, lines[i], w)
+		}
+	}
+}
+
+// TestJoinSideBySide_UnequalHeights_PadsLongerSidebar verifies that when the
+// sidebar has more lines than the panel, the extra sidebar lines are still
+// rendered with the panel column empty.
+//
+// Given: sidebar = "A\nB\nC" (3 lines), panel = "1" (1 line), sidebarW = 3
+// When:  joinSideBySide is called
+// Then:  line[0] = "A  │1", line[1] = "B  │", line[2] = "C  │"
+func TestJoinSideBySide_UnequalHeights_PadsLongerSidebar(t *testing.T) {
+	result := joinSideBySide("A\nB\nC", "1", 3)
+	lines := strings.Split(result, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want 3; result=%q", len(lines), result)
+	}
+	want := []string{"A  │1", "B  │", "C  │"}
 	for i, w := range want {
 		if lines[i] != w {
 			t.Errorf("line[%d] = %q, want %q", i, lines[i], w)
