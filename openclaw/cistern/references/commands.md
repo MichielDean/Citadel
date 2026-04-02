@@ -305,13 +305,13 @@ ct tui                           # Launch interactive cockpit (requires active t
 The cockpit provides a two-pane interface: persistent left sidebar for module navigation, and a right pane showing the active module's content.
 
 **Cockpit Layout**
-- **Left sidebar**: Lists all available modules (Droplets, Dashboard, Status, Castellarius, Inspect, Filter, Doctor) with keyboard shortcuts (1–9)
+- **Left sidebar**: Lists all available modules (Droplets, Dashboard, Status, Castellarius, Inspect, Filter, Doctor) with keyboard shortcuts (1–8)
   - Cursor highlight indicates focus: `▶` = panel focused (green), `▷` = sidebar focused (yellow)
   - Currently, Droplets, Status, Castellarius, Filter, and Doctor modules are fully implemented; others ship as placeholders
 - **Right pane**: Displays the active module's content
 
 **Navigation**
-- **Sidebar mode**: `↑↓` or `k/j` to navigate, `1–9` to jump to a specific module, `enter`/`tab` to open the module
+- **Sidebar mode**: `↑↓` or `k/j` to navigate, `1–8` to jump to a specific module, `enter`/`tab` to open the module
 - **Panel mode**: Module content receives all keyboard input; `esc` returns to sidebar (unless the module has an active overlay)
 - **Global**: `q`/`Q` quit (sidebar mode only), `ctrl+c` always quits
 
