@@ -582,7 +582,6 @@ ct dashboard --web             HTTP web dashboard on 127.0.0.1:5737 — renders 
                                Programmatic endpoints preserved: /api/dashboard/events (SSE),
                                /ws/aqueducts/{name}/peek (WebSocket)
 ct dashboard --web --addr 127.0.0.1:8080  Custom listen address (must include hostname or IP)
-ct feed                        Alias for dashboard
 
 # Status — observe the system
 ct status                      Overall status: cistern level, aqueduct flow, cataractae chains
