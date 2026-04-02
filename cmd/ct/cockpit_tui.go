@@ -329,7 +329,8 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// doctorOutputMsg always routes to panels[4] (doctorPanel) regardless of
 	// which panel is currently focused, so the one-shot Init run result is
 	// delivered even when the user is on a different panel.
-	if _, ok := msg.(doctorOutputMsg); ok {
+	switch msg.(type) {
+	case doctorOutputMsg:
 		if len(m.panels) > 4 {
 			updated, cmd := m.panels[4].Update(msg)
 			m.panels[4] = updated.(TUIPanel)

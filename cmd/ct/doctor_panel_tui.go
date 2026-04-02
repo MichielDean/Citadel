@@ -98,8 +98,7 @@ func (p doctorPanel) View() string {
 		return "\n  Running ct doctor…\n"
 	}
 
-	var lines []string
-	lines = append(lines, "")
+	lines := []string{""}
 
 	for _, line := range strings.Split(p.output, "\n") {
 		lines = append(lines, "  "+line)
