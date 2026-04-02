@@ -220,20 +220,6 @@ func writeStageMarker(workDir, identity string) {
 	_ = os.WriteFile(filepath.Join(workDir, ".current-stage"), []byte(identity), 0o644)
 }
 
-// priorSessionCount returns the number of prior session files Claude has stored
-// for workDir. Claude stores sessions under ~/.claude/projects/<escaped-path>/.
-// Returns 0 when the directory does not exist or cannot be read.
-func priorSessionCount(home, workDir string) int {
-	// Claude encodes the absolute path by replacing '/' with '-'.
-	escaped := strings.ReplaceAll(workDir, "/", "-")
-	projectDir := filepath.Join(home, ".claude", "projects", escaped)
-	entries, err := os.ReadDir(projectDir)
-	if err != nil {
-		return 0
-	}
-	return len(entries)
-}
-
 // isSessionAlive returns true if a tmux session with the given ID is running.
 // Extracted as a package-level function so the quick-exit goroutine can call
 // it without holding a *Session reference.

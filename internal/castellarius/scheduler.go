@@ -1560,8 +1560,8 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 
 		// Re-spawn the stalled session if an assignee is present. Decoupled from
 		// note writing so retries occur on every tick regardless of rate-limiting.
-		// session.Spawn() detects prior Claude session files and uses --continue
-		// when they exist, or spawns fresh when priorSessionCount == 0.
+		// session.Spawn() checks .current-stage to resume within the same stage
+		// or start fresh on a stage transition.
 		if item.Assignee != "" {
 			if err := s.respawnStalledDroplet(ctx, client, repo, item); err != nil {
 				// Spawn failure: reset rate-limit entry so the next tick can write

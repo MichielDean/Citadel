@@ -1171,39 +1171,6 @@ func TestWriteStageMarker_OverwritesPreviousStage(t *testing.T) {
 	}
 }
 
-// --- priorSessionCount tests ---
-
-// TestPriorSessionCount_ReturnsZero_WhenNoDirExists verifies that priorSessionCount
-// returns 0 when the Claude projects directory does not exist.
-func TestPriorSessionCount_ReturnsZero_WhenNoDirExists(t *testing.T) {
-	dir := t.TempDir()
-	// No .claude/projects directory created.
-	if got := priorSessionCount(dir, "/some/workdir"); got != 0 {
-		t.Errorf("priorSessionCount = %d, want 0 when dir absent", got)
-	}
-}
-
-// TestPriorSessionCount_ReturnsCount_WhenFilesExist verifies that priorSessionCount
-// returns the number of entries in the Claude projects directory.
-func TestPriorSessionCount_ReturnsCount_WhenFilesExist(t *testing.T) {
-	home := t.TempDir()
-	workDir := "/my/project/dir"
-	escaped := strings.ReplaceAll(workDir, "/", "-")
-	projectDir := filepath.Join(home, ".claude", "projects", escaped)
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Create 3 session files.
-	for i := range 3 {
-		if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("session-%d.json", i)), []byte("{}"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := priorSessionCount(home, workDir); got != 3 {
-		t.Errorf("priorSessionCount = %d, want 3", got)
-	}
-}
-
 // --- spawn logging tests ---
 
 // TestSpawn_LogsFreshSession_WhenNoTmux verifies that spawn emits a structured
