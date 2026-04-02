@@ -2465,3 +2465,147 @@ func TestExecActionCmd_Approve_SetsDeliveryStep(t *testing.T) {
 		t.Errorf("status = %q, want %q (Assign should set status=open)", d.Status, "open")
 	}
 }
+
+// TestExecActionCmd_Pass_OnTerminalDroplet_ReturnsError verifies that execActionCmd
+// with actionPass on a terminal (cancelled) droplet returns an error and does not
+// modify the droplet — guarding against TOCTOU races where a concurrent status
+// change happens after the palette is shown but before the action executes.
+//
+// Given: a real cistern DB with a cancelled droplet
+// When:  execActionCmd with actionPass is executed
+// Then:  tuiActionResultMsg.err is non-nil and droplet status remains "cancelled"
+func TestExecActionCmd_Pass_OnTerminalDroplet_ReturnsError(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	// Cancel the droplet to make it terminal.
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Cancel(id, ""); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	c.Close()
+
+	m := newTabAppModel("", dbPath)
+	cmd := m.execActionCmd(id, actionPass, "")
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err == nil {
+		t.Error("err = nil, want non-nil error for terminal droplet")
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	d, err := c2.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Status != "cancelled" {
+		t.Errorf("status = %q, want %q (cancelled droplet must not be modified)", d.Status, "cancelled")
+	}
+}
+
+// TestExecActionCmd_Recirculate_OnTerminalDroplet_ReturnsError verifies that
+// execActionCmd with actionRecirculate on a terminal (cancelled) droplet returns
+// an error and does not reopen the droplet — guarding against TOCTOU races.
+//
+// Given: a real cistern DB with a cancelled droplet
+// When:  execActionCmd with actionRecirculate is executed
+// Then:  tuiActionResultMsg.err is non-nil and droplet status remains "cancelled"
+func TestExecActionCmd_Recirculate_OnTerminalDroplet_ReturnsError(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	// Cancel the droplet to make it terminal.
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Cancel(id, ""); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	c.Close()
+
+	m := newTabAppModel("", dbPath)
+	cmd := m.execActionCmd(id, actionRecirculate, "")
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err == nil {
+		t.Error("err = nil, want non-nil error for terminal droplet")
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	d, err := c2.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Status != "cancelled" {
+		t.Errorf("status = %q, want %q (cancelled droplet must not be reopened)", d.Status, "cancelled")
+	}
+}
+
+// TestExecActionCmd_Approve_WhenNotHumanGated_ReturnsError verifies that
+// execActionCmd with actionApprove on a droplet not at the "human" cataractae
+// returns an error and does not force the droplet to the delivery step —
+// guarding against TOCTOU races where a stale palette shows approve for a
+// droplet that has since moved past the human gate.
+//
+// Given: a real cistern DB with a droplet at cataractae "implement" (not "human")
+// When:  execActionCmd with actionApprove is executed
+// Then:  tuiActionResultMsg.err is non-nil and CurrentCataractae remains "implement"
+func TestExecActionCmd_Approve_WhenNotHumanGated_ReturnsError(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	// Set cataractae to "implement" — not the human gate.
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetCataractae(id, "implement"); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	c.Close()
+
+	m := newTabAppModel("", dbPath)
+	cmd := m.execActionCmd(id, actionApprove, "")
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err == nil {
+		t.Error("err = nil, want non-nil error when not at human gate")
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	d, err := c2.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.CurrentCataractae != "implement" {
+		t.Errorf("CurrentCataractae = %q, want %q (non-human droplet must not be moved to delivery)", d.CurrentCataractae, "implement")
+	}
+}

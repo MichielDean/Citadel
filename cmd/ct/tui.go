@@ -165,6 +165,10 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 				execErr = err
 				break
 			}
+			if item.Status == "delivered" || item.Status == "cancelled" {
+				execErr = fmt.Errorf("cannot pass: droplet %s has terminal status %q", dropletID, item.Status)
+				break
+			}
 			if err := c.SetOutcome(dropletID, "pass"); err != nil {
 				execErr = err
 				break
@@ -176,6 +180,10 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 			item, err := c.Get(dropletID)
 			if err != nil {
 				execErr = err
+				break
+			}
+			if item.Status == "delivered" || item.Status == "cancelled" {
+				execErr = fmt.Errorf("cannot recirculate: droplet %s has terminal status %q", dropletID, item.Status)
 				break
 			}
 			if item.Status != "in_progress" {
@@ -196,6 +204,15 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 		case actionReopen:
 			execErr = c.UpdateStatus(dropletID, "open")
 		case actionApprove:
+			item, err := c.Get(dropletID)
+			if err != nil {
+				execErr = err
+				break
+			}
+			if item.CurrentCataractae != "human" {
+				execErr = fmt.Errorf("%s is not awaiting human approval (cataractae: %s)", dropletID, item.CurrentCataractae)
+				break
+			}
 			execErr = c.Assign(dropletID, "", "delivery")
 		}
 		return tuiActionResultMsg{dropletID: dropletID, err: execErr}
