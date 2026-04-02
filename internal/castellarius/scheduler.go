@@ -2183,7 +2183,7 @@ func dirtyNonContextFiles(dir string) ([]string, error) {
 			continue
 		}
 		name := strings.TrimSpace(line[3:])
-		if name != "CONTEXT.md" {
+		if name != "CONTEXT.md" && name != ".current-stage" {
 			dirty = append(dirty, name)
 		}
 	}
