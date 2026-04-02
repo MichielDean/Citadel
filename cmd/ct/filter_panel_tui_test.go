@@ -330,14 +330,40 @@ func TestFilterPanel_Update_AgentMsg_Error_SetsErrMsg(t *testing.T) {
 	}
 }
 
-// TestFilterPanel_Update_AgentMsg_Error_DoesNotAppendHistory verifies that an error
-// does not add an entry to history.
+// TestFilterPanel_Update_AgentMsg_Error_FirstUse_PopsHistoryEntry verifies that a
+// failed first-use invocation pops the pending user history entry so that the
+// panel returns to first-use mode and the next retry routes to invokeFilterNew.
 //
-// Given: a filterPanel with one user history entry and running=true
+// Given: a filterPanel with one user history entry, sessionID="" (first-use), running=true
+// When:  a filterAgentMsg with err set is processed
+// Then:  history length is 0 (entry popped) and isFirstUse() returns true
+func TestFilterPanel_Update_AgentMsg_Error_FirstUse_PopsHistoryEntry(t *testing.T) {
+	p := newFilterPanel()
+	p.history = []filterConvEntry{{role: "user", text: "hello"}}
+	p.running = true
+	// sessionID is "" — first-use invocation
+
+	updated, _ := p.Update(filterAgentMsg{err: errors.New("exec failed")})
+	up := updated.(filterPanel)
+
+	if len(up.history) != 0 {
+		t.Errorf("len(history) = %d, want 0 after first-use error (entry should be popped)", len(up.history))
+	}
+	if !up.isFirstUse() {
+		t.Error("isFirstUse() = false after first-use error, want true (retry must route to invokeFilterNew)")
+	}
+}
+
+// TestFilterPanel_Update_AgentMsg_Error_Resume_KeepsHistoryEntry verifies that a
+// failed resume invocation does NOT pop the history entry — the session is
+// already established and the user entry should remain visible.
+//
+// Given: a filterPanel with one user history entry, sessionID="sess-abc", running=true
 // When:  a filterAgentMsg with err set is processed
 // Then:  history length stays at 1
-func TestFilterPanel_Update_AgentMsg_Error_DoesNotAppendHistory(t *testing.T) {
+func TestFilterPanel_Update_AgentMsg_Error_Resume_KeepsHistoryEntry(t *testing.T) {
 	p := newFilterPanel()
+	p.sessionID = "sess-abc"
 	p.history = []filterConvEntry{{role: "user", text: "hello"}}
 	p.running = true
 
@@ -345,7 +371,7 @@ func TestFilterPanel_Update_AgentMsg_Error_DoesNotAppendHistory(t *testing.T) {
 	up := updated.(filterPanel)
 
 	if len(up.history) != 1 {
-		t.Errorf("len(history) = %d, want 1 after error", len(up.history))
+		t.Errorf("len(history) = %d, want 1 after resume error (entry must not be popped)", len(up.history))
 	}
 }
 

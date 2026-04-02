@@ -123,6 +123,13 @@ func (p filterPanel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.running = false
 		if msg.err != nil {
 			p.errMsg = msg.err.Error()
+			// If invokeFilterNew failed (sessionID still empty), pop the user
+			// entry that doSubmit appended so that isFirstUse() returns true
+			// again. Without this, the next retry sees len(history)==1 and
+			// routes to invokeFilterResume("") instead of invokeFilterNew.
+			if p.sessionID == "" && len(p.history) > 0 {
+				p.history = p.history[:len(p.history)-1]
+			}
 		} else {
 			p.errMsg = ""
 			if msg.result.SessionID != "" {
