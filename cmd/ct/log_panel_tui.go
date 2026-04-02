@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,19 +35,63 @@ type logReader interface {
 type fileLogReader struct{}
 
 func (fileLogReader) ReadTail(path string, maxLines int) (string, error) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	size := info.Size()
+	if size == 0 {
+		return "", nil
+	}
+
+	if maxLines <= 0 {
+		data, err := io.ReadAll(f)
+		return string(data), err
+	}
+
+	// Estimate how far from the end to seek. A generous per-line budget avoids
+	// multiple seeks for typical log lines while keeping allocations bounded.
+	const bytesPerLine = 256
+	readLen := int64(maxLines) * bytesPerLine
+	if readLen >= size {
+		// File fits within our window — read it all from the start.
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return "", err
+		}
+		return tailLines(string(data), maxLines), nil
+	}
+
+	// Seek to the estimated start position near the end of the file.
+	if _, err := f.Seek(-readLen, io.SeekEnd); err != nil {
+		return "", err
+	}
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", err
 	}
 	content := string(data)
-	if maxLines <= 0 {
-		return content, nil
+	// Drop the first (potentially incomplete) line since we seeked mid-file.
+	if idx := strings.IndexByte(content, '\n'); idx >= 0 {
+		content = content[idx+1:]
 	}
-	lines := strings.Split(content, "\n")
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
+	return tailLines(content, maxLines), nil
+}
+
+// tailLines returns the last n lines of s, joined by newlines.
+// When n <= 0 or n >= len(lines), s is returned unchanged.
+func tailLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
 	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, "\n")
 }
 
 // defaultLogReader is the singleton production reader.
@@ -130,7 +175,7 @@ func (p logPanel) fetchCmd() tea.Cmd {
 		}
 		content, err := reader.ReadTail(src, logPanelTailLines)
 		if err != nil {
-			return logContentMsg("")
+			return logContentMsg(fmt.Sprintf("(error reading log: %s)", err))
 		}
 		return logContentMsg(content)
 	}
@@ -232,10 +277,7 @@ func (p logPanel) View() string {
 	} else {
 		lines := strings.Split(p.content, "\n")
 		visible := max(p.height-4, 1)
-		start := max(p.scrollY, 0)
-		if start >= len(lines) {
-			start = max(len(lines)-1, 0)
-		}
+		start := min(max(p.scrollY, 0), max(len(lines)-visible, 0))
 		end := min(start+visible, len(lines))
 		b.WriteString(strings.Join(lines[start:end], "\n"))
 	}
