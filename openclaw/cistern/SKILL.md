@@ -74,8 +74,7 @@ ct droplet add \
   --title "Short imperative description" \
   --repo <repo-name> \
   --complexity standard \
-  --description "What, why, acceptance criteria" \
-  --yes
+  --description "What, why, acceptance criteria"
 ```
 
 ### Filtered — for non-trivial or exploratory work:
@@ -97,9 +96,9 @@ ct filter --resume <session-id> "answers and context..."
 ```bash
 # File each droplet explicitly, wiring deps with --depends-on
 ct droplet add --title "First droplet" --repo <repo> --complexity standard \
-  --description "..." --yes
+  --description "..."
 ct droplet add --title "Second droplet" --repo <repo> --complexity standard \
-  --description "..." --depends-on <first-id> --yes
+  --description "..." --depends-on <first-id>
 ```
 
 **Rules:**
@@ -122,22 +121,15 @@ openclaw message send --channel telegram --target "$CHAT_ID" \
   --buttons '<buttons-json>'
 ```
 
-**After each filtration round** (present the updated spec, then):
+**After each filtration round** (present the numbered spec, then):
 ```json
-[ [{"text":"✅ File it","callback_data":"filter:file"},
+[ [{"text":"✅ Ready to file","callback_data":"filter:file"},
    {"text":"🔄 Another round","callback_data":"filter:continue"}],
   [{"text":"❌ Cancel","callback_data":"filter:cancel"}] ]
 ```
 
-**When the spec splits into multiple droplets** (list them, then):
-```json
-[ [{"text":"✅ File all","callback_data":"filter:file"},
-   {"text":"✏️ Revise","callback_data":"filter:continue"}],
-  [{"text":"❌ Cancel","callback_data":"filter:cancel"}] ]
-```
-
 Button click responses arrive as `callback_data: filter:file` etc. Map them:
-- `filter:file` → file each droplet manually with `ct droplet add`, wiring `--depends-on` explicitly
+- `filter:file` → file each droplet manually with `ct droplet add`, wiring `--depends-on` explicitly; confirm each ID after filing
 - `filter:continue` → ask what to refine, do another round
 - `filter:cancel` → confirm cancellation, do not file
 
