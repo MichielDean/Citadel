@@ -1453,3 +1453,27 @@ func TestDropletEdit(t *testing.T) {
 		}
 	})
 }
+
+func TestRootCmd_CompletionCommand_IsHiddenFromHelp(t *testing.T) {
+	if !rootCmd.CompletionOptions.HiddenDefaultCmd {
+		t.Error("rootCmd.CompletionOptions.HiddenDefaultCmd must be true to hide 'completion' from help output")
+	}
+}
+
+func TestRootCmd_CompletionCommand_BashSubcommandExists(t *testing.T) {
+	rootCmd.InitDefaultCompletionCmd()
+	completionCmd, _, err := rootCmd.Find([]string{"completion"})
+	if err != nil {
+		t.Fatalf("unexpected error finding completion command: %v", err)
+	}
+	if completionCmd == nil || completionCmd.Name() != "completion" {
+		t.Fatal("completion command must exist for installer (ct completion bash)")
+	}
+	bashCmd, _, err := completionCmd.Find([]string{"bash"})
+	if err != nil {
+		t.Fatalf("unexpected error finding completion bash subcommand: %v", err)
+	}
+	if bashCmd == nil || bashCmd.Name() != "bash" {
+		t.Fatal("completion bash subcommand must exist for installer")
+	}
+}

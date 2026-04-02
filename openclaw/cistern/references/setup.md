@@ -11,7 +11,7 @@ Or clone and build manually:
 ```bash
 git clone https://github.com/MichielDean/Cistern.git ~/cistern
 cd ~/cistern
-PATH="/usr/local/go/bin:$PATH" go build -o ~/go/bin/ct ./cmd/ct/
+COMMIT=$(git rev-parse --short HEAD) && PATH="/usr/local/go/bin:$PATH" go build -ldflags "-X main.version=${COMMIT} -X main.commit=${COMMIT}" -o ~/go/bin/ct ./cmd/ct/
 ```
 
 ## First Run
@@ -65,7 +65,7 @@ If you have local commits or need to rebuild from a worktree:
 
 ```bash
 cd <worktree-path>
-PATH="/usr/local/go/bin:$PATH" go build -o ~/go/bin/ct ./cmd/ct/
+COMMIT=$(git rev-parse --short HEAD) && PATH="/usr/local/go/bin:$PATH" go build -ldflags "-X main.version=${COMMIT} -X main.commit=${COMMIT}" -o ~/go/bin/ct ./cmd/ct/
 ```
 
 ## Environment Variables
