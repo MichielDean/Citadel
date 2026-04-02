@@ -1037,15 +1037,20 @@ func TestFlowPanel_Title_ReturnsFlow(t *testing.T) {
 }
 
 // TestFlowPanel_KeyHelp_ReturnsNavigationHint verifies that the dashboard/flow
-// panel returns a non-empty key-help string describing its key bindings.
+// panel returns the expected navigation hint string.
 //
 // Given: a dashboardPanel
 // When:  KeyHelp() is called
-// Then:  a non-empty hint string is returned
+// Then:  the returned string matches the expected navigation hint exactly
 func TestFlowPanel_KeyHelp_ReturnsNavigationHint(t *testing.T) {
 	p := newDashboardPanel("", "")
-	if got := p.KeyHelp(); got == "" {
+	got := p.KeyHelp()
+	if got == "" {
 		t.Error("KeyHelp() returned empty string, want navigation hint")
+	}
+	want := "↑↓/jk scroll  p peek  r refresh"
+	if got != want {
+		t.Errorf("KeyHelp() = %q, want %q", got, want)
 	}
 }
 
@@ -1223,6 +1228,35 @@ func TestCockpit_TabKey_LazyInitializesPanel_WhenCursorOnUninitializedPanel(t *t
 	}
 	if cmd == nil {
 		t.Error("cmd = nil, want non-nil (panel Init must be called on first activation via tab)")
+	}
+}
+
+// TestCockpit_EnterKey_LazyInitializesPanel_WhenCursorOnUninitializedPanel
+// verifies that pressing enter to focus a panel that was reached via cursor
+// navigation (j/k) but never yet initialized triggers its Init.
+//
+// Given: cursor moved to panel 1 via 'j' (not yet initialized), panelFocused=false
+// When:  Enter is pressed
+// Then:  initializedPanels[1]=true and returned cmd is non-nil
+func TestCockpit_EnterKey_LazyInitializesPanel_WhenCursorOnUninitializedPanel(t *testing.T) {
+	m := newCockpitModel("", "")
+
+	// Move cursor to panel[1] without focusing (j key — does not trigger init).
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(cockpitModel)
+	if m.initializedPanels[1] {
+		t.Fatal("precondition: panels[1] must not be initialized after cursor-only move")
+	}
+
+	// Now press enter to focus the panel.
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	um := updated.(cockpitModel)
+
+	if !um.initializedPanels[1] {
+		t.Error("initializedPanels[1] = false after enter-focusing panel 2, want true")
+	}
+	if cmd == nil {
+		t.Error("cmd = nil, want non-nil (panel Init must be called on first activation via enter)")
 	}
 }
 
