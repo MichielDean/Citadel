@@ -786,12 +786,6 @@ var dashboardCmd = &cobra.Command{
 	RunE:  runDashboard,
 }
 
-var feedCmd = &cobra.Command{
-	Use:   "feed",
-	Short: "Alias for dashboard",
-	RunE:  runDashboard,
-}
-
 func runDashboard(cmd *cobra.Command, args []string) error {
 	cfgPath := resolveConfigPath()
 	dbPath := resolveDBPath()
@@ -804,7 +798,6 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 
 func init() {
 	rootCmd.AddCommand(dashboardCmd)
-	rootCmd.AddCommand(feedCmd)
 
 	dashboardCmd.Flags().BoolVar(&dashboardWebFlag, "web", false, "Start HTTP web dashboard instead of TUI")
 	dashboardCmd.Flags().StringVar(&dashboardAddrFlag, "addr", "127.0.0.1:5737", "Address for web dashboard (default 127.0.0.1:5737)")
