@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Remove ct audit command (ci-cv5jf)
+
+Deleted the `ct audit run` command. The audit agent provided little practical value: it hallucinated findings for wrong codebases, filed them under incorrect prefixes, and results required extensive manual triage that defeated the purpose of automation.
+
+**Removed:**
+- `ct audit run` command and all its flags (`--dry-run`, `--model`, `--priority`)
+- Audit agent system and infrastructure
+- `openclaw/cistern/references/commands.md#security-audit` documentation
+
+**Impact**: Teams requiring security reviews should use the dedicated security-review cataractae in the standard aqueduct pipeline, which provides context-aware, human-auditable security analysis with full codebase access.
+
 ### Integration tests: session name isolation and production opt-out (ci-47i5f)
 
 Cistern integration tests now run safely on production machines alongside the live Castellarius. Test sessions are prefixed with a unique identifier derived from the test's temporary directory, preventing tmux session name collisions with production aqueducts. Production operators can skip integration tests by setting `CISTERN_SKIP_INTEGRATION=1`, allowing machines to run only unit tests if desired.
