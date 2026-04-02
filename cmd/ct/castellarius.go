@@ -653,6 +653,60 @@ Use --droplet <id> to provide a specific droplet as trigger context.`,
 	},
 }
 
+// ct castellarius stop — send SIGTERM to the running Castellarius
+
+var castellariusStopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop the Castellarius — send SIGTERM to the running overseer",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Try systemctl first (standard deployment via cistern-castellarius.service).
+		if err := exec.Command("systemctl", "--user", "stop", "cistern-castellarius").Run(); err == nil {
+			fmt.Println("Castellarius stopped.")
+			return nil
+		}
+		// Fall back: send SIGTERM to any running ct castellarius start process.
+		out, err := exec.Command("pkill", "-TERM", "-f", "castellarius start").CombinedOutput()
+		if err != nil {
+			// pkill exit code 1 means no matching process was found.
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+				fmt.Println("Castellarius is not running.")
+				return nil
+			}
+			return fmt.Errorf("stop: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+		fmt.Println("Castellarius stopped.")
+		return nil
+	},
+}
+
+// ct castellarius restart — stop the running Castellarius and start a new one
+
+var castellariusRestartCmd = &cobra.Command{
+	Use:   "restart",
+	Short: "Restart the Castellarius — stop then start in one step",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Try systemctl first (standard deployment via cistern-castellarius.service).
+		if err := exec.Command("systemctl", "--user", "restart", "cistern-castellarius").Run(); err == nil {
+			fmt.Println("Castellarius restarted.")
+			return nil
+		}
+		// Fall back: stop the existing process, then spawn a detached replacement.
+		exec.Command("pkill", "-TERM", "-f", "castellarius start").Run() //nolint:errcheck
+		time.Sleep(time.Second)
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("restart: cannot find executable: %w", err)
+		}
+		c := exec.Command(exe, "castellarius", "start")
+		c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := c.Start(); err != nil {
+			return fmt.Errorf("restart: cannot start: %w", err)
+		}
+		fmt.Println("Castellarius restarted (detached process).")
+		return nil
+	},
+}
+
 func init() {
 	castellariusStartCmd.Flags().StringVar(&configPath, "config", "", "path to cistern.yaml (default: ~/.cistern/cistern.yaml)")
 
@@ -663,7 +717,7 @@ func init() {
 	architectiRunCmd.Flags().StringVar(&architectiRunDropletID, "droplet", "", "use a specific droplet as trigger context")
 	architectiCmd.AddCommand(architectiRunCmd)
 
-	castellariusCmd.AddCommand(castellariusStartCmd, castellariusStatusCmd)
+	castellariusCmd.AddCommand(castellariusStartCmd, castellariusStatusCmd, castellariusStopCmd, castellariusRestartCmd)
 	aqueductCmd.AddCommand(aqueductStatusCmd, aqueductValidateCmd)
 
 	rootCmd.AddCommand(castellariusCmd, aqueductCmd, statusCmd, architectiCmd)

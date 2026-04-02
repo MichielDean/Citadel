@@ -49,6 +49,7 @@ var (
 	_ TUIPanel = logPanel{}
 	_ TUIPanel = reposSkillsPanel{}
 	_ TUIPanel = filterPanel{}
+	_ TUIPanel = castellariusPanel{}
 )
 
 // ── dropletsPanel ────────────────────────────────────────────────────────────
@@ -232,7 +233,7 @@ func newCockpitModel(cfgPath, dbPath string) cockpitModel {
 		dropletsPanel{inner: inner},
 		newDashboardPanel(cfgPath, dbPath),
 		newStatusPanel(cfgPath, dbPath),
-		placeholderPanel{title: "Aqueducts"},
+		newCastellariusPanel(),
 		newDoctorPanel(),
 		newLogPanel(defaultLogReader, nil),
 		newReposSkillsPanel(cfgPath, dbPath),
@@ -384,6 +385,13 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.panels) > 4 {
 			updated, cmd := m.panels[4].Update(msg)
 			m.panels[4] = updated.(TUIPanel)
+			return m, cmd
+		}
+		return m, nil
+	case castellariusStatusOutputMsg, castellariusTick, castellariusCmdMsg, castellariusCmdOutputMsg:
+		if len(m.panels) > 3 {
+			updated, cmd := m.panels[3].Update(msg)
+			m.panels[3] = updated.(TUIPanel)
 			return m, cmd
 		}
 		return m, nil
