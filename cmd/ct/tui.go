@@ -382,17 +382,22 @@ func valAt(values []string, i int) string {
 	return ""
 }
 
-// openCreateDropletOverlay puts m into overlayMulti mode for the new-droplet
-// creation form. Callers set m.tab as needed before calling.
-func openCreateDropletOverlay(m tabAppModel) tabAppModel {
-	fields := []string{"repo", "title", "description", "complexity (1-3)"}
+// openMultiOverlay activates overlayMulti mode with the given field prompts.
+// overlayAction must be set by the caller before or after.
+func openMultiOverlay(m tabAppModel, fields []string) tabAppModel {
 	m.overlayMode = overlayMulti
-	m.overlayAction = actionCreateDroplet
 	m.overlayMultiFields = fields
 	m.overlayMultiIdx = 0
 	m.overlayMultiValues = make([]string, len(fields))
 	m.overlayInput = ""
 	return m
+}
+
+// openCreateDropletOverlay puts m into overlayMulti mode for the new-droplet
+// creation form. Callers set m.tab as needed before calling.
+func openCreateDropletOverlay(m tabAppModel) tabAppModel {
+	m.overlayAction = actionCreateDroplet
+	return openMultiOverlay(m, []string{"repo", "title", "description", "complexity (1-3)"})
 }
 
 // overlayMultiFooter renders the progress footer shown during a multi-field form.
@@ -683,17 +688,9 @@ func (m tabAppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				actionAddDep, actionRemoveDep, actionFileIssue:
 				updated.overlayMode = overlayText
 			case actionEditMeta:
-				updated.overlayMode = overlayMulti
-				updated.overlayMultiFields = []string{"title", "priority (1-5)", "complexity (1-3)", "description"}
-				updated.overlayMultiIdx = 0
-				updated.overlayMultiValues = make([]string, len(updated.overlayMultiFields))
-				updated.overlayInput = ""
+				updated = openMultiOverlay(updated, []string{"title", "priority (1-5)", "complexity (1-3)", "description"})
 			case actionResolveIssue, actionRejectIssue:
-				updated.overlayMode = overlayMulti
-				updated.overlayMultiFields = []string{"issue ID", "evidence"}
-				updated.overlayMultiIdx = 0
-				updated.overlayMultiValues = make([]string, len(updated.overlayMultiFields))
-				updated.overlayInput = ""
+				updated = openMultiOverlay(updated, []string{"issue ID", "evidence"})
 			}
 		}
 		return updated, cmd
