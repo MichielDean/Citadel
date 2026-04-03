@@ -1202,6 +1202,11 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 				if err := client.Pool(req.Item.ID, note); err != nil {
 					s.logger.Error("spawn-cycle limit: pool failed", "droplet", req.Item.ID, "error", err)
 				}
+				sessionID := req.RepoConfig.Name + "-" + w.Name
+				if err := s.killSessionFn(sessionID); err != nil {
+					s.logger.Warn("spawn-cycle limit: kill session failed",
+						"droplet", req.Item.ID, "session", sessionID, "error", err)
+				}
 				s.dispatchLoop.reset(req.Item.ID)
 				pool.Release(w)
 				return

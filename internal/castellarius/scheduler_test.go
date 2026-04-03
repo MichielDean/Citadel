@@ -4080,3 +4080,50 @@ func TestSpawnCycleLimiter_OutcomeResetsCounter(t *testing.T) {
 		t.Errorf("expected spawn-cycle counter reset to 0 after outcome; got %d", n)
 	}
 }
+
+// TestSpawnCycleLimiter_KillsSessionBeforeRelease verifies that when the
+// spawn-cycle limit is reached the agent's tmux session is killed before the
+// worker pool slot is released, so the N-th agent cannot keep running and burn
+// tokens after the circuit breaker fires.
+//
+// Given: a droplet at (spawnCycleThreshold-1) prior spawn cycles
+// When: the dispatcher successfully spawns the agent one more time (hitting threshold)
+// Then: killSessionFn is called with "test-repo-<worker>" before pool.Release
+func TestSpawnCycleLimiter_KillsSessionBeforeRelease(t *testing.T) {
+	client := newMockClient()
+	droplet := &cistern.Droplet{ID: "sc-kill-1", Status: "open", CurrentCataractae: "implement"}
+	client.readyItems = []*cistern.Droplet{droplet}
+	client.items["sc-kill-1"] = droplet
+
+	runner := newMockRunner(nil)
+	sched := testScheduler(client, runner)
+
+	var killedSessions []string
+	sched.killSessionFn = func(sessionID string) error {
+		killedSessions = append(killedSessions, sessionID)
+		return nil
+	}
+
+	// Pre-populate spawn cycles: one shy of threshold so the next spawn triggers it.
+	for range spawnCycleThreshold - 1 {
+		sched.dispatchLoop.recordSuccess("sc-kill-1")
+	}
+
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, 2*time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	if len(killedSessions) != 1 {
+		t.Fatalf("expected killSessionFn to be called once; got %d calls: %v", len(killedSessions), killedSessions)
+	}
+	// Session name is "<repo>-<worker>"; worker is "alpha" (first available in testConfig).
+	if killedSessions[0] != "test-repo-alpha" {
+		t.Errorf("killed session = %q, want %q", killedSessions[0], "test-repo-alpha")
+	}
+	// Droplet must also be pooled.
+	if _, pooled := client.pooled["sc-kill-1"]; !pooled {
+		t.Error("expected droplet to be pooled after spawn-cycle limit")
+	}
+}
