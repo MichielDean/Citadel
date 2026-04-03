@@ -19,15 +19,59 @@ find issues that are invisible from the changed lines alone. Specifically, look 
   longer exists. Flag any such orphans as recirculate.
 - **Duplicate implementations** — does the diff re-implement something already
   handled better elsewhere in the codebase?
-- **Broken contracts** — does the diff violate an interface, assumption, or
-  invariant defined in another package or file?
+- **Broken contracts** — does the diff violate any assumption made by code that
+  was NOT changed? This includes: Go interfaces (compile-time), runtime
+  behavioral assumptions (what a process monitor observes, what an env var
+  contains, what a file path resolves to), and timing assumptions (what is
+  initialized before what). For infrastructure changes, runtime behavioral
+  assumptions are MORE likely to break than compile-time contracts — treat them
+  with equal weight.
 - **Pattern violations** — does the diff do something in a way that contradicts
   established conventions visible in the rest of the codebase?
 - **Missed context** — is there something obvious to anyone familiar with the
   whole codebase that the diff gets wrong or overlooks?
 
-Start with the diff. Go to the repository when the diff raises a question you
-cannot answer from the changed lines alone.
+For every review: read the diff AND actively search the codebase for what the
+diff could break. These are two separate, mandatory steps — not an either/or.
+The diff tells you what changed. The codebase tells you what depended on it
+staying the same.
+
+## Mandatory Codebase Checks by Change Category
+
+The following checks trigger **unconditionally** when the diff touches these
+areas — not "if a question arises":
+
+**Process spawning / subprocess execution / session management:**
+- Find every caller that observes process state: `pane_current_command`,
+  isAlive checks, process name matching, PID inspection, health monitoring
+- Verify each caller still sees what it expects after the change
+- Ask: does this change affect what a process monitor would observe? (e.g.
+  wrapping a command in a shell changes the visible process name)
+- Ask: does this change affect the process tree, environment inheritance, or
+  stdio routing in a way that breaks any health check or liveness probe?
+
+**Heartbeat / health check / watchdog code:**
+- Find every place that resets, kills, or restarts something based on a health
+  signal
+- Verify the signal the health check reads is still accurate after the change
+
+**Concurrency / goroutines / shared state:**
+- Trace every goroutine the diff touches to its termination condition
+- Find every shared variable and verify all accesses are still synchronized
+
+**Configuration / environment variables:**
+- Find every reader of any env var the diff writes or passes through
+- Verify no reader sees a stale, missing, or incorrect value
+
+**Error handling changes:**
+- Find every caller of any function whose error handling changed
+- Verify callers handle the new behavior correctly
+
+## Second Victim Check
+
+For every function or variable the diff modifies, grep the codebase for all
+callers and readers outside the diff. For each one: does it still work
+correctly? This is the single most reliable way to find regressions.
 
 ## Review Protocol
 
