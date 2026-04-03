@@ -1830,6 +1830,46 @@ func TestSpawn_ZombieSession_KillsAndRespawns(t *testing.T) {
 	}
 }
 
+// TestSessionIsAgentAliveFn_LiveClaudeProcess_ReturnsTrue verifies that
+// sessionIsAgentAliveFn returns true when a real tmux session contains a live
+// process named "claude". This is the positive integration path: the unmocked
+// proc-based liveness check detects a running claude descendant in /proc.
+//
+// A compiled Go binary named "claude" (fakeclaude) is placed in a temp dir.
+// When executed, /proc/<pid>/cmdline starts with "<tmpdir>/claude" and
+// filepath.Base yields "claude" — exactly what IsClaudeCmdline checks.
+func TestSessionIsAgentAliveFn_LiveClaudeProcess_ReturnsTrue(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available — skipping integration test")
+	}
+
+	// Compile a fake "claude" binary that simply sleeps until killed.
+	// Building it as "claude" makes /proc/<pid>/cmdline start with the binary
+	// path whose base is "claude" — what IsClaudeCmdline checks.
+	claudeBin := buildTestBin(t, "claude", "github.com/MichielDean/cistern/internal/testutil/fakeclaude")
+
+	const sessionID = "agent-alive-positive-test"
+	t.Cleanup(func() {
+		exec.Command("tmux", "kill-session", "-t", sessionID).Run() //nolint:errcheck
+	})
+
+	// Start a real tmux session running the fake claude binary.
+	// tmux passes the command to the shell, which execs claudeBin as a child —
+	// the BFS proc walk from the pane PID reaches it.
+	spawnArgs := []string{"new-session", "-d", "-s", sessionID, "-c", t.TempDir(), claudeBin}
+	if out, spawnErr := exec.Command("tmux", spawnArgs...).CombinedOutput(); spawnErr != nil {
+		t.Skipf("could not create tmux session: %v: %s", spawnErr, out)
+	}
+
+	// Allow the session's shell to exec the claude binary.
+	time.Sleep(300 * time.Millisecond)
+
+	// Call sessionIsAgentAliveFn directly — no mock — against real /proc.
+	if !sessionIsAgentAliveFn(sessionID) {
+		t.Error("sessionIsAgentAliveFn() = false, want true for tmux session with live claude process")
+	}
+}
+
 // TestSpawn_NoExistingSession_SpawnsNormally verifies the happy path: when no
 // session exists, Spawn() creates one without any kill or skip logic.
 func TestSpawn_NoExistingSession_SpawnsNormally(t *testing.T) {
