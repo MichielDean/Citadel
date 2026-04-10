@@ -1482,12 +1482,28 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 				}
 				// Clear the .current-stage marker so the next spawn starts
 				// fresh instead of attempting --continue on a dead session.
-				// Without this, a zombie loop occurs: spawn → resume
-				// (--continue) → "No conversation found to continue" → exit
-				// → zombie detected → respawn → resume again → loop.
 				if s.sandboxRoot != "" {
 					worktreePath := filepath.Join(s.sandboxRoot, repo.Name, item.ID)
 					os.Remove(filepath.Join(worktreePath, ".current-stage"))
+				}
+
+				// Check session log for rate-limit errors (429). If the agent
+				// died because of rate limiting, pool the droplet instead of
+				// respawning — respawning would just hit the same limit and
+				// burn credits in a loop until the circuit breaker kicks in.
+				if isRateLimitError(sessionID) {
+					note := fmt.Sprintf("Session died with API rate-limit errors (429). Pooling to prevent credit burn loop. [%s]",
+						time.Now().UTC().Format(time.RFC3339))
+					s.addNote(client, item.ID, "scheduler", note)
+					s.logger.Warn("heartbeat: zombie with rate-limit errors — pooling instead of respawn",
+						"repo", repo.Name, "droplet", item.ID, "session", sessionID)
+					if err := client.Pool(item.ID, note); err != nil {
+						s.logger.Error("heartbeat: rate-limit pool failed",
+							"repo", repo.Name, "droplet", item.ID, "error", err)
+					} else {
+						s.dispatchLoop.reset(item.ID)
+					}
+					continue
 				}
 
 				// Append a history note so the zombie event is visible in
@@ -1514,53 +1530,18 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 				continue // handled — skip progress check for this item
 			}
 
-			// The tmux session is alive. Check whether the claude agent process is
-			// still running inside it. If not, the agent exited without signaling an
-			// outcome (e.g. OOM kill, hard token limit) — kill the orphaned session,
-			// record a diagnostic note, and reset the droplet for re-dispatch.
-			if !isAgentAlive(sessionID) {
-				step := currentCataracta(item, wf)
-				if step == nil {
-					s.logger.Error("heartbeat: no step for agent-dead session — skipping",
-						"repo", repo.Name, "droplet", item.ID)
-					continue
-				}
-				if err := s.killSessionFn(sessionID); err != nil {
-					s.logger.Warn("heartbeat: kill-session failed for agent-dead zombie",
-						"droplet", item.ID, "session", sessionID, "error", err)
-				}
-				if pool := s.pools[repo.Name]; pool != nil {
-					if w := pool.FindByName(item.Assignee); w != nil {
-						pool.Release(w)
-					}
-				}
-				// Clear the .current-stage marker so the next spawn starts
-				// fresh instead of attempting --continue on a dead session.
-				if s.sandboxRoot != "" {
-					worktreePath := filepath.Join(s.sandboxRoot, repo.Name, item.ID)
-					os.Remove(filepath.Join(worktreePath, ".current-stage"))
-				}
-				zombieNote := fmt.Sprintf(
-					"Session zombie detected: tmux alive but claude process dead. Session killed. Re-dispatching. [%s]",
-					time.Now().UTC().Format(time.RFC3339),
-				)
-				if err := client.AddNote(item.ID, "scheduler", zombieNote); err != nil {
-					s.logger.Warn("heartbeat: AddNote failed for agent-dead zombie",
-						"droplet", item.ID, "error", err)
-				}
-				s.logger.Info("heartbeat: agent-dead zombie — killed session, resetting to open",
-					"repo", repo.Name,
-					"droplet", item.ID,
-					"assignee", item.Assignee,
-					"cataractae", step.Name,
-					"session", sessionID,
-				)
-				if err := client.Assign(item.ID, "", step.Name); err != nil {
-					s.logger.Error("heartbeat: agent-dead zombie reset failed",
-						"repo", repo.Name, "droplet", item.ID, "error", err)
-				}
-				continue // handled — skip progress check for this item
-			}
+			// NOTE: agent-process liveness checking is intentionally removed.
+			// The isAgentAlive check was causing more harm than good:
+			//   - It couldn't reliably detect processes inside wrappers (false
+			//     negatives killed healthy sessions)
+			//   - When it did detect a dead agent, the immediate kill + respawn
+			//     created zombie loops that burned LLM credits until the circuit
+			//     breaker kicked in
+			//   - The spawn-cycle circuit breaker in dispatch is a sufficient
+			//     safety net without the aggressive heartbeat-based killing
+			// If the tmux session is alive, we trust the agent is working.
+			// If it's truly stuck, the stall detector or circuit breaker will
+			// handle it — no need for a per-tick process check.
 		}
 
 		// Stall detection: use the agent heartbeat timestamp as the primary signal.
@@ -2066,4 +2047,28 @@ func (s *Castellarius) ensureCataractaeIntegrity() {
 			s.logger.Info("Cataractae CLAUDE.md files regenerated successfully")
 		}
 	}
+}
+
+// isRateLimitError checks the session log for evidence of API rate-limit
+// errors (429 status codes). Returns true if rate-limit errors are found,
+// indicating the session died because the LLM provider throttled requests.
+// In this case the droplet should be pooled rather than respawned to prevent
+// credit-burning zombie loops.
+func isRateLimitError(sessionID string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	logPath := filepath.Join(home, ".cistern", "session-logs", sessionID+".log")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return false // no log file — can't determine cause
+	}
+	tail := string(data)
+	// Only check the last 4KB to avoid reading huge logs
+	if len(tail) > 4096 {
+		tail = tail[len(tail)-4096:]
+	}
+	return strings.Contains(tail, "429") &&
+		(strings.Contains(tail, "rate_limit") || strings.Contains(tail, "rate limit"))
 }
