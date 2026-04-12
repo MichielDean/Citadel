@@ -37,13 +37,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return err
 	}, nil) && ok
 
-	ok = checkWithFix("claude CLI found", func() error {
-		_, err := exec.LookPath("claude")
-		return err
-	}, nil) && ok
-
-	ok = checkWithFix("claude CLI authenticated", claudeAuthStatusFn, nil) && ok
-
 	ok = checkWithFix("git installed", func() error {
 		_, err := exec.LookPath("git")
 		return err
@@ -77,6 +70,13 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		_, err := aqueduct.ParseAqueductConfig(cfgPath)
 		return err
 	}, cfgFix) && ok
+
+	// Provider-aware CLI binary and auth checks.
+	// Resolved after config is parsed so we check only the binaries that
+	// the configured provider(s) actually need.
+	if cfg, cfgErr := aqueduct.ParseAqueductConfig(cfgPath); cfgErr == nil {
+		ok = runDoctorProviderChecks(cfg) && ok
+	}
 
 	dbFile := filepath.Join(home, ".cistern", "cistern.db")
 
@@ -156,6 +156,51 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// runDoctorProviderChecks checks that each provider binary required by the
+// current configuration is present in PATH, and runs provider-specific auth
+// checks (e.g. "claude auth status" for the claude provider).
+func runDoctorProviderChecks(cfg *aqueduct.AqueductConfig) bool {
+	ok := true
+	seenBinaries := map[string]bool{}
+	for _, repo := range cfg.Repos {
+		preset, presErr := cfg.ResolveProvider(repo.Name)
+		if presErr != nil || seenBinaries[preset.Command] {
+			continue
+		}
+		seenBinaries[preset.Command] = true
+
+		cmd := preset.Command
+		name := preset.Name
+		ok = checkWithFix("agent CLI: "+cmd, func() error {
+			if _, lookErr := exec.LookPath(cmd); lookErr != nil {
+				hint := providerInstallHint(name)
+				if hint != "" {
+					return fmt.Errorf("not found in PATH — run: %s", hint)
+				}
+				return fmt.Errorf("not found in PATH")
+			}
+			return nil
+		}, nil) && ok
+
+		if name == "claude" {
+			ok = checkWithFix("claude CLI authenticated", providerAuthStatusFn, nil) && ok
+		}
+	}
+	return ok
+}
+
+// providerAuthStatusFn runs the configured provider's auth status check.
+// Only the claude provider has a discrete auth check command; other providers
+// authenticate via env vars which are checked separately.
+// Replaced in tests with a stub.
+var providerAuthStatusFn = func() error {
+	out, err := exec.Command("claude", "auth", "status").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", out)
+	}
+	return nil
+}
+
 // fixCisternConfig creates ~/.cistern/cistern.yaml from the embedded default template.
 func fixCisternConfig(cfgPath string) error {
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
@@ -187,6 +232,7 @@ func fixCisternDB(dbFile string) error {
 //  7. Skills installed at ~/.cistern/skills/<name>/SKILL.md
 //  8. Aqueduct YAML validity (one check per repo)
 //  9. Castellarius process (informational, does not fail the check)
+//
 // 10. Castellarius health file (warnings only, does not fail the check)
 // 11. Systemd service health (only on systemd systems)
 // 12. Repo sandbox health
@@ -373,6 +419,8 @@ func providerInstallHint(presetName string) string {
 		return "npm install -g @openai/codex"
 	case "gemini":
 		return "npm install -g @google/gemini-cli"
+	case "opencode":
+		return "go install github.com/opencode-ai/opencode@latest"
 	}
 	return ""
 }
@@ -798,16 +846,6 @@ func checkStalledDroplets(dbPath string) {
 			fmt.Printf("\u26A0 %s in_progress for %dm \u2014 may be stalled\n", d.ID, int(elapsed.Minutes()))
 		}
 	}
-}
-
-// claudeAuthStatusFn runs "claude auth status" and returns an error on non-zero exit.
-// Replaced in tests with a stub.
-var claudeAuthStatusFn = func() error {
-	out, err := exec.Command("claude", "auth", "status").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s", out)
-	}
-	return nil
 }
 
 // execCommandFn wraps exec.Command to allow injection in tests.
