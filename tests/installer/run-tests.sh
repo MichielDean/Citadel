@@ -120,17 +120,17 @@ else
     fail "ct_init_creates_config" "${init_out}"
 fi
 
-# ── Test 7: ct doctor recognises claude CLI ───────────────────────────────────
+# ── Test 7: ct doctor recognises agent CLI ────────────────────────────────────
 # Given: fakeagent is on PATH as "claude" and ct init has run
 # When:  running `ct doctor`
-# Then:  doctor output contains "✓ claude CLI found" (success prefix only)
+# Then:  doctor output contains "✓ agent CLI: claude" (success prefix only)
 # Note:  doctor exits non-zero when other checks fail (e.g. gh not authenticated);
-#        that is expected. We only care that the claude check itself passes.
+#        that is expected. We only care that the agent CLI check itself passes.
 doctor_out=$(ct doctor 2>&1 || true)
-if echo "${doctor_out}" | grep -q '✓.*claude CLI found'; then
-    pass "ct_doctor_claude_found"
+if echo "${doctor_out}" | grep -q '✓.*agent CLI: claude'; then
+    pass "ct_doctor_agent_cli_found"
 else
-    fail "ct_doctor_claude_found" "doctor did not report claude found: ${doctor_out}"
+    fail "ct_doctor_agent_cli_found" "doctor did not report agent CLI found: ${doctor_out}"
 fi
 
 # ── Test 8: start-castellarius.sh is present and executable ───────────────────
