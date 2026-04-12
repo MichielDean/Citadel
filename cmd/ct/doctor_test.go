@@ -990,7 +990,7 @@ func TestProviderInstallHint_KnownPreset_ReturnsHint(t *testing.T) {
 		{"claude", true},
 		{"codex", true},
 		{"gemini", true},
-		{"opencode", false},
+		{"opencode", true},
 		{"copilot", false},
 		{"unknown", false},
 	}
@@ -1312,27 +1312,166 @@ func TestInferLLMProviderFromPreset_KnownPresets(t *testing.T) {
 	}
 }
 
-// --- claudeAuthStatusFn (claude CLI authenticated) tests ---
+// --- runDoctorProviderChecks tests ---
+
+func TestRunDoctorProviderChecks_ClaudeProvider_ChecksClaudeBinaryAndAuth(t *testing.T) {
+	home := t.TempDir()
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	if err := os.MkdirAll(aqueductDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	setupFakeBinAndAPIKey(t, "claude", "")
+
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigYAML), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	orig := providerAuthStatusFn
+	t.Cleanup(func() { providerAuthStatusFn = orig })
+	providerAuthStatusFn = func() error { return nil }
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	result := runDoctorProviderChecks(cfg)
+	if !result {
+		t.Error("expected provider checks to pass for claude provider with binary and auth")
+	}
+}
+
+func TestRunDoctorProviderChecks_OpencodeProvider_ChecksOpencodeOnly(t *testing.T) {
+	home := t.TempDir()
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	if err := os.MkdirAll(aqueductDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Set up fake opencode binary, but NOT claude.
+	setupFakeBinAndAPIKey(t, "opencode", "")
+
+	opencodeConfigYAML := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+provider:
+  name: opencode
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(opencodeConfigYAML), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	result := runDoctorProviderChecks(cfg)
+	if !result {
+		t.Error("expected provider checks to pass for opencode provider without claude")
+	}
+}
+
+func TestRunDoctorProviderChecks_OpencodeProvider_ClaudeMissingNoFailure(t *testing.T) {
+	home := t.TempDir()
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	if err := os.MkdirAll(aqueductDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// PATH with opencode but no claude.
+	binDir := t.TempDir()
+	fakeBin := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("create fake opencode: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	opencodeConfigYAML := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+provider:
+  name: opencode
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(opencodeConfigYAML), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	result := runDoctorProviderChecks(cfg)
+	if !result {
+		t.Error("expected provider checks to pass for opencode provider even when claude is missing")
+	}
+}
+
+func TestRunDoctorProviderChecks_MissingBinary_Fails(t *testing.T) {
+	home := t.TempDir()
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	if err := os.MkdirAll(aqueductDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Empty PATH — no binaries found.
+	emptyDir := t.TempDir()
+	t.Setenv("PATH", emptyDir)
+
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigYAML), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	result := runDoctorProviderChecks(cfg)
+	if result {
+		t.Error("expected provider checks to fail when provider binary is missing")
+	}
+}
+
+// --- providerAuthStatusFn (claude CLI authenticated) tests ---
 
 func TestClaudeAuthenticated_ExitZero_PassesCheck(t *testing.T) {
-	orig := claudeAuthStatusFn
-	t.Cleanup(func() { claudeAuthStatusFn = orig })
-	claudeAuthStatusFn = func() error { return nil }
+	orig := providerAuthStatusFn
+	t.Cleanup(func() { providerAuthStatusFn = orig })
+	providerAuthStatusFn = func() error { return nil }
 
-	got := checkWithFix("claude CLI authenticated", claudeAuthStatusFn, nil)
+	got := checkWithFix("claude CLI authenticated", providerAuthStatusFn, nil)
 	if !got {
 		t.Error("expected checkWithFix to return true when claude auth status exits 0")
 	}
 }
 
 func TestClaudeAuthenticated_NonZeroExit_FailsCheck(t *testing.T) {
-	orig := claudeAuthStatusFn
-	t.Cleanup(func() { claudeAuthStatusFn = orig })
-	claudeAuthStatusFn = func() error {
+	orig := providerAuthStatusFn
+	t.Cleanup(func() { providerAuthStatusFn = orig })
+	providerAuthStatusFn = func() error {
 		return fmt.Errorf("Not logged in")
 	}
 
-	got := checkWithFix("claude CLI authenticated", claudeAuthStatusFn, nil)
+	got := checkWithFix("claude CLI authenticated", providerAuthStatusFn, nil)
 	if got {
 		t.Error("expected checkWithFix to return false when claude auth status exits non-zero")
 	}
