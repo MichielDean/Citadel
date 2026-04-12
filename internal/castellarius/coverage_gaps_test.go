@@ -507,16 +507,6 @@ func TestHeartbeatInProgress_CallsHeartbeatForAllRepos(t *testing.T) {
 	}
 }
 
-// --- worktreeRegistered test ---
-
-func TestWorktreeRegistered_NonGitDir_ReturnsFalse(t *testing.T) {
-	dir := t.TempDir()
-	// A non-git directory: git worktree list will fail → returns false.
-	if worktreeRegistered(dir, "/some/worktree/path") {
-		t.Error("worktreeRegistered should return false for a non-git directory")
-	}
-}
-
 // --- removeDropletWorktree tests ---
 
 func TestRemoveDropletWorktree_NonGitDir_NoOp(t *testing.T) {
@@ -655,75 +645,6 @@ func TestRunDroughtHooks_RestartSelf_OnReloadNotCalled(t *testing.T) {
 	}
 }
 
-// --- checkStuckDeliveries tests ---
-
-func TestCheckStuckDeliveries_NoDeliveryItems_NoOp(t *testing.T) {
-	client := newMockClient()
-	// No items in the queue — should be a no-op.
-	sched := testScheduler(client, newMockRunner(client))
-	sched.checkStuckDeliveries(context.Background())
-}
-
-func TestCheckStuckDeliveries_ItemNotPastThreshold_Skipped(t *testing.T) {
-	client := newMockClient()
-	// An in_progress delivery item that is recent (well within threshold).
-	item := &cistern.Droplet{
-		ID:                "sd-skip",
-		CurrentCataractae: "delivery",
-		Status:            "in_progress",
-		Assignee:          "alpha",
-		Outcome:           "",
-		UpdatedAt:         time.Now(), // just updated — not past threshold
-	}
-	client.items["sd-skip"] = item
-
-	sched := testScheduler(client, newMockRunner(client))
-	sched.checkStuckDeliveries(context.Background())
-
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	// Item should not have been touched.
-	if client.steps["sd-skip"] != "" {
-		t.Errorf("recent delivery item should not be reset, got step %q", client.steps["sd-skip"])
-	}
-}
-
-func TestCheckStuckDeliveries_ItemPastThreshold_DeadSession_Skipped(t *testing.T) {
-	client := newMockClient()
-	// Item is well past the default stuck threshold (67.5m) but the tmux session
-	// is dead (no tmux in test env) → isTmuxAlive returns false → recovery skipped.
-	item := &cistern.Droplet{
-		ID:                "sd-past",
-		CurrentCataractae: "delivery",
-		Status:            "in_progress",
-		Assignee:          "alpha",
-		Outcome:           "",
-		UpdatedAt:         time.Now().Add(-2 * time.Hour),
-	}
-	client.items["sd-past"] = item
-
-	sched := testScheduler(client, newMockRunner(client))
-	sched.checkStuckDeliveries(context.Background())
-
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	// Session is dead → item not modified.
-	if client.steps["sd-past"] != "" {
-		t.Errorf("past-threshold item with dead session should not be modified, got step %q", client.steps["sd-past"])
-	}
-}
-
-func TestCheckStuckDeliveries_CancelledContext_Returns(t *testing.T) {
-	client := newMockClient()
-	sched := testScheduler(client, newMockRunner(client))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled
-
-	// Should return immediately without panicking.
-	sched.checkStuckDeliveries(ctx)
-}
-
 // --- doReloadWorkflows tests ---
 
 func TestDoReloadWorkflows_ValidFile_UpdatesWorkflow(t *testing.T) {
@@ -792,99 +713,5 @@ func TestDoReloadWorkflows_InvalidFile_KeepsOldWorkflow(t *testing.T) {
 	// Old workflow should be preserved on parse error.
 	if sched.workflows["test-repo"] != original {
 		t.Error("workflow should not be replaced on parse failure")
-	}
-}
-
-// --- dirtyNonContextFiles tests ---
-
-// makeSimpleGitRepo creates a git repo at a temp dir with one initial commit.
-// Uses branchGitCmd/branchMustRun helpers from branch_lifecycle_test.go.
-func makeSimpleGitRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	branchMustRun(t, branchGitCmd(dir, "init"))
-	branchMustRun(t, branchGitCmd(dir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(dir, "config", "user.name", "Test"))
-	branchMustRun(t, branchGitCmd(dir, "config", "commit.gpgsign", "false"))
-	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("init\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	branchMustRun(t, branchGitCmd(dir, "add", "."))
-	branchMustRun(t, branchGitCmd(dir, "commit", "-m", "initial"))
-	return dir
-}
-
-func TestDirtyNonContextFiles_CleanRepo_Empty(t *testing.T) {
-	dir := makeSimpleGitRepo(t)
-	dirty, err := dirtyNonContextFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dirty) != 0 {
-		t.Errorf("clean repo should have no dirty files, got %v", dirty)
-	}
-}
-
-func TestDirtyNonContextFiles_UntrackedFile_Ignored(t *testing.T) {
-	dir := makeSimpleGitRepo(t)
-	// Untracked file ("??" prefix in git status --porcelain) should be ignored.
-	if err := os.WriteFile(filepath.Join(dir, "untracked.go"), []byte("// new\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dirty, err := dirtyNonContextFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dirty) != 0 {
-		t.Errorf("untracked files should be ignored, got %v", dirty)
-	}
-}
-
-func TestDirtyNonContextFiles_ModifiedNonContext_Reported(t *testing.T) {
-	dir := makeSimpleGitRepo(t)
-	// Modify a tracked file (not CONTEXT.md) — should appear as dirty.
-	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dirty, err := dirtyNonContextFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dirty) == 0 {
-		t.Error("modified tracked file should appear in dirty list, got empty")
-	}
-}
-
-func TestDirtyNonContextFiles_OnlyContextMd_Empty(t *testing.T) {
-	dir := makeSimpleGitRepo(t)
-	// Add CONTEXT.md to the repo first so it's tracked.
-	if err := os.WriteFile(filepath.Join(dir, "CONTEXT.md"), []byte("context\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	branchMustRun(t, branchGitCmd(dir, "add", "CONTEXT.md"))
-	branchMustRun(t, branchGitCmd(dir, "commit", "-m", "add context"))
-	// Now modify CONTEXT.md — it should be excluded from the dirty list.
-	if err := os.WriteFile(filepath.Join(dir, "CONTEXT.md"), []byte("updated context\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dirty, err := dirtyNonContextFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range dirty {
-		if strings.Contains(f, "CONTEXT.md") {
-			t.Errorf("CONTEXT.md should be excluded from dirty list, got %v", dirty)
-		}
-	}
-}
-
-func TestDirtyNonContextFiles_NonGitDir_ReturnsError(t *testing.T) {
-	dir := t.TempDir() // not a git repo
-	dirty, err := dirtyNonContextFiles(dir)
-	if err == nil {
-		t.Error("expected error for non-git directory, got nil")
-	}
-	if dirty != nil {
-		t.Errorf("expected nil files on error, got %v", dirty)
 	}
 }

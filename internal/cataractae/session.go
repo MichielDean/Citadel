@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
-	"github.com/MichielDean/cistern/internal/proc"
 	"github.com/MichielDean/cistern/internal/provider"
 )
 
@@ -59,36 +58,15 @@ func (s *Session) Spawn() error {
 	return s.spawn()
 }
 
-// spawn creates a new tmux session running the agent.
-// If the preset defines a ContinueFlag and the .current-stage marker in WorkDir
-// matches the current identity, the agent is resumed (same-stage respawn) rather
-// than started fresh. A stage change clears context so each stage begins fresh.
+// spawn creates a new tmux session running the agent fresh. With exec prefix,
+// if the session is alive, the agent IS alive — no zombie state is possible.
 func (s *Session) spawn() error {
-	// Guard: if a session with this ID already exists, inspect it before acting.
-	//
-	// - Session alive + agent alive → agent is actively working. Do not
-	//   interfere. Return nil so the caller treats this as a successful spawn.
-	//   The observe loop will pick up the outcome when the agent finishes.
-	//
-	// - Session alive + agent dead → zombie (tmux shell open but agent exited
-	//   without writing an outcome). Kill it and spawn fresh.
-	//
-	// - Session dead → fall through and spawn normally.
-	//
-	// This replaces the previous unconditional kill-before-spawn, which was
-	// silently terminating healthy sessions whenever the heartbeat reset a
-	// droplet and the dispatcher picked it up again.
+	// With exec prefix, if the session is alive the agent is alive.
+	// No zombie detection needed — return nil and let the existing session continue.
 	if isSessionAlive(s.ID) {
-		if s.isAgentAlive() {
-			slog.Default().Info("session: already running — skipping respawn",
-				"session", s.ID)
-			return nil
-		}
-		// Zombie: session exists but agent has exited without writing an outcome.
-		slog.Default().Warn("session: killing zombie session before respawn",
-			"session", s.ID,
-			"note", "tmux session was alive but agent process had already exited")
-		s.kill()
+		slog.Default().Info("session: already running — skipping respawn",
+			"session", s.ID)
+		return nil
 	}
 
 	home, err := os.UserHomeDir()
@@ -100,26 +78,9 @@ func (s *Session) spawn() error {
 
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}
 
-	// Decide whether to continue a prior session or start fresh.
-	// stageMarker reads .current-stage from the worktree: if it contains the
-	// current identity the previous spawn was the same stage, so we resume.
-	// A different identity (or absent file) means a stage transition — start fresh.
-	resume := s.Preset.ContinueFlag != "" && stageMarker(s.WorkDir, s.Identity)
-
-	if resume {
-		slog.Default().Info("session: resuming prior context",
-			"session", s.ID,
-			"stage", s.Identity,
-		)
-	}
-
 	var agentCmd string
 	if s.Preset.Name != "" {
-		if resume {
-			agentCmd, err = s.buildContinueCmd(s.Preset, skillsDir)
-		} else {
-			agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
-		}
+		agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
 		if err != nil {
 			return fmt.Errorf("spawn: %w", err)
 		}
@@ -134,17 +95,13 @@ func (s *Session) spawn() error {
 		cmdPath = resolveCommandFn(s.Preset.Command)
 	}
 
-	contextType := "fresh"
-	if resume {
-		contextType = "resume"
-	}
 	slog.Default().Info("session: spawning",
 		"session", s.ID,
 		"work_dir", s.WorkDir,
 		"command", cmdPath,
 		"model", s.Model,
 		"preset", s.Preset.Name,
-		"context_type", contextType,
+		"context_type", "fresh",
 	)
 
 	// Session output log: prepare the log directory so pipe-pane can write to it
@@ -186,38 +143,20 @@ func (s *Session) spawn() error {
 		}
 	}
 
+	// Ensure the session exits when the agent process exits, regardless of the
+	// user's tmux.conf. The remain-on-exit option defaults to off, but a global
+	// setting can override it — set it explicitly so agents never leave ghost
+	// "[Process completed]" panes after their work is done.
+	if err := exec.Command("tmux", "set-window-option", "-t", s.ID, "remain-on-exit", "off").Run(); err != nil {
+		slog.Default().Warn("session: could not set remain-on-exit", "session", s.ID, "error", err)
+	}
+
 	// pipe-pane must be called after the session exists.
 	if logDirReady {
 		execTmuxPipePaneCmd(s.ID, sessionLogPath)
 	}
-	// Record the current stage so a respawn of this same stage resumes context
-	// rather than starting fresh. Last-writer-wins: only one stage runs at a time.
-	writeStageMarker(s.WorkDir, s.Identity)
+
 	return nil
-}
-
-// stageMarker reads .current-stage from workDir and reports whether it contains
-// identity, indicating that the previous spawn in this worktree was the same
-// stage — i.e., we are respawning a stalled session rather than crossing a
-// stage boundary. Returns false when the file is absent, unreadable, or contains
-// a different identity. An empty identity always returns false.
-func stageMarker(workDir, identity string) bool {
-	if identity == "" {
-		return false
-	}
-	data, err := os.ReadFile(filepath.Join(workDir, ".current-stage"))
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(data)) == identity
-}
-
-// writeStageMarker writes identity to .current-stage in workDir. Errors are
-// silently ignored — a missing marker simply causes the next spawn to start
-// fresh, which is the safe fallback. Last-writer-wins is correct because only
-// one stage runs at a time.
-func writeStageMarker(workDir, identity string) {
-	_ = os.WriteFile(filepath.Join(workDir, ".current-stage"), []byte(identity), 0o644)
 }
 
 // isSessionAlive returns true if a tmux session with the given ID is running.
@@ -282,7 +221,7 @@ func (s *Session) buildClaudeCmd(skillsDir string) string {
 	if s.Model != "" {
 		flagsStr = "--model " + shellQuote(s.Model) + " "
 	}
-	return fmt.Sprintf("%s --dangerously-skip-permissions --add-dir %s %s-p '%s'",
+	return fmt.Sprintf("exec %s --dangerously-skip-permissions --add-dir %s %s-p '%s'",
 		claudePathFn(), shellQuote(skillsDir), flagsStr, prompt)
 }
 
@@ -355,9 +294,12 @@ func resolveCommand(command string) string {
 
 // presetBaseParts builds the shared command parts for preset commands: the
 // resolved+quoted command, shell-quoted args, optional --add-dir, and optional
-// model flag. Both buildPresetCmd and buildContinueCmd append their own tail.
+// model flag.
 func (s *Session) presetBaseParts(preset provider.ProviderPreset, skillsDir string) []string {
 	parts := []string{shellQuote(resolveCommandFn(preset.Command))}
+	if preset.Subcommand != "" {
+		parts = append(parts, preset.Subcommand)
+	}
 	for _, a := range preset.Args {
 		parts = append(parts, shellQuote(a))
 	}
@@ -382,29 +324,54 @@ func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir strin
 	parts := s.presetBaseParts(preset, skillsDir)
 
 	if preset.PromptFlag != "" {
-		prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
-		parts = append(parts, preset.PromptFlag, "'"+prompt+"'")
+		prompt := s.buildPrompt()
+
+		// When the full prompt exceeds the safe tmux command-line limit
+		// (~8 KB), write it to a file in the worktree and use a shell
+		// expansion to read it. This prevents tmux from rejecting the
+		// session creation with "failed to send command" on very long
+		// prompts (cataractae prompts with skills can exceed 8 KB).
+		//
+		// For providers that read their instructions file natively
+		// (e.g. opencode reads AGENTS.md), a PromptFileTemplate can
+		// replace the full prompt with a short reference. When set, the
+		// prompt content is written to the file named by PromptFileTemplate
+		// and a short --prompt referencing CONTEXT.md is used instead.
+		if preset.PromptFileTemplate != "" {
+			// Write the full prompt to the instructions file in the worktree.
+			// The template string may contain {identity} as a placeholder for
+			// the resolved identity file path.
+			identityPath := s.resolveIdentityPath()
+			promptFile := strings.ReplaceAll(preset.PromptFileTemplate, "{identity}", identityPath)
+			promptFilePath := filepath.Join(s.WorkDir, promptFile)
+			if err := os.WriteFile(promptFilePath, []byte(prompt), 0o644); err != nil {
+				slog.Default().Error("spawn: failed to write prompt file",
+					"session", s.ID,
+					"path", promptFilePath,
+					"error", err)
+			} else {
+				slog.Default().Info("spawn: wrote prompt file",
+					"session", s.ID,
+					"path", promptFilePath,
+					"bytes", len(prompt))
+			}
+			// Use a short prompt that references the instructions file.
+			// The agent reads its full persona from the instructions file natively.
+			shortPrompt := "Read CONTEXT.md for your task and begin work. Follow the instructions in " + promptFile + "."
+			parts = append(parts, preset.PromptFlag, shellQuote(shortPrompt))
+		} else if len(prompt) > maxPromptForTmux {
+			// Fallback: write the full prompt to a temp file and use shell expansion.
+			promptFile := filepath.Join(s.WorkDir, ".prompt")
+			if err := os.WriteFile(promptFile, []byte(prompt), 0o644); err != nil {
+				return "", fmt.Errorf("spawn: write prompt file: %w", err)
+			}
+			parts = append(parts, preset.PromptFlag, "\"$(cat "+shellQuote(promptFile)+")\"")
+		} else {
+			parts = append(parts, preset.PromptFlag, "'"+strings.ReplaceAll(prompt, "'", `'\''`)+"'")
+		}
 	}
 
-	return strings.Join(parts, " "), nil
-}
-
-// buildContinueCmd constructs the shell command string to resume the most recent
-// prior session in the working directory. It uses preset.ContinueFlag (e.g.
-// "--continue") in place of the prompt flag so the agent picks up where it left off.
-// --add-dir is still injected so skill context is available in the resumed session.
-func (s *Session) buildContinueCmd(preset provider.ProviderPreset, skillsDir string) (string, error) {
-	if preset.Command == "" {
-		return "", fmt.Errorf("preset %q has no command configured", preset.Name)
-	}
-	if preset.ContinueFlag == "" {
-		return "", fmt.Errorf("preset %q has no ContinueFlag configured", preset.Name)
-	}
-
-	parts := s.presetBaseParts(preset, skillsDir)
-	parts = append(parts, preset.ContinueFlag)
-
-	return strings.Join(parts, " "), nil
+	return "exec " + strings.Join(parts, " "), nil
 }
 
 // shellQuote wraps s in single quotes, escaping any single quotes within s,
@@ -412,6 +379,11 @@ func (s *Session) buildContinueCmd(preset provider.ProviderPreset, skillsDir str
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// maxPromptForTmux is the maximum prompt length that can be safely passed as a
+// command-line argument to tmux. Prompts exceeding this limit are written to
+// a file instead.
+const maxPromptForTmux = 4096
 
 // baseCataractaePrompt is the constitutional layer — hardcoded in the binary,
 // cannot be corrupted by YAML edits or file changes. It establishes the
@@ -580,28 +552,7 @@ func (s *Session) isAlive() bool {
 	return err == nil
 }
 
-// sessionIsAgentAliveFn queries the tmux pane PID for the session and walks
-// /proc to find a live claude descendant. Injectable for testing without a
-// real tmux server or process tree.
-var sessionIsAgentAliveFn = func(sessionID string) bool {
-	out, err := exec.Command("tmux", "display-message", "-p", "-t", sessionID, "#{pane_pid}").Output()
-	if err != nil {
-		return false
-	}
-	return proc.ClaudeAliveUnderPIDIn(strings.TrimSpace(string(out)), "/proc")
-}
-
-// isAgentAlive reports whether a live claude process is running inside the
-// tmux session. It obtains the pane root PID via tmux and walks the /proc
-// process tree to find a claude descendant, making it robust against any
-// wrapper (bash, sh, tee, etc.) that sits between the pane and the agent.
-// A session can be alive (tmux exists) while the agent has exited —
-// isAgentAlive detects this zombie state.
-func (s *Session) isAgentAlive() bool {
-	return sessionIsAgentAliveFn(s.ID)
-}
-
-// claudePathFn resolves the path to the claude executable. It is a variable so
+// claudePathFn resolves the path to the claude executable.It is a variable so
 // tests can substitute it to inject a known absolute path without modifying the
 // process environment or requiring the binary to exist on the test machine.
 var claudePathFn = claudePath
