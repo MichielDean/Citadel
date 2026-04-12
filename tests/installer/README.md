@@ -113,7 +113,7 @@ as a GitHub Actions step:
 | `claude_on_path` | `claude` resolves via `exec.LookPath` (on `PATH`) |
 | `no_pass_installed` | `pass` password manager is absent |
 | `ct_init_creates_config` | `ct init` creates `~/.cistern/cistern.yaml` |
-| `ct_doctor_claude_found` | `ct doctor` reports the `claude` CLI as found |
+| `ct_doctor_agent_cli_found` | `ct doctor` reports the configured agent CLI as found |
 | `start_castellarius_script_executable` | `/usr/local/bin/start-castellarius.sh` is present and executable |
 
 ### Integration scenarios
