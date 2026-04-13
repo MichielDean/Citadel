@@ -2400,15 +2400,16 @@ func TestGetDropletChanges_MixedNotesAndEvents(t *testing.T) {
 	}
 }
 
-func TestGetDropletChanges_RespectsLimit(t *testing.T) {
+func TestGetDropletChanges_RespectsLimit_ReturnsNewest(t *testing.T) {
 	c := testClient(t)
 	item, err := c.Add("myrepo", "Task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for range 5 {
-		c.AddNote(item.ID, "step", "note")
+	notes := []string{"alpha", "beta", "gamma", "delta", "epsilon"}
+	for _, n := range notes {
+		c.AddNote(item.ID, "step", n)
 	}
 
 	changes, err := c.GetDropletChanges(item.ID, 3)
@@ -2416,7 +2417,13 @@ func TestGetDropletChanges_RespectsLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(changes) != 3 {
-		t.Errorf("got %d changes, want 3 (limit applied)", len(changes))
+		t.Fatalf("got %d changes, want 3 (limit applied)", len(changes))
+	}
+	want := []string{"gamma", "delta", "epsilon"}
+	for i, ch := range changes {
+		if !strings.Contains(ch.Value, want[i]) {
+			t.Errorf("change[%d] = %q, want it to contain %q", i, ch.Value, want[i])
+		}
 	}
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,18 +23,11 @@ func setupTailTestDB(t *testing.T) (*cistern.Client, string) {
 	return c, db
 }
 
-func captureTailOutput(t *testing.T, fn func()) string {
+func runTailCapture(t *testing.T, id string) (string, error) {
 	t.Helper()
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	fn()
-	w.Close()
-	os.Stdout = old
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	r.Close()
-	return buf.String()
+	err := runTail(&buf, id)
+	return buf.String(), err
 }
 
 func TestDropletTail_TextFormat_ShowsNotesAndEvents(t *testing.T) {
@@ -51,9 +43,7 @@ func TestDropletTail_TextFormat_ShowsNotesAndEvents(t *testing.T) {
 	tailCount = 20
 	tailFollow = false
 
-	out := captureTailOutput(t, func() {
-		err = dropletTailCmd.RunE(dropletTailCmd, []string{item.ID})
-	})
+	out, err := runTailCapture(t, item.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,9 +71,7 @@ func TestDropletTail_JsonFormat_OutputsNDJson(t *testing.T) {
 	tailCount = 20
 	tailFollow = false
 
-	out := captureTailOutput(t, func() {
-		err = dropletTailCmd.RunE(dropletTailCmd, []string{item.ID})
-	})
+	out, err := runTailCapture(t, item.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -111,17 +99,16 @@ func TestDropletTail_LinesFlag_LimitsOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := range 5 {
-		c.AddNote(item.ID, "step", string(rune('A'+i)))
+	notes := []string{"alpha", "beta", "gamma", "delta", "epsilon"}
+	for _, n := range notes {
+		c.AddNote(item.ID, "step", n)
 	}
 
 	tailFmt = "text"
 	tailCount = 2
 	tailFollow = false
 
-	out := captureTailOutput(t, func() {
-		err = dropletTailCmd.RunE(dropletTailCmd, []string{item.ID})
-	})
+	out, err := runTailCapture(t, item.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -129,6 +116,15 @@ func TestDropletTail_LinesFlag_LimitsOutput(t *testing.T) {
 	lineCount := len(strings.Split(strings.TrimSpace(out), "\n"))
 	if lineCount != 2 {
 		t.Errorf("expected 2 output lines with --lines 2, got %d", lineCount)
+	}
+	if !strings.Contains(out, "delta") {
+		t.Errorf("expected second-to-last event 'delta' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "epsilon") {
+		t.Errorf("expected last event 'epsilon' in output, got: %s", out)
+	}
+	if strings.Contains(out, "alpha") || strings.Contains(out, "beta") || strings.Contains(out, "gamma") {
+		t.Errorf("older events should not appear with --lines 2, got: %s", out)
 	}
 }
 
@@ -144,9 +140,7 @@ func TestDropletTail_PoolEvent(t *testing.T) {
 	tailCount = 20
 	tailFollow = false
 
-	out := captureTailOutput(t, func() {
-		err = dropletTailCmd.RunE(dropletTailCmd, []string{item.ID})
-	})
+	out, err := runTailCapture(t, item.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +159,7 @@ func TestDropletTail_InvalidFormat(t *testing.T) {
 	tailCount = 20
 	tailFollow = false
 
-	err := dropletTailCmd.RunE(dropletTailCmd, []string{"some-id"})
+	_, err := runTailCapture(t, "some-id")
 	if err == nil {
 		t.Error("expected error for invalid format")
 	}
@@ -180,7 +174,7 @@ func TestDropletTail_InvalidLines(t *testing.T) {
 	tailCount = 0
 	tailFollow = false
 
-	err := dropletTailCmd.RunE(dropletTailCmd, []string{"some-id"})
+	_, err := runTailCapture(t, "some-id")
 	if err == nil {
 		t.Error("expected error for invalid lines")
 	}
@@ -195,7 +189,7 @@ func TestDropletTail_NonexistentDroplet(t *testing.T) {
 	tailCount = 10
 	tailFollow = false
 
-	err := dropletTailCmd.RunE(dropletTailCmd, []string{"nonexistent-id"})
+	_, err := runTailCapture(t, "nonexistent-id")
 	if err == nil {
 		t.Error("expected error for nonexistent droplet")
 	}
