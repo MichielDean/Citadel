@@ -1444,7 +1444,13 @@ func editInteractive(c *cistern.Client, id string) error {
 		editor = "vi"
 	}
 
-	template := fmt.Sprintf("# Edit droplet %s\n# Lines starting with # are comments.\ntitle: %s\ndescription: %s\ncomplexity: %s\npriority: %d\n",
+	template := fmt.Sprintf(
+		"# Edit droplet %s\n"+
+			"# Lines starting with # are comments.\n"+
+			"title: %s\n"+
+			"description: %s\n"+
+			"complexity: %s\n"+
+			"priority: %d\n",
 		id, d.Title, d.Description, complexityName(d.Complexity), d.Priority)
 
 	tmp, err := os.CreateTemp("", "ct-edit-*.txt")
