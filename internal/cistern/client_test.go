@@ -1166,11 +1166,44 @@ func TestEditDroplet_Priority(t *testing.T) {
 	}
 }
 
+func TestEditDroplet_Title(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("repo", "Old Title", "desc", 2, 3)
+
+	err := c.EditDroplet(item.ID, EditDropletFields{Title: ptr("New Title")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := c.Get(item.ID)
+	if got.Title != "New Title" {
+		t.Errorf("title = %q, want %q", got.Title, "New Title")
+	}
+	if got.Description != "desc" {
+		t.Errorf("description changed unexpectedly: %q", got.Description)
+	}
+}
+
+func TestEditDroplet_InvalidPriority(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("repo", "Title", "", 2, 3)
+
+	for _, bad := range []int{0, -1} {
+		err := c.EditDroplet(item.ID, EditDropletFields{Priority: ptr(bad)})
+		if err == nil {
+			t.Errorf("expected error for priority=%d", bad)
+		} else if !strings.Contains(err.Error(), "priority must be a positive integer") {
+			t.Errorf("priority=%d: unexpected error: %v", bad, err)
+		}
+	}
+}
+
 func TestEditDroplet_AllFields(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("repo", "Title", "old", 3, 3)
 
 	err := c.EditDroplet(item.ID, EditDropletFields{
+		Title:       ptr("New Title"),
 		Description: ptr("updated"),
 		Complexity:  ptr(2),
 		Priority:    ptr(1),
@@ -1180,6 +1213,9 @@ func TestEditDroplet_AllFields(t *testing.T) {
 	}
 
 	got, _ := c.Get(item.ID)
+	if got.Title != "New Title" {
+		t.Errorf("title = %q, want %q", got.Title, "New Title")
+	}
 	if got.Description != "updated" {
 		t.Errorf("description = %q, want %q", got.Description, "updated")
 	}

@@ -541,6 +541,7 @@ func (c *Client) UpdateTitle(id, title string) error {
 // EditDropletFields holds the optional fields for EditDroplet.
 // A nil pointer means "do not update this field".
 type EditDropletFields struct {
+	Title       *string
 	Description *string
 	Complexity  *int
 	Priority    *int
@@ -550,7 +551,7 @@ type EditDropletFields struct {
 // up. Allowed statuses: open, pooled. Returns an error if the droplet is
 // in_progress or delivered.
 func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
-	if fields.Description == nil && fields.Complexity == nil && fields.Priority == nil {
+	if fields.Title == nil && fields.Description == nil && fields.Complexity == nil && fields.Priority == nil {
 		return nil
 	}
 
@@ -558,8 +559,16 @@ func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
 		return fmt.Errorf("cistern: complexity must be between 1 and 3, got %d", *fields.Complexity)
 	}
 
+	if fields.Priority != nil && *fields.Priority < 1 {
+		return fmt.Errorf("cistern: priority must be a positive integer, got %d", *fields.Priority)
+	}
+
 	var setClauses []string
 	var args []any
+	if fields.Title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *fields.Title)
+	}
 	if fields.Description != nil {
 		setClauses = append(setClauses, "description = ?")
 		args = append(args, *fields.Description)
