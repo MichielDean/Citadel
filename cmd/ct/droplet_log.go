@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/spf13/cobra"
@@ -15,10 +17,11 @@ import (
 var logFmt string
 
 type logEntry struct {
-	Time       string `json:"time"`
-	Cataractae string `json:"cataractae"`
-	Event      string `json:"event"`
-	Detail     string `json:"detail"`
+	sortTime   time.Time `json:"-"`
+	Time       string    `json:"time"`
+	Cataractae string    `json:"cataractae"`
+	Event      string    `json:"event"`
+	Detail     string    `json:"detail"`
 }
 
 var dropletLogCmd = &cobra.Command{
@@ -69,6 +72,7 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 	var entries []logEntry
 
 	entries = append(entries, logEntry{
+		sortTime:   item.CreatedAt,
 		Time:       item.CreatedAt.Format("2006-01-02 15:04:05"),
 		Cataractae: "",
 		Event:      "created",
@@ -106,6 +110,7 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 		}
 
 		entries = append(entries, logEntry{
+			sortTime:   ch.Time,
 			Time:       ch.Time.Format("2006-01-02 15:04:05"),
 			Cataractae: cataractae,
 			Event:      evt,
@@ -115,10 +120,14 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 
 	if !item.LastHeartbeatAt.IsZero() {
 		entries = append(entries, logEntry{
+			sortTime:   item.LastHeartbeatAt,
 			Time:       item.LastHeartbeatAt.Format("2006-01-02 15:04:05"),
 			Cataractae: item.CurrentCataractae,
 			Event:      "heartbeat",
 			Detail:     "last heartbeat recorded",
+		})
+		sort.SliceStable(entries, func(i, j int) bool {
+			return entries[i].sortTime.Before(entries[j].sortTime)
 		})
 	}
 
@@ -126,7 +135,7 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 }
 
 func printLogText(out io.Writer, item *cistern.Droplet, entries []logEntry) error {
-	fmt.Fprintf(out, "Droplet: %s  Title: %s  Status: %s\n\n", item.ID, item.Title, displayStatus(item.Status))
+	fmt.Fprintf(out, "Droplet: %s  Title: %s  Status: %s\n\n", item.ID, item.Title, displayStatusForDroplet(item))
 
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "TIME\tCATARACTAE\tEVENT\tDETAIL")

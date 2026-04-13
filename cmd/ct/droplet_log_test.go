@@ -236,3 +236,72 @@ func TestDropletLog_InvalidFormat(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestDropletLog_ShowsHeartbeat(t *testing.T) {
+	c := setupLogTestDB(t)
+	item, err := c.Add("myrepo", "Heartbeat task", "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c.GetReadyForAqueduct("myrepo", "default")
+	c.Assign(item.ID, "worker-1", "implement")
+	c.AddNote(item.ID, "implement", "started")
+	err = c.Heartbeat(item.ID)
+	if err != nil {
+		t.Fatalf("heartbeat failed: %v", err)
+	}
+
+	refreshed, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if refreshed.LastHeartbeatAt.IsZero() {
+		t.Fatal("LastHeartbeatAt should be set after Heartbeat()")
+	}
+
+	out, err := runLogCapture(t, item.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out, "heartbeat") {
+		t.Errorf("log output missing 'heartbeat' event: %s", out)
+	}
+	if !strings.Contains(out, "last heartbeat recorded") {
+		t.Errorf("log output missing heartbeat detail: %s", out)
+	}
+}
+
+func TestDropletLog_HeartbeatInChronologicalOrder(t *testing.T) {
+	c := setupLogTestDB(t)
+	item, err := c.Add("myrepo", "Heartbeat order task", "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c.GetReadyForAqueduct("myrepo", "default")
+	c.Assign(item.ID, "worker-1", "implement")
+	c.AddNote(item.ID, "implement", "early note")
+	err = c.Heartbeat(item.ID)
+	if err != nil {
+		t.Fatalf("heartbeat failed: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	c.AddNote(item.ID, "implement", "late note")
+
+	out, err := runLogCapture(t, item.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	heartbeatIdx := strings.Index(out, "heartbeat")
+	lateNoteIdx := strings.Index(out, "late note")
+	if heartbeatIdx == -1 || lateNoteIdx == -1 {
+		t.Fatalf("log output missing expected entries: %s", out)
+	}
+	if heartbeatIdx > lateNoteIdx {
+		t.Errorf("heartbeat should appear before late note in chronological order: heartbeat at %d, late note at %d", heartbeatIdx, lateNoteIdx)
+	}
+}
