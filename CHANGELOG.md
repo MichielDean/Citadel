@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### ct droplet edit: edit title, description, complexity, and priority interactively or via flags (ci-d65jx)
+
+Added `ct droplet edit` command for updating mutable droplet fields after creation. Previously, only `ct droplet rename` could change a droplet's title, and there was no way to modify description, complexity, or priority from the CLI without direct DB manipulation.
+
+**Key features:**
+- **Title editing** (`-t`/`--title`): change a droplet's title; empty titles are rejected
+- **Description editing** (`--description`): update description; supports `-` to read from stdin for multi-line content
+- **Complexity editing** (`-x`/`--complexity`): change complexity level (standard/full/critical or 1–3); short flag `-x` added
+- **Priority editing** (`-p`/`--priority`): change priority; must be a positive integer (zero and negatives rejected); short flag `-p` added
+- **Interactive mode**: when no flags are provided, opens the droplet in `$EDITOR` (defaults to `vi`) for multi-field editing; newline-escaping preserves multi-line content in the editor template
+- **Partial updates**: only specified fields are updated; unspecified fields are left unchanged
+- **Status guard**: only `open` and `pooled` droplets can be edited; `in_progress` and `delivered` are rejected
+- **Unified backend**: `ct droplet rename` now uses `EditDroplet` internally instead of separate `UpdateTitle` method
+- **Validation**: title must not be empty, priority must be ≥1, complexity must be 1–3
+
+**Command syntax:**
+```bash
+ct droplet edit <id> -t "new title"                    # Edit title
+ct droplet edit <id> --description "updated"           # Edit description
+ct droplet edit <id> -x critical -p 1                  # Edit complexity and priority
+ct droplet edit <id> --description -                   # Read description from stdin
+ct droplet edit <id>                                   # Interactive: open in $EDITOR
+```
+
+**Files changed:**
+- `cmd/ct/cistern.go` — added `-t`/`--title`, `-x` short flag for complexity, `-p` short flag for priority, interactive mode with `editInteractive`, `escapeNewlines`/`unescapeNewlines` helpers, validation
+- `cmd/ct/cistern_test.go` — tests for title editing, empty title rejection, priority validation, interactive editing round-trips
+- `cmd/ct/tui.go` — TUI edit action now uses `EditDroplet` with `Title` field instead of separate `UpdateTitle` call
+- `internal/cistern/client.go` — `EditDropletFields` gains `Title` field and `Empty()` method; `UpdateTitle` removed; `EditDroplet` validates title and priority
+- `internal/cistern/client_test.go` — tests for title editing, empty title, invalid priority, clear description, multiline description
+
 ### ct droplet tail: real-time event streaming (ci-asqg6)
 
 Added `ct droplet tail <id>` command that watches a droplet and streams status change events to stdout in real time.

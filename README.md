@@ -620,6 +620,11 @@ ct droplet export --format json                                   Export all dro
 ct droplet export --format csv --status delivered                 Export delivered droplets as CSV
 ct droplet show <id>                                              Show droplet details and notes
 ct droplet rename <id> "New title"                                Rename a droplet
+ct droplet edit <id> -t "new title"                               Edit title
+ct droplet edit <id> -x critical -p 1                              Edit complexity and priority
+ct droplet edit <id> --description "updated desc"                  Edit description
+ct droplet edit <id> --description -                               Read description from stdin
+ct droplet edit <id>                                               Interactive: open in $EDITOR (vi default)
 ct droplet note <id> "What you found"                             Add a note to a droplet
 ct droplet stats                                                  Show droplet counts by status
 ct droplet deps <id>                                              List dependency chain for a droplet

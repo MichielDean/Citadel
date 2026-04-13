@@ -1284,9 +1284,68 @@ func TestDropletRename(t *testing.T) {
 // starts with a clean Changed() state.
 func resetEditFlags() {
 	dropletEditCmd.ResetFlags()
+	dropletEditCmd.Flags().StringVarP(&editTitle, "title", "t", "", "")
 	dropletEditCmd.Flags().StringVar(&editDescription, "description", "", "")
-	dropletEditCmd.Flags().StringVar(&editComplexity, "complexity", "", "")
-	dropletEditCmd.Flags().IntVar(&editPriority, "priority", 0, "")
+	dropletEditCmd.Flags().StringVarP(&editComplexity, "complexity", "x", "", "")
+	dropletEditCmd.Flags().IntVarP(&editPriority, "priority", "p", 0, "")
+}
+
+func TestEscapeNewlines(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"hello", "hello"},
+		{"hello\nworld", `hello\nworld`},
+		{"line1\nline2\nline3", `line1\nline2\nline3`},
+		{"", ""},
+		{`back\nslash`, `back\\nslash`},
+		{`has\newlines\nhere`, `has\\newlines\\nhere`},
+		{"mix\nback\\slash", `mix\nback\\slash`},
+	}
+	for _, tt := range tests {
+		got := escapeNewlines(tt.in)
+		if got != tt.want {
+			t.Errorf("escapeNewlines(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestUnescapeNewlines(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"hello", "hello"},
+		{`hello\nworld`, "hello\nworld"},
+		{`line1\nline2\nline3`, "line1\nline2\nline3"},
+		{"", ""},
+		{`back\\nslash`, `back\nslash`},
+		{`has\\newlines\\nhere`, `has\newlines\nhere`},
+		{`mix\nback\\slash`, "mix\nback\\slash"},
+	}
+	for _, tt := range tests {
+		got := unescapeNewlines(tt.in)
+		if got != tt.want {
+			t.Errorf("unescapeNewlines(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestEscapeNewlinesRoundTrip(t *testing.T) {
+	tests := []string{
+		"simple text",
+		"line1\nline2",
+		`back\nslash`,
+		"mix\nback\\slash",
+		"tricky:\\n is not a newline",
+		`\\n`,
+	}
+	for _, original := range tests {
+		escaped := escapeNewlines(original)
+		unescaped := unescapeNewlines(escaped)
+		if unescaped != original {
+			t.Errorf("round-trip failed: %q → %q → %q", original, escaped, unescaped)
+		}
+	}
 }
 
 func TestDropletEdit(t *testing.T) {
@@ -1416,15 +1475,15 @@ func TestDropletEdit(t *testing.T) {
 		}
 	})
 
-	t.Run("no flags is an error", func(t *testing.T) {
+	t.Run("no flags opens editor which fails gracefully", func(t *testing.T) {
 		resetEditFlags()
-		// No flags set via .Set(), so Changed() returns false for all.
+		t.Setenv("EDITOR", "false")
 
 		err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID})
 		if err == nil {
-			t.Fatal("expected error when no flags provided")
+			t.Fatal("expected error when editor fails")
 		}
-		if !strings.Contains(err.Error(), "at least one") {
+		if !strings.Contains(err.Error(), "editor") {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
@@ -1450,6 +1509,84 @@ func TestDropletEdit(t *testing.T) {
 			t.Fatal("expected error for in_progress droplet")
 		}
 		if !strings.Contains(err.Error(), "cannot edit a droplet that has been picked up") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("update title", func(t *testing.T) {
+		dir := t.TempDir()
+		db := filepath.Join(dir, "test.db")
+		t.Setenv("CT_DB", db)
+
+		c2, err := cistern.New(db, "ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		item2, err := c2.Add("repo", "Old Title", "desc", 2, 3)
+		c2.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resetEditFlags()
+		dropletEditCmd.Flags().Set("title", "New Title")
+
+		if err := dropletEditCmd.RunE(dropletEditCmd, []string{item2.ID}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		c3, err := cistern.New(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c3.Close()
+		got, err := c3.Get(item2.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Title != "New Title" {
+			t.Errorf("title = %q, want %q", got.Title, "New Title")
+		}
+		if got.Description != "desc" {
+			t.Errorf("description changed unexpectedly: %q", got.Description)
+		}
+	})
+
+	t.Run("empty title is rejected", func(t *testing.T) {
+		resetEditFlags()
+		dropletEditCmd.Flags().Set("title", "")
+
+		err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID})
+		if err == nil {
+			t.Fatal("expected error for empty title")
+		}
+		if !strings.Contains(err.Error(), "title must not be empty") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("negative priority is rejected", func(t *testing.T) {
+		resetEditFlags()
+		dropletEditCmd.Flags().Set("priority", "-1")
+
+		err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID})
+		if err == nil {
+			t.Fatal("expected error for negative priority")
+		}
+		if !strings.Contains(err.Error(), "priority must be a positive integer") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("zero priority is rejected", func(t *testing.T) {
+		resetEditFlags()
+		dropletEditCmd.Flags().Set("priority", "0")
+
+		err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID})
+		if err == nil {
+			t.Fatal("expected error for zero priority")
+		}
+		if !strings.Contains(err.Error(), "priority must be a positive integer") {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
@@ -1532,5 +1669,85 @@ func TestRootCmd_CompletionCommand_BashSubcommandExists(t *testing.T) {
 	}
 	if bashCmd == nil || bashCmd.Name() != "bash" {
 		t.Fatal("completion bash subcommand must exist for installer")
+	}
+}
+
+func TestEditInteractive_LiteralBackslashN(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	literalDesc := `Use \n for newlines`
+	item, err := c.Add("repo", "Test title", literalDesc, 1, 3)
+	c.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	editorDir := t.TempDir()
+	editorScript := filepath.Join(editorDir, "editor.sh")
+	os.WriteFile(editorScript, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	t.Setenv("EDITOR", editorScript)
+
+	resetEditFlags()
+	if err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	c2, err := cistern.New(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	got, err := c2.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != literalDesc {
+		t.Errorf("description round-trip failed: got %q, want %q", got.Description, literalDesc)
+	}
+}
+
+func TestEditInteractive_TitleWithNewlines(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	multilineTitle := "line1\nline2"
+	item, err := c.Add("repo", multilineTitle, "desc", 1, 3)
+	c.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	editorDir := t.TempDir()
+	editorScript := filepath.Join(editorDir, "editor.sh")
+	os.WriteFile(editorScript, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	t.Setenv("EDITOR", editorScript)
+
+	resetEditFlags()
+	if err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	c2, err := cistern.New(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	got, err := c2.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != multilineTitle {
+		t.Errorf("title round-trip failed: got %q, want %q", got.Title, multilineTitle)
 	}
 }

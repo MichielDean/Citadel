@@ -526,40 +526,45 @@ func (c *Client) Heartbeat(id string) error {
 	return checkRowsAffected(res, id)
 }
 
-// UpdateTitle sets the title field on a droplet.
-func (c *Client) UpdateTitle(id, title string) error {
-	res, err := c.db.Exec(
-		`UPDATE droplets SET title = ?, updated_at = ? WHERE id = ?`,
-		title, time.Now().UTC(), id,
-	)
-	if err != nil {
-		return fmt.Errorf("cistern: update title %s: %w", id, err)
-	}
-	return checkRowsAffected(res, id)
-}
-
 // EditDropletFields holds the optional fields for EditDroplet.
 // A nil pointer means "do not update this field".
 type EditDropletFields struct {
+	Title       *string
 	Description *string
 	Complexity  *int
 	Priority    *int
+}
+
+func (f EditDropletFields) Empty() bool {
+	return f.Title == nil && f.Description == nil && f.Complexity == nil && f.Priority == nil
 }
 
 // EditDroplet updates mutable fields on a droplet that has not yet been picked
 // up. Allowed statuses: open, pooled. Returns an error if the droplet is
 // in_progress or delivered.
 func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
-	if fields.Description == nil && fields.Complexity == nil && fields.Priority == nil {
+	if fields.Empty() {
 		return nil
+	}
+
+	if fields.Title != nil && *fields.Title == "" {
+		return fmt.Errorf("cistern: title must not be empty")
 	}
 
 	if fields.Complexity != nil && (*fields.Complexity < 1 || *fields.Complexity > 3) {
 		return fmt.Errorf("cistern: complexity must be between 1 and 3, got %d", *fields.Complexity)
 	}
 
+	if fields.Priority != nil && *fields.Priority < 1 {
+		return fmt.Errorf("cistern: priority must be a positive integer, got %d", *fields.Priority)
+	}
+
 	var setClauses []string
 	var args []any
+	if fields.Title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *fields.Title)
+	}
 	if fields.Description != nil {
 		setClauses = append(setClauses, "description = ?")
 		args = append(args, *fields.Description)

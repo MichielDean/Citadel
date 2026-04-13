@@ -527,7 +527,8 @@ var dropletRenameCmd = &cobra.Command{
 		}
 		defer c.Close()
 
-		if err := c.UpdateTitle(args[0], args[1]); err != nil {
+		newTitle := args[1]
+		if err := c.EditDroplet(args[0], cistern.EditDropletFields{Title: &newTitle}); err != nil {
 			return err
 		}
 		fmt.Printf("droplet %s renamed to %q\n", args[0], args[1])
@@ -1347,6 +1348,7 @@ var dropletPeekCmd = &cobra.Command{
 // --- cistern edit ---
 
 var (
+	editTitle       string
 	editDescription string
 	editComplexity  string
 	editPriority    int
@@ -1354,10 +1356,14 @@ var (
 
 var dropletEditCmd = &cobra.Command{
 	Use:   "edit <id>",
-	Short: "Update description, complexity, or priority of a queued droplet",
+	Short: "Update title, description, complexity, or priority of a queued droplet",
 	Long: `Edit mutable fields on a droplet that has not yet been picked up.
 
-At least one flag must be provided. Only the flags you pass are updated.
+If no flags are provided, opens the droplet in your editor ($EDITOR, defaults to vi).
+Only the flags you pass are updated.
+
+  ct droplet edit <id> -t "new title"
+  ct droplet edit <id> -x critical -p 1
 
 To replace the description with multi-line text from stdin:
   echo 'new description' | ct droplet edit <id> --description -
@@ -1368,13 +1374,10 @@ droplet is in_progress or delivered.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
+		titleChanged := cmd.Flags().Changed("title")
 		descChanged := cmd.Flags().Changed("description")
 		cxChanged := cmd.Flags().Changed("complexity")
 		prioChanged := cmd.Flags().Changed("priority")
-
-		if !descChanged && !cxChanged && !prioChanged {
-			return fmt.Errorf("at least one of --description, --complexity, or --priority is required")
-		}
 
 		c, err := cistern.New(resolveDBPath(), "")
 		if err != nil {
@@ -1382,7 +1385,18 @@ droplet is in_progress or delivered.`,
 		}
 		defer c.Close()
 
+		if !titleChanged && !descChanged && !cxChanged && !prioChanged {
+			return editInteractive(c, id)
+		}
+
 		var fields cistern.EditDropletFields
+
+		if titleChanged {
+			if editTitle == "" {
+				return fmt.Errorf("title must not be empty")
+			}
+			fields.Title = &editTitle
+		}
 
 		if descChanged {
 			desc := editDescription
@@ -1405,6 +1419,9 @@ droplet is in_progress or delivered.`,
 		}
 
 		if prioChanged {
+			if editPriority < 1 {
+				return fmt.Errorf("priority must be a positive integer, got %d", editPriority)
+			}
 			fields.Priority = &editPriority
 		}
 
@@ -1415,6 +1432,153 @@ droplet is in_progress or delivered.`,
 		fmt.Printf("droplet %s updated\n", id)
 		return nil
 	},
+}
+
+func escapeNewlines(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func unescapeNewlines(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				b.WriteByte('\n')
+				i += 2
+			case '\\':
+				b.WriteByte('\\')
+				i += 2
+			default:
+				b.WriteByte(s[i])
+				i++
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
+}
+
+func editInteractive(c *cistern.Client, id string) error {
+	d, err := c.Get(id)
+	if err != nil {
+		return err
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	template := fmt.Sprintf(
+		"# Edit droplet %s\n"+
+			"# Lines starting with # are comments.\n"+
+			"title: %s\n"+
+			"description: %s\n"+
+			"complexity: %s\n"+
+			"priority: %d\n",
+		id, escapeNewlines(d.Title), escapeNewlines(d.Description), complexityName(d.Complexity), d.Priority)
+
+	tmp, err := os.CreateTemp("", "ct-edit-*.txt")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.WriteString(template); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	tmp.Close()
+
+	cmd := exec.Command(editor, tmpPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("editor: %w", err)
+	}
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return fmt.Errorf("read temp file: %w", err)
+	}
+
+	var fields cistern.EditDropletFields
+
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+
+		switch key {
+		case "title":
+			unescaped := unescapeNewlines(val)
+			if unescaped != d.Title && unescaped != "" {
+				fields.Title = &unescaped
+			}
+		case "description":
+			unescaped := unescapeNewlines(val)
+			if unescaped != d.Description {
+				fields.Description = &unescaped
+			}
+		case "complexity":
+			cx, err := parseComplexity(val)
+			if err != nil {
+				return fmt.Errorf("invalid complexity %q: %w", val, err)
+			}
+			if cx != d.Complexity {
+				fields.Complexity = &cx
+			}
+		case "priority":
+			p, err := strconv.Atoi(val)
+			if err != nil {
+				return fmt.Errorf("invalid priority %q: %w", val, err)
+			}
+			if p < 1 {
+				return fmt.Errorf("priority must be a positive integer, got %d", p)
+			}
+			if p != d.Priority {
+				fields.Priority = &p
+			}
+		}
+	}
+
+	if fields.Empty() {
+		fmt.Println("no changes")
+		return nil
+	}
+
+	if err := c.EditDroplet(id, fields); err != nil {
+		return err
+	}
+
+	fmt.Printf("droplet %s updated\n", id)
+	return nil
 }
 
 func init() {
@@ -1472,9 +1636,10 @@ func init() {
 	dropletRestartCmd.Flags().StringVar(&restartNotes, "notes", "", "optional note to record before restarting")
 	_ = dropletRestartCmd.MarkFlagRequired("cataractae")
 
+	dropletEditCmd.Flags().StringVarP(&editTitle, "title", "t", "", "new title")
 	dropletEditCmd.Flags().StringVar(&editDescription, "description", "", "new description (use - to read from stdin)")
-	dropletEditCmd.Flags().StringVar(&editComplexity, "complexity", "", "new complexity: standard|full|critical (or 1-3)")
-	dropletEditCmd.Flags().IntVar(&editPriority, "priority", 0, "new priority")
+	dropletEditCmd.Flags().StringVarP(&editComplexity, "complexity", "x", "", "new complexity: standard|full|critical (or 1-3)")
+	dropletEditCmd.Flags().IntVarP(&editPriority, "priority", "p", 0, "new priority (positive integer)")
 
 	dropletTailCmd.Flags().StringVar(&tailFmt, "format", "text", "output format: text or json")
 	dropletTailCmd.Flags().IntVar(&tailCount, "lines", 20, "number of historical events to show on start")

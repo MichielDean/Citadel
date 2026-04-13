@@ -31,6 +31,11 @@ ct droplet show <id>                     # Full detail
 ct droplet stats                         # Show counts by status (flowing, queued, delivered, pooled)
 ct droplet add --title "..." --repo <r>  # Add new droplet (direct)
 ct droplet add --filter --title "..." --repo <r>  # Add with filtration (LLM-assisted)
+ct droplet edit <id>                       # Interactive: open in $EDITOR
+ct droplet edit <id> -t "title"            # Edit title
+ct droplet edit <id> --description "desc"  # Edit description
+ct droplet edit <id> -x critical -p 1     # Edit complexity and priority
+ct droplet edit <id> --description -        # Read description from stdin
 ct droplet restart <id>                  # Retry failed droplet
 ct droplet pool <id>                    # Pool — cannot currently proceed
 ct droplet cancel <id>                   # Cancel droplet — won't be implemented or no longer needed
