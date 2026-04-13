@@ -1435,11 +1435,44 @@ droplet is in_progress or delivered.`,
 }
 
 func escapeNewlines(s string) string {
-	return strings.ReplaceAll(s, "\n", `\n`)
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func unescapeNewlines(s string) string {
-	return strings.ReplaceAll(s, `\n`, "\n")
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				b.WriteByte('\n')
+				i += 2
+			case '\\':
+				b.WriteByte('\\')
+				i += 2
+			default:
+				b.WriteByte(s[i])
+				i++
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
 }
 
 func editInteractive(c *cistern.Client, id string) error {
@@ -1460,7 +1493,7 @@ func editInteractive(c *cistern.Client, id string) error {
 			"description: %s\n"+
 			"complexity: %s\n"+
 			"priority: %d\n",
-		id, d.Title, escapeNewlines(d.Description), complexityName(d.Complexity), d.Priority)
+		id, escapeNewlines(d.Title), escapeNewlines(d.Description), complexityName(d.Complexity), d.Priority)
 
 	tmp, err := os.CreateTemp("", "ct-edit-*.txt")
 	if err != nil {
@@ -1504,8 +1537,9 @@ func editInteractive(c *cistern.Client, id string) error {
 
 		switch key {
 		case "title":
-			if val != d.Title && val != "" {
-				fields.Title = &val
+			unescaped := unescapeNewlines(val)
+			if unescaped != d.Title && unescaped != "" {
+				fields.Title = &unescaped
 			}
 		case "description":
 			unescaped := unescapeNewlines(val)

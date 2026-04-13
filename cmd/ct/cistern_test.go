@@ -1298,6 +1298,9 @@ func TestEscapeNewlines(t *testing.T) {
 		{"hello\nworld", `hello\nworld`},
 		{"line1\nline2\nline3", `line1\nline2\nline3`},
 		{"", ""},
+		{`back\nslash`, `back\\nslash`},
+		{`has\newlines\nhere`, `has\\newlines\\nhere`},
+		{"mix\nback\\slash", `mix\nback\\slash`},
 	}
 	for _, tt := range tests {
 		got := escapeNewlines(tt.in)
@@ -1315,11 +1318,32 @@ func TestUnescapeNewlines(t *testing.T) {
 		{`hello\nworld`, "hello\nworld"},
 		{`line1\nline2\nline3`, "line1\nline2\nline3"},
 		{"", ""},
+		{`back\\nslash`, `back\nslash`},
+		{`has\\newlines\\nhere`, `has\newlines\nhere`},
+		{`mix\nback\\slash`, "mix\nback\\slash"},
 	}
 	for _, tt := range tests {
 		got := unescapeNewlines(tt.in)
 		if got != tt.want {
 			t.Errorf("unescapeNewlines(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestEscapeNewlinesRoundTrip(t *testing.T) {
+	tests := []string{
+		"simple text",
+		"line1\nline2",
+		`back\nslash`,
+		"mix\nback\\slash",
+		"tricky:\\n is not a newline",
+		`\\n`,
+	}
+	for _, original := range tests {
+		escaped := escapeNewlines(original)
+		unescaped := unescapeNewlines(escaped)
+		if unescaped != original {
+			t.Errorf("round-trip failed: %q → %q → %q", original, escaped, unescaped)
 		}
 	}
 }
@@ -1645,5 +1669,85 @@ func TestRootCmd_CompletionCommand_BashSubcommandExists(t *testing.T) {
 	}
 	if bashCmd == nil || bashCmd.Name() != "bash" {
 		t.Fatal("completion bash subcommand must exist for installer")
+	}
+}
+
+func TestEditInteractive_LiteralBackslashN(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	literalDesc := `Use \n for newlines`
+	item, err := c.Add("repo", "Test title", literalDesc, 1, 3)
+	c.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	editorDir := t.TempDir()
+	editorScript := filepath.Join(editorDir, "editor.sh")
+	os.WriteFile(editorScript, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	t.Setenv("EDITOR", editorScript)
+
+	resetEditFlags()
+	if err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	c2, err := cistern.New(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	got, err := c2.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != literalDesc {
+		t.Errorf("description round-trip failed: got %q, want %q", got.Description, literalDesc)
+	}
+}
+
+func TestEditInteractive_TitleWithNewlines(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	multilineTitle := "line1\nline2"
+	item, err := c.Add("repo", multilineTitle, "desc", 1, 3)
+	c.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	editorDir := t.TempDir()
+	editorScript := filepath.Join(editorDir, "editor.sh")
+	os.WriteFile(editorScript, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	t.Setenv("EDITOR", editorScript)
+
+	resetEditFlags()
+	if err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	c2, err := cistern.New(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	got, err := c2.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != multilineTitle {
+		t.Errorf("title round-trip failed: got %q, want %q", got.Title, multilineTitle)
 	}
 }
