@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### ct droplet log: show chronological activity log for a droplet (ci-ehjan)
+
+Added `ct droplet log <id>` command that displays a structured timeline of events for a droplet. While `ct droplet show` displays raw fields and `ct droplet tail` streams real-time events, the log command reconstructs a human-readable chronological view from the stored notes and change history.
+
+**Key features:**
+- **Creation event**: Shows when the droplet was created with title and priority
+- **Stage transitions**: Displays when the droplet moved between cataractae stages
+- **Outcome signals**: Shows pass/recirculate/pool events with reasons
+- **Scheduler events**: Displays scheduler-generated notes (zombie detection, stall notes)
+- **Heartbeat records**: Shows last heartbeat timestamp with the assigned cataractae
+- **Note attribution**: Cataractae-prefixed notes are split into cataractae name and detail
+- **Chronological ordering**: All events sorted by timestamp (stable sort preserves order for simultaneous events)
+- **Two output formats**: `--format text` (tab-aligned table, default) and `--format json` (NDJSON)
+
+**Command syntax:**
+```bash
+ct droplet log <id>                       # Show chronological activity log
+ct droplet log <id> --format text         # Tab-aligned table with timestamps (default)
+ct droplet log <id> --format json          # One JSON object per line (NDJSON)
+```
+
+**Files added:**
+- `cmd/ct/droplet_log.go` — command implementation with buildLogEntries, printLogText, printLogJSON
+- `cmd/ct/droplet_log_test.go` — tests for creation events, pool events, stage assignments, chronological ordering, JSON output, format validation, and heartbeat display
+- `cmd/ct/cistern.go` — registered dropletLogCmd with --format flag
+
 ### ct droplet edit: edit title, description, complexity, and priority interactively or via flags (ci-d65jx)
 
 Added `ct droplet edit` command for updating mutable droplet fields after creation. Previously, only `ct droplet rename` could change a droplet's title, and there was no way to modify description, complexity, or priority from the CLI without direct DB manipulation.

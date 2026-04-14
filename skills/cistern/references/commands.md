@@ -59,6 +59,20 @@ Streams cataractae notes and events (status changes, stage transitions, assignee
 
 In text mode (default), each line shows: `2026-04-13 14:30:00 [note] reviewer: Found type mismatch in handler`. In JSON mode, each line is a JSON object with `time`, `kind`, and `value` fields.
 
+### Log — Chronological Activity Timeline
+
+```bash
+ct droplet log <id>                       # Show chronological activity log for a droplet
+ct droplet log <id> --format text         # Tab-aligned table with timestamps (default)
+ct droplet log <id> --format json          # One JSON object per line (NDJSON)
+```
+
+Displays a structured timeline of events for a droplet, parsed from its notes and change history. Includes creation event, stage transitions, outcome signals (pass/recirculate/pool), scheduler events, and heartbeat records.
+
+In text mode, the output starts with a header line (`Droplet: <id>  Title: <title>  Status: <status>`) followed by a tab-aligned table with columns: `TIME`, `CATARACTAE`, `EVENT`, `DETAIL`. In JSON mode, each line is a JSON object with `time`, `cataractae`, `event`, and `detail` fields.
+
+Events include: `created` (droplet creation), stage transition names, `pooled` (with reason), `heartbeat` (last known heartbeat), and `note` (cataractae-prefixed notes).
+
 ### Add Options
 
 | Flag | Values | Default |
