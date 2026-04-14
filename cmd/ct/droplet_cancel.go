@@ -12,9 +12,10 @@ var cancelReason string
 var dropletCancelCmd = &cobra.Command{
 	Use:   "cancel <id>",
 	Short: "Cancel a droplet — won't be implemented or is no longer needed",
-	Long: `Cancel sets a droplet's status to 'cancelled', clears its assignee, outcome,
-and assigned aqueduct, writes a scheduler note with timestamp, and records the
-cancel as an event. Existing notes are preserved for the audit trail.
+	Long: `Cancel sets a droplet's status to 'cancelled', clears outcome and assigned
+aqueduct (preserving assignee for pool-slot release), writes a scheduler note
+with timestamp, and records the cancel as an event. Existing notes are preserved
+for the audit trail.
 
 Works for both flowing (in_progress) and queued (open) droplets. Droplets that
 are already delivered or cancelled cannot be cancelled again.

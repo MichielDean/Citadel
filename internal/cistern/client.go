@@ -702,11 +702,11 @@ func (c *Client) Cancel(id, reason string) error {
 	}
 
 	ts := now.Format("2006-01-02 15:04:05")
-	note := "cancelled"
+	label := "cancelled"
 	if reason != "" {
-		note = "cancelled: " + reason
+		label = "cancelled: " + reason
 	}
-	note = fmt.Sprintf("%s [%s]", note, ts)
+	note := fmt.Sprintf("%s [%s]", label, ts)
 	if err := c.AddNote(id, "scheduler", note); err != nil {
 		return fmt.Errorf("cistern: cancel note %s: %w", id, err)
 	}
