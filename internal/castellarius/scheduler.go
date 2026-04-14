@@ -740,8 +740,19 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		}
 
 		// Release the aqueduct worker unconditionally — it is free for other droplets
-		// regardless of where this one routes next.
+		// regardless of where this one routes next. Also kill the agent's tmux
+		// session — the agent already signaled its outcome and the session is
+		// now stale. If the SIGUSR1 notification triggers an immediate tick,
+		// the dispatch cycle may try to spawn a new session for this worker
+		// before the old one has exited. Killing here prevents the spawn guard
+		// from seeing a live session for the wrong cataractae.
 		if assignee != "" {
+			sessionID := repo.Name + "-" + assignee
+			if isTmuxAlive(sessionID) {
+				exec.Command("tmux", "kill-session", "-t", sessionID).Run()
+				s.logger.Info("observe: killed agent session after outcome processed",
+					"repo", repo.Name, "droplet", item.ID, "session", sessionID)
+			}
 			if w := pool.FindByName(assignee); w != nil {
 				pool.Release(w)
 			}
