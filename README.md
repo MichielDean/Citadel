@@ -645,6 +645,10 @@ ct droplet tail <id> --follow                               Stream events contin
 ct droplet tail <id> --lines 50                             Show last 50 events on start
 ct droplet tail <id> --format json                          Output events as NDJSON (one JSON object per line)
 
+# Log — chronological activity timeline for a droplet
+ct droplet log <id>                                         Show activity log (creation, transitions, signals, heartbeat, notes)
+ct droplet log <id> --format json                           Output as NDJSON (one JSON object per line)
+
 # Droplet outcomes — used by agent cataractae to signal completion
 ct droplet pass <id>                                              Advance to next cataractae
 ct droplet pass <id> --notes "..."                                Advance with notes
