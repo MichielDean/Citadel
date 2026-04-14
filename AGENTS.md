@@ -57,6 +57,8 @@ Fix whatever is in the way. Resolve merge conflicts and review comments uncondit
 
 ## Step 0 — Pre-flight
 
+## Step 4 — Commit
+Use cistern-git skill conventions (exclude CONTEXT.md, verify HEAD advances).
 ```bash
 go mod tidy
 go build ./...
