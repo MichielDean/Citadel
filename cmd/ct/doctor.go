@@ -6,17 +6,21 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/castellarius"
 	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/skills"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
 var doctorFix bool
+var doctorSkills bool
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -26,10 +30,22 @@ var doctorCmd = &cobra.Command{
 
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "attempt to auto-repair common issues")
+	doctorCmd.Flags().BoolVar(&doctorSkills, "skills", false, "list all skills referenced by any aqueduct and their install status")
 	rootCmd.AddCommand(doctorCmd)
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
+	if doctorSkills {
+		home, _ := os.UserHomeDir()
+		cfgPath := filepath.Join(home, ".cistern", "cistern.yaml")
+		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+		if err != nil {
+			return fmt.Errorf("cannot parse config: %w", err)
+		}
+		runDoctorSkillsCheck(cfg)
+		return nil
+	}
+
 	ok := true
 
 	ok = checkWithFix("tmux installed", func() error {
@@ -951,6 +967,68 @@ func fixCisternEnvAddKey(envPath, key string) error {
 		return fmt.Errorf("write key: %w", err)
 	}
 	return nil
+}
+
+// runDoctorSkillsCheck lists every skill referenced by any aqueduct across all
+// configured repos and reports whether each is installed. When --skills is set,
+// this replaces the normal doctor check suite.
+func runDoctorSkillsCheck(cfg *aqueduct.AqueductConfig) {
+	cfgDir := filepath.Dir(resolveConfigPath())
+
+	type skillInfo struct {
+		name    string
+		usedBy  []string
+		missing bool
+	}
+
+	seen := map[string]*skillInfo{}
+	for _, repo := range cfg.Repos {
+		wfPath := repo.WorkflowPath
+		if !filepath.IsAbs(wfPath) {
+			wfPath = filepath.Join(cfgDir, wfPath)
+		}
+		wf, err := aqueduct.ParseWorkflow(wfPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: parse %s: %v\n", wfPath, err)
+			continue
+		}
+		for _, step := range wf.Cataractae {
+			for _, sk := range step.Skills {
+				if _, exists := seen[sk.Name]; !exists {
+					seen[sk.Name] = &skillInfo{name: sk.Name}
+				}
+				seen[sk.Name].usedBy = append(seen[sk.Name].usedBy, step.Name)
+			}
+		}
+	}
+
+	if len(seen) == 0 {
+		fmt.Println("no skills referenced by any aqueduct")
+		return
+	}
+
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "SKILL\tSTATUS\tUSED BY")
+	fmt.Fprintln(tw, "─────\t──────\t───────")
+	for _, name := range names {
+		info := seen[name]
+		installed := skills.IsInstalled(name)
+		var status string
+		if installed {
+			status = "✓ installed"
+		} else {
+			status = "✗ missing"
+		}
+		usedBy := strings.Join(info.usedBy, ", ")
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", name, status, usedBy)
+	}
+	tw.Flush()
 }
 
 // checkWithFix runs fn. If fn fails and fix is non-nil, it runs fix then
