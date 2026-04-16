@@ -2514,10 +2514,8 @@ max_cataractae: 1
 	// Keep these two lists in sync — this test will fail if the default workflow
 	// requires a skill not present here, signalling that run-tests.sh needs updating.
 	installerStubs := []string{
-		"cistern-droplet-state",
 		"cistern-git",
 		"cistern-github",
-		"cistern-reviewer",
 		"cistern-signaling",
 		"cistern-test-runner",
 		"cistern-diff-reader",

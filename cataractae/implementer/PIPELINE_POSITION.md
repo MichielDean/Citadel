@@ -1,5 +1,5 @@
 # Pipeline Position
 
 - Your role: implementer — Implementer
-- Predecessor: none — you are first
+- Predecessor: architect — Architect
 - Successor: reviewer — Reviewer
