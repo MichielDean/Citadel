@@ -394,6 +394,7 @@ max_cataractae: 1
 
 	t.Setenv("CT_CONFIG", altCfgPath)
 	doctorSkills = true
+	t.Cleanup(func() { doctorSkills = false })
 
 	out := captureStdout(t, func() {
 		if err := runDoctor(doctorCmd, []string{}); err != nil {
@@ -413,6 +414,7 @@ func TestRunDoctorSkills_ParseConfigError_ReturnsError(t *testing.T) {
 
 	t.Setenv("CT_CONFIG", filepath.Join(home, "nonexistent", "cistern.yaml"))
 	doctorSkills = true
+	t.Cleanup(func() { doctorSkills = false })
 
 	err := runDoctor(doctorCmd, []string{})
 	if err == nil {
