@@ -10,20 +10,26 @@ description: Git conventions for Cistern aqueduct cataractae. Use for all git op
 Each droplet has an isolated worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/`.
 The Castellarius creates and cleans up worktrees. Agents never run `git worktree add/remove`.
 
-## Staging — always exclude CONTEXT.md
+## Staging — always exclude CONTEXT.md and InstructionsFile
 
-CONTEXT.md is written by the Castellarius on every dispatch. Never commit it.
+CONTEXT.md is written by the Castellarius on every dispatch. The provider's
+InstructionsFile (e.g. AGENTS.md for opencode/codex, CLAUDE.md for claude,
+GEMINI.md for gemini) is also overwritten by the Castellarius with the
+cataractae prompt. Never commit either file.
 
 ```bash
-git add -A -- ':!CONTEXT.md'
-git status --short   # verify no CONTEXT.md, no binaries
+git add -A -- ':!CONTEXT.md' ':!<InstructionsFile>'
+git status --short   # verify no CONTEXT.md, no InstructionsFile, no binaries
 ```
+
+Replace `<InstructionsFile>` with the provider-specific filename from the
+active preset (determined by `provider.ProviderPreset.InstrFile()`).
 
 ## Committing — verify HEAD advances
 
 ```bash
 BEFORE=$(git rev-parse HEAD)
-git add -A -- ':!CONTEXT.md'
+git add -A -- ':!CONTEXT.md' ':!<InstructionsFile>'
 git commit -m "<droplet-id>: <description>"
 AFTER=$(git rev-parse HEAD)
 if [ "$BEFORE" = "$AFTER" ]; then
@@ -32,6 +38,9 @@ if [ "$BEFORE" = "$AFTER" ]; then
   exit 1
 fi
 ```
+
+Replace `<InstructionsFile>` with the provider-specific filename (e.g. AGENTS.md
+for opencode/codex, CLAUDE.md for claude).
 
 ## Diffing — always use merge-base
 

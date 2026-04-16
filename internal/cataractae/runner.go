@@ -224,13 +224,14 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 	}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
-		Level:       step.Context,
-		SandboxDir:  sandboxDir,
-		Item:        item,
-		Step:        step,
-		Notes:       notes,
-		OpenIssues:  openIssues,
-		QueueClient: r.queue,
+		Level:            step.Context,
+		SandboxDir:       sandboxDir,
+		Item:             item,
+		Step:             step,
+		Notes:            notes,
+		OpenIssues:       openIssues,
+		QueueClient:      r.queue,
+		InstructionsFile: r.preset.InstrFile(),
 	})
 	if err != nil {
 		return fmt.Errorf("context: %w", err)

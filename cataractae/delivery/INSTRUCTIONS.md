@@ -37,7 +37,7 @@ go mod tidy && go build ./...
 
 If go.mod/go.sum changed, commit the tidy:
 ```bash
-git add go.mod go.sum -- ':!CONTEXT.md'
+git add go.mod go.sum -- ':!CONTEXT.md' ':!<InstructionsFile>'
 git commit -m "chore: go mod tidy"
 ```
 
@@ -96,7 +96,7 @@ For each conflicted file:
 
 After resolving:
 ```bash
-git add $(git diff --name-only --diff-filter=U) -- ':!CONTEXT.md'
+git add $(git diff --name-only --diff-filter=U) -- ':!CONTEXT.md' ':!<InstructionsFile>'
 git rebase --continue
 # Adapt: see cistern-test-runner
 go build ./... && go test ./...
@@ -140,7 +140,7 @@ recirculate with a structured diagnostic (see below).
 
 Attempt 1: apply a fix or rerun the check. Commit:
 ```bash
-git add -A -- ':!CONTEXT.md'
+git add -A -- ':!CONTEXT.md' ':!<InstructionsFile>'
 git commit -m "fix: <specific issue>" && git push
 ```
 
@@ -191,3 +191,4 @@ ct droplet pool $DROPLET_ID --notes "Cannot merge: <exact reason> — $PR_URL"
 - Build + test must pass before every push
 - Fix CI, conflicts, and review comments yourself — recirculate only after 2 failed fix attempts
 - Recirculate only for code-level failures — pool for infrastructure failures
+- Never commit the provider's InstructionsFile (AGENTS.md for opencode/codex, CLAUDE.md for claude, GEMINI.md for gemini) — it is overwritten by the Castellarius and must be excluded from all git add operations alongside CONTEXT.md

@@ -489,7 +489,8 @@ func TestWriteContextFile_RecentStepNotes_MatchesByIdentity(t *testing.T) {
 // TestWriteContextFile_ExternalRef_WrittenToContextMd verifies that when a
 // droplet has an ExternalRef set, writeContextFile emits it in the exact format
 // that the delivery cataractae shell script greps for:
-//   grep '^\*\*External Ref:\*\*' CONTEXT.md | awk '{print $3}'
+//
+//	grep '^\*\*External Ref:\*\*' CONTEXT.md | awk '{print $3}'
 //
 // Given: a droplet with ExternalRef "jira:DPF-456"
 // When:  writeContextFile is called
@@ -673,5 +674,167 @@ func TestReadSkillDescription_WithFrontmatter_DoesNotReturnDashes(t *testing.T) 
 	}
 	if got == "" {
 		t.Error("readSkillDescription must return a non-empty description")
+	}
+}
+
+// TestUncommittedFiles_ExcludesInstructionsFile verifies that uncommittedFiles
+// excludes the provider's InstructionsFile (e.g. AGENTS.md) from the list of
+// dirty files, preventing the cataractae's overwritten prompt from being
+// committed back to the repo (bug ci-czkeg).
+//
+// Given: a repo with modified CONTEXT.md, .current-stage, and AGENTS.md
+// When:  uncommittedFiles is called with exclude=[]string{"AGENTS.md"}
+// Then:  AGENTS.md is excluded alongside CONTEXT.md and .current-stage
+func TestUncommittedFiles_ExcludesInstructionsFile(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Modify files to make them appear in git status --porcelain.
+	for _, name := range []string{"CONTEXT.md", ".current-stage", "AGENTS.md", "feature.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("modified\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Stage them so they appear as modified (not untracked).
+	runGit(t, dir, "add", "CONTEXT.md", ".current-stage", "AGENTS.md", "feature.go")
+
+	files, err := uncommittedFiles(dir, []string{"AGENTS.md"})
+	if err != nil {
+		t.Fatalf("uncommittedFiles: %v", err)
+	}
+
+	hasFile := func(name string) bool {
+		for _, f := range files {
+			if f == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	if hasFile("CONTEXT.md") {
+		t.Error("CONTEXT.md must be excluded from uncommittedFiles")
+	}
+	if hasFile(".current-stage") {
+		t.Error(".current-stage must be excluded from uncommittedFiles")
+	}
+	if hasFile("AGENTS.md") {
+		t.Error("AGENTS.md (InstructionsFile) must be excluded from uncommittedFiles (bug ci-czkeg)")
+	}
+	if !hasFile("feature.go") {
+		t.Error("feature.go must appear in uncommittedFiles — it is a legitimate change")
+	}
+}
+
+// TestUncommittedFiles_NoExcludeKeepsAll verifies that when no extra exclude
+// list is provided (nil), only CONTEXT.md and .current-stage are excluded —
+// backward-compatible behavior.
+func TestUncommittedFiles_NoExcludeKeepsAll(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "feature.go"), []byte("modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "AGENTS.md", "feature.go")
+
+	files, err := uncommittedFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("uncommittedFiles: %v", err)
+	}
+
+	hasFile := func(name string) bool {
+		for _, f := range files {
+			if f == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	if hasFile("CONTEXT.md") {
+		t.Error("CONTEXT.md must always be excluded")
+	}
+	if !hasFile("AGENTS.md") {
+		t.Error("AGENTS.md must appear when not in exclude list (backward compat)")
+	}
+	if !hasFile("feature.go") {
+		t.Error("feature.go must appear in uncommittedFiles")
+	}
+}
+
+// TestUncommittedFiles_CustomInstructionsFile verifies that a non-default
+// InstructionsFile (e.g. GEMINI.md, CLAUDE.md) is also excluded when specified.
+func TestUncommittedFiles_CustomInstructionsFile(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := os.WriteFile(filepath.Join(dir, "GEMINI.md"), []byte("modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "GEMINI.md")
+
+	files, err := uncommittedFiles(dir, []string{"GEMINI.md"})
+	if err != nil {
+		t.Fatalf("uncommittedFiles: %v", err)
+	}
+
+	for _, f := range files {
+		if f == "GEMINI.md" {
+			t.Error("GEMINI.md must be excluded when passed in exclude list (ci-czkeg)")
+		}
+	}
+}
+
+// TestWriteContextFile_UncommittedFilesSectionExcludesInstructionsFile verifies
+// that when a worktree has a dirty InstructionsFile, the "Uncommitted Files from
+// Prior Session" section in CONTEXT.md does NOT list it (ci-czkeg).
+//
+// Given: a repo with modified AGENTS.md and feature.go
+// When:  writeContextFile is called with InstructionsFile="AGENTS.md"
+// Then:  the uncommitted files section lists feature.go but NOT AGENTS.md
+func TestWriteContextFile_UncommittedFilesSectionExcludesInstructionsFile(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "feature.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "AGENTS.md", "feature.go")
+
+	item := &cistern.Droplet{ID: "ci-czkeg-t1", Title: "Test", Status: "in_progress"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent"}
+
+	p := ContextParams{
+		Item:             item,
+		Step:             step,
+		SandboxDir:       dir,
+		InstructionsFile: "AGENTS.md",
+	}
+
+	ctxPath := filepath.Join(t.TempDir(), "CONTEXT.md")
+	if err := writeContextFile(ctxPath, p); err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	content, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	got := string(content)
+
+	sectionIdx := strings.Index(got, "Uncommitted Files from Prior Session")
+	if sectionIdx == -1 {
+		t.Skip("No uncommitted files section — test expects dirty worktree")
+	}
+	section := got[sectionIdx:]
+
+	if strings.Contains(section, "AGENTS.md") {
+		t.Error("AGENTS.md must NOT appear in uncommitted files section (ci-czkeg)")
+	}
+	if !strings.Contains(section, "feature.go") {
+		t.Error("feature.go must appear in uncommitted files section")
 	}
 }

@@ -50,6 +50,11 @@ type ContextParams struct {
 	// Logger is used to log non-fatal errors (e.g. SetLastReviewedCommit failures).
 	// If nil, slog.Default() is used.
 	Logger *slog.Logger
+	// InstructionsFile is the provider-specific filename written into the worktree
+	// (e.g. "AGENTS.md" for opencode/codex, "CLAUDE.md" for claude, "GEMINI.md" for gemini).
+	// It is excluded from all git operations alongside CONTEXT.md and .current-stage
+	// to prevent the cataractae prompt from being committed back to the repo.
+	InstructionsFile string
 }
 
 func (p ContextParams) logger() *slog.Logger {
@@ -180,7 +185,7 @@ func writeContextFile(path string, p ContextParams) error {
 	}
 
 	if p.Level == aqueduct.ContextFullCodebase || p.Level == "" {
-		if dirty, err := uncommittedFiles(p.SandboxDir); err == nil && len(dirty) > 0 {
+		if dirty, err := uncommittedFiles(p.SandboxDir, []string{p.InstructionsFile}); err == nil && len(dirty) > 0 {
 			b.WriteString("### Uncommitted Files from Prior Session\n\n")
 			b.WriteString("The worktree has uncommitted changes from a prior agent session.\n")
 			b.WriteString("You MUST commit these changes before making new ones.\n")
@@ -431,13 +436,23 @@ func skillDescription(name string) string {
 }
 
 // uncommittedFiles returns a list of modified/staged files (excluding CONTEXT.md,
-// .current-stage, and untracked files) in the given directory. Returns nil on error.
-func uncommittedFiles(dir string) ([]string, error) {
+// .current-stage, untracked files, and any additional filenames in exclude) in the
+// given directory. Returns nil on error.
+func uncommittedFiles(dir string, exclude []string) ([]string, error) {
 	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
+	}
+	excluded := map[string]bool{
+		"CONTEXT.md":     true,
+		".current-stage": true,
+	}
+	for _, name := range exclude {
+		if name != "" {
+			excluded[name] = true
+		}
 	}
 	var files []string
 	for _, line := range strings.Split(string(out), "\n") {
@@ -449,7 +464,7 @@ func uncommittedFiles(dir string) ([]string, error) {
 			continue
 		}
 		name := strings.TrimSpace(line[3:])
-		if name != "CONTEXT.md" && name != ".current-stage" {
+		if !excluded[name] {
 			files = append(files, name)
 		}
 	}
