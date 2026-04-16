@@ -25,34 +25,52 @@ For every change: **could this regression be caught by the existing test suite, 
 
 If tests would not catch it, passing tests are meaningless. The question becomes: is the change correct by inspection, and should an integration test exist?
 
-## Mandatory Coverage Checks
+## Proof of Work
 
-Before passing, verify these coverage requirements. Missing coverage is an automatic recirculate.
+You must demonstrate that you verified the implementation, not just claim "tests pass." Before signaling pass, state:
 
-### New Query/DAO/Search Paths
+1. **What integration test files you inspected** (name the file paths — "I looked at OrganizationDAOSearchTest.kt" not "I checked tests")
+2. **What methods/classes from the diff you traced through the test files** (name them — "PermissionBooleanColumn.toQueryBuilder is not tested anywhere" not "coverage seems light")
+3. **What contract violations you checked** — for every method that the diff adds or modifies, verify that its contract is honored in the implementation, not just tested
 
-When the diff adds any of the following, an integration test MUST exist that exercises the real database (not a mock):
+A verdict of "pass" without naming specific files and methods is not credible. Show your work.
 
-- New DAO methods or repository functions
-- New search filters or query builders
-- New column types that project data (e.g., boolean columns using EXISTS subqueries, multi-value columns using GROUP_CONCAT)
-- New mapping functions that transform database rows into domain objects (e.g., `mapToOrganization`)
-- New permission/feature flag lookups against a catalog table
+## Contract Verification Gates
 
-If the diff adds any of these and no integration test covers them, recirculate with a specific finding naming exactly what is untested and what the integration test should verify.
+These are not optional checklists you scan through. They are verification principles. For each one, you must either confirm it is satisfied (with evidence) or recirculate with a specific finding.
 
-### Placeholder Implementations
+### Every Method Honors Its Contract
 
-When the diff adds a method that returns a hardcoded value where a computed result is implied by the method's contract (e.g., `toQueryBuilder` returning `"FALSE"`, or a column's SELECT projection returning an empty string), recirculate immediately. Placeholder implementations are logic errors, not simplifications.
+When the diff adds or modifies a method, verify that the method does what its name and signature promise. Common contract violations:
 
-### Mapping Completeness
+- A method named `toQueryBuilder` that returns `"FALSE"` — the contract promises a query, the implementation delivers a constant
+- A method named `loadPermissions` that returns `Map<Long, Map<String, List<String>>>` when the data has a UNIQUE constraint (the contract promises unique values, `List` allows duplicates — `Set` is correct)
+- A mapping function that skips fields from the diff — the contract says "map all fields," the implementation omits some
 
-When the diff adds a mapping function (e.g., `mapToOrganization`) that transforms data for multiple fields:
-- Verify EVERY new field from the diff is mapped in the function
-- Verify that boolean/flag fields use the correct truthy value (e.g., `"true"`, not just presence)
-- Verify that collection fields (permissions, roles) use the semantically correct type (`Set` for unique items, `List` for ordered items)
+### Integration Tests Exist for State-Dependent Code
 
-Missing field mappings, wrong truthy checks, and wrong collection types are all recirculate findings.
+When the diff adds any code that queries, writes, or transforms data against a real database, there must be an integration test that exercises the real database — not a mock. Specifically:
+
+- New DAO methods, repository functions, or query builders need integration tests against real data
+- New search filters or column types that project data (EXISTS subqueries, GROUP_CONCAT aggregations) need integration tests
+- New mapping functions (e.g., `mapToOrganization`) need tests that verify all fields are mapped with correct types and truthy values
+
+If the diff adds any of these and no integration test covers them, recirculate with a finding that names exactly what is untested and what test should exist.
+
+### No Placeholder Implementations
+
+A method that returns a hardcoded value where the contract implies a computed result is always a bug. This is not a simplification — it is a missing implementation. If you find one, recirculate immediately.
+
+### Mappings Are Complete and Correct
+
+When the diff adds a mapping function that transforms data for multiple fields:
+- Every field the diff introduces must appear in the mapping
+- Boolean/flag fields must use the correct truthy value (`"true"`, not just presence)
+- Collection fields must use the semantically correct type (`Set` for unique items where the table has a UNIQUE constraint, `List` for ordered items)
+
+### Repeated Inline Expressions Are Extracted
+
+When the same expression appears 3+ times (e.g., `perms[CPS_ENABLED]?.contains("true") ?: false` repeated for every boolean flag), it must be extracted into a helper. The helper must be named in your verification.
 
 ## Integration Test Evaluation
 

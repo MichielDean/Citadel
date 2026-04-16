@@ -21,6 +21,7 @@ cataractae:
       - name: cistern-architect
     timeout_minutes: 20
     on_pass: implement
+    on_recirculate: architect
     on_fail: pooled
     on_pool: pooled
 
