@@ -186,6 +186,9 @@ func TestStatusJSONOutput_IncludesCataractae(t *testing.T) {
 	if result.FetchedAt.IsZero() {
 		t.Error("fetched_at is zero, want non-zero timestamp")
 	}
+	if result.Cataractae == nil {
+		t.Error("cataractae is nil, want non-nil slice (even if empty)")
+	}
 }
 
 func TestStatusIntervalZeroReturnsError(t *testing.T) {
