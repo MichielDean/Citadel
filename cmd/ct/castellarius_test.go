@@ -64,6 +64,8 @@ func TestStatusJSONOutput_ValidStructure(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
+	cfgPath := writeMinimalConfig(t, dir, "claude")
+	t.Setenv("CT_CONFIG", cfgPath)
 
 	origJSON := statusJSON
 	origWatch := statusWatch
@@ -105,6 +107,8 @@ func TestStatusJSONOutput_WithFlowingData(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
+	cfgPath := writeMinimalConfig(t, dir, "claude")
+	t.Setenv("CT_CONFIG", cfgPath)
 
 	c, err := cistern.New(db, "ts")
 	if err != nil {
@@ -154,6 +158,8 @@ func TestStatusJSONOutput_IncludesCataractae(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
+	cfgPath := writeMinimalConfig(t, dir, "claude")
+	t.Setenv("CT_CONFIG", cfgPath)
 
 	origJSON := statusJSON
 	origWatch := statusWatch
