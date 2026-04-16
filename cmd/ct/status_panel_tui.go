@@ -58,7 +58,8 @@ func (p statusPanel) Init() tea.Cmd {
 func (p statusPanel) fetchDataCmd() tea.Cmd {
 	cfgPath, dbPath := p.cfgPath, p.dbPath
 	return func() tea.Msg {
-		return statusDataMsg(fetchDashboardData(cfgPath, dbPath))
+		data, _ := fetchDashboardData(cfgPath, dbPath)
+		return statusDataMsg(data)
 	}
 }
 

@@ -119,7 +119,8 @@ func tuiAnimTick() tea.Cmd {
 func (m dashboardTUIModel) fetchDataCmd() tea.Cmd {
 	cfgPath, dbPath := m.cfgPath, m.dbPath
 	return func() tea.Msg {
-		return tuiDataMsg(fetchDashboardData(cfgPath, dbPath))
+		data, _ := fetchDashboardData(cfgPath, dbPath)
+		return tuiDataMsg(data)
 	}
 }
 

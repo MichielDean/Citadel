@@ -978,8 +978,8 @@ func TestWsReadClientFrame_PayloadSizeLimit(t *testing.T) {
 	// the given extended payload length. The payload itself is zero-filled.
 	buildFrame := func(extLen uint16) []byte {
 		var frame []byte
-		frame = append(frame, 0x81)       // FIN + text opcode
-		frame = append(frame, 0x80|0x7E)  // masked + rawLen=126
+		frame = append(frame, 0x81)      // FIN + text opcode
+		frame = append(frame, 0x80|0x7E) // masked + rawLen=126
 		var ext [2]byte
 		binary.BigEndian.PutUint16(ext[:], extLen)
 		frame = append(frame, ext[:]...)
@@ -1420,7 +1420,9 @@ func TestDashboardTUI_FlushTimer_StaleCallbackDoesNotCorruptLastFrame(t *testing
 // are committed as lastFrame and a new pending frame begins.
 //
 // Given: a DashboardTUI with inFrame=true and pending = marker+"frame-one-content"
-//        (established by broadcasting marker+"frame-one-content")
+//
+//	(established by broadcasting marker+"frame-one-content")
+//
 // When:  a single chunk "previous-frame-tail"+marker+"next-frame-start" is broadcast
 // Then:  lastFrame == marker+"frame-one-content"+"previous-frame-tail"
 // And:   pending == marker+"next-frame-start"
@@ -1780,9 +1782,9 @@ func readWSTextFrame(br *bufio.Reader) (string, error) {
 // Then:  total fetch count is well below window/fastInterval (adaptive backoff working)
 func TestDashboardWebMux_EventsSSE_AdaptiveBackoff_PollCountDropsWhenIdle(t *testing.T) {
 	var callCount int32
-	idleFetcher := func(cfg, db string) *DashboardData {
+	idleFetcher := func(cfg, db string) (*DashboardData, error) {
 		atomic.AddInt32(&callCount, 1)
-		return &DashboardData{FlowingCount: 0, FetchedAt: time.Now()}
+		return &DashboardData{FlowingCount: 0, FetchedAt: time.Now()}, nil
 	}
 
 	mux := newDashboardMuxWith(tempCfg(t), tempDB(t), idleFetcher, 50*time.Millisecond, 250*time.Millisecond)

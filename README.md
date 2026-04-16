@@ -580,6 +580,7 @@ ct dashboard --web --addr 127.0.0.1:8080  Custom listen address (must include ho
 
 # Status — observe the system
 ct status                      Overall status: cistern level, aqueduct flow, cataractae chains
+ct status --json               Machine-readable JSON: flowing/queued counts, cataractae, aqueduct info
 ct status --watch              Continuously refresh every 5 seconds (Ctrl-C to stop)
 ct status --watch --interval N  Refresh every N seconds (min 1)
 ct aqueduct status             Aqueduct definitions: repos and their cataractae chains

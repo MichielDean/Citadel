@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### ct status --json: machine-readable JSON output (ci-fm13f)
+
+Added `--json` flag to `ct status` that outputs machine-readable JSON instead of the human-readable TUI summary. Enables scripts and dashboards to consume pipeline state without parsing tabular text.
+
+**Key features:**
+- **JSON output**: `ct status --json` prints a JSON object with flowing/queued droplet counts, cataractae chain info, aqueduct status, and farm running state
+- **Incompatible with --watch**: `--json` and `--watch` are mutually exclusive; using both returns an error
+- **Error propagation**: When infrastructure (config or DB) is missing, the JSON path returns an error instead of degraded partial data — scripts get a clear signal when something is broken
+
+**Command syntax:**
+```bash
+ct status --json               # Machine-readable JSON output
+```
+
+**Files changed:**
+- `cmd/ct/castellarius.go` — added `--json` flag, JSON output path with mutual exclusion check against `--watch`
+- `cmd/ct/castellarius_test.go` — tests for flag registration, --json/--watch mutual exclusion, valid JSON structure, flowing data, cataractae presence, and error paths
+- `cmd/ct/dashboard.go` — `fetchDashboardData` now returns `(*DashboardData, error)` instead of `*DashboardData`; errors propagated for JSON path, ignored by TUI/web callers for graceful degradation
+
 ### ct droplet history: alias for ct droplet log showing event timeline (ci-kcygr)
 
 Added `ct droplet history <id>` command as an alias for `ct droplet log`, providing a more intuitive name for operators who want a quick human-readable event timeline. Produces identical output to `ct droplet log`.

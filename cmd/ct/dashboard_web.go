@@ -657,13 +657,13 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 
 // newDashboardMuxWith returns an http.Handler for the web dashboard with custom
 // fetcher and refresh intervals. Exposed for testing.
-func newDashboardMuxWith(cfgPath, dbPath string, fetcher func(cfg, db string) *DashboardData, fastInterval, slowInterval time.Duration) http.Handler {
+func newDashboardMuxWith(cfgPath, dbPath string, fetcher func(cfg, db string) (*DashboardData, error), fastInterval, slowInterval time.Duration) http.Handler {
 	return newDashboardMuxInternalWith(cfgPath, dbPath, nil, fetcher, fastInterval, slowInterval)
 }
 
 // makeDashboardEventsHandler returns an http.HandlerFunc for the SSE dashboard events
 // endpoint. Parameterised so tests can inject a custom fetcher and intervals.
-func makeDashboardEventsHandler(cfgPath, dbPath string, fetcher func(string, string) *DashboardData, fastInterval, slowInterval time.Duration) http.HandlerFunc {
+func makeDashboardEventsHandler(cfgPath, dbPath string, fetcher func(string, string) (*DashboardData, error), fastInterval, slowInterval time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -684,7 +684,7 @@ func makeDashboardEventsHandler(cfgPath, dbPath string, fetcher func(string, str
 		}
 
 		// Initial send — establishes the hash baseline for adaptive rate.
-		data := fetcher(cfgPath, dbPath)
+		data, _ := fetcher(cfgPath, dbPath)
 		sendEvent(data)
 		lastHash := dashboardStateHash(data)
 
@@ -696,7 +696,7 @@ func makeDashboardEventsHandler(cfgPath, dbPath string, fetcher func(string, str
 			case <-r.Context().Done():
 				return
 			case <-ticker.C:
-				data = fetcher(cfgPath, dbPath)
+				data, _ = fetcher(cfgPath, dbPath)
 				newHash := dashboardStateHash(data)
 				sendEvent(data)
 				// Adaptive backoff: slow down when Castellarius is idle.
@@ -720,7 +720,7 @@ func newDashboardMuxInternal(cfgPath, dbPath string, tui *DashboardTUI) http.Han
 
 // newDashboardMuxInternalWith returns an http.Handler for the web dashboard with custom
 // fetcher and refresh intervals. Exposed for testing.
-func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetcher func(cfg, db string) *DashboardData, fastInterval, slowInterval time.Duration) http.Handler {
+func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetcher func(cfg, db string) (*DashboardData, error), fastInterval, slowInterval time.Duration) http.Handler {
 	// Read dashboard_font_family fresh at server start so a cistern.yaml edit
 	// followed by restarting ct dashboard --web takes effect without recompiling.
 	// This is the supported update path: edit cistern.yaml, restart the server.
@@ -758,7 +758,7 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		data := fetcher(cfgPath, dbPath)
+		data, _ := fetcher(cfgPath, dbPath)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(data) //nolint:errcheck
 	})

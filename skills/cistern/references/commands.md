@@ -510,6 +510,7 @@ The Filter module provides an interactive multi-turn conversation for refining i
 
 ```bash
 ct status                        # High-level pipeline health
+ct status --json                 # Machine-readable JSON (flowing/queued counts, cataractae, aqueduct info)
 ct doctor                        # Check system health and configuration
 ct doctor --fix                  # Auto-repair common issues (credentials, permissions)
 ct doctor --skills               # List all skills referenced by any aqueduct and their install status

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +34,169 @@ func TestStatusIntervalFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestStatusJSONFlagRegistered(t *testing.T) {
+	f := statusCmd.Flags().Lookup("json")
+	if f == nil {
+		t.Fatal("--json flag not registered on statusCmd")
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("expected --json default false, got %q", f.DefValue)
+	}
+}
+
+func TestStatusJSONIncompatibleWithWatch(t *testing.T) {
+	origWatch := statusWatch
+	origJSON := statusJSON
+	defer func() { statusWatch = origWatch; statusJSON = origJSON }()
+
+	statusWatch = true
+	statusJSON = true
+	err := statusCmd.RunE(statusCmd, nil)
+	if err == nil {
+		t.Fatal("expected error when --json used with --watch, got nil")
+	}
+	if !strings.Contains(err.Error(), "--json is incompatible with --watch") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestStatusJSONOutput_ValidStructure(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+	cfgPath := writeMinimalConfig(t, dir, "claude")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := statusCmd.RunE(statusCmd, nil)
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, out)
+	}
+
+	for _, key := range []string{"flowing_count", "queued_count", "cataractae", "farm_running"} {
+		if _, ok := result[key]; !ok {
+			t.Errorf("JSON output missing key %q; keys present: %v", key, result)
+		}
+	}
+}
+
+func TestStatusJSONOutput_WithFlowingData(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+	cfgPath := writeMinimalConfig(t, dir, "claude")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := c.Add("repo", "Test droplet", "", 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.UpdateStatus(item.ID, "in_progress")
+	c.Close()
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = statusCmd.RunE(statusCmd, nil)
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	var result DashboardData
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("output is not valid JSON matching DashboardData: %v\noutput: %s", err, out)
+	}
+	if result.FlowingCount != 1 {
+		t.Errorf("flowing_count = %d, want 1", result.FlowingCount)
+	}
+}
+
+func TestStatusJSONOutput_IncludesCataractae(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+	cfgPath := writeMinimalConfig(t, dir, "claude")
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := statusCmd.RunE(statusCmd, nil)
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	var result DashboardData
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, out)
+	}
+	if result.FetchedAt.IsZero() {
+		t.Error("fetched_at is zero, want non-zero timestamp")
+	}
+	if result.Cataractae == nil {
+		t.Error("cataractae is nil, want non-nil slice (even if empty)")
+	}
+}
+
 func TestStatusIntervalZeroReturnsError(t *testing.T) {
 	origInterval := statusInterval
 	defer func() { statusInterval = origInterval }()
@@ -43,6 +208,47 @@ func TestStatusIntervalZeroReturnsError(t *testing.T) {
 	}
 	if err.Error() != "--interval must be at least 1" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStatusJSONOutput_ReturnsErrorWhenConfigMissing(t *testing.T) {
+	t.Setenv("CT_CONFIG", "/nonexistent/cistern.yaml")
+	t.Setenv("CT_DB", "/nonexistent/cistern.db")
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	err := statusCmd.RunE(statusCmd, nil)
+	if err == nil {
+		t.Fatal("expected error when config is missing, got nil")
+	}
+}
+
+func TestStatusJSONOutput_ReturnsErrorWhenDBUnreadable(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "cistern.yaml")
+	cfgContent := "repos:\n  - name: test\n    repo: /tmp/test\n    workers:\n      - name: w1\n"
+	os.WriteFile(cfgPath, []byte(cfgContent), 0644)
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "unreadable.db")
+	os.WriteFile(dbPath, []byte("not a database"), 0444)
+	t.Setenv("CT_DB", dbPath)
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	err := statusCmd.RunE(statusCmd, nil)
+	if err == nil {
+		t.Fatal("expected error when DB is unreadable, got nil")
 	}
 }
 
@@ -581,5 +787,3 @@ func TestFormatDroughtStatus_WhenStartedAtNil_ReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty string when StartedAt is nil, got %q", got)
 	}
 }
-
-

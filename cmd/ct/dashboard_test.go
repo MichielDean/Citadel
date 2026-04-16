@@ -96,7 +96,7 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 	c.CloseItem(closed.ID)
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	if data.CataractaeCount != 2 {
 		t.Errorf("CataractaeCount = %d, want 2", data.CataractaeCount)
@@ -168,9 +168,12 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 // --- TestFetchDashboardData_FarmNotRunning_ShowsDroughtState ---
 
 func TestFetchDashboardData_FarmNotRunning_ShowsDroughtState(t *testing.T) {
-	t.Run("missing config returns empty data", func(t *testing.T) {
-		data := fetchDashboardData("/nonexistent/cistern.yaml", "/nonexistent/cistern.db")
+	t.Run("missing config returns error and partial data", func(t *testing.T) {
+		data, err := fetchDashboardData("/nonexistent/cistern.yaml", "/nonexistent/cistern.db")
 
+		if err == nil {
+			t.Fatal("expected error when config is missing")
+		}
 		if data == nil {
 			t.Fatal("expected non-nil DashboardData even on error")
 		}
@@ -194,7 +197,10 @@ func TestFetchDashboardData_FarmNotRunning_ShowsDroughtState(t *testing.T) {
 		// cistern.New creates the DB if missing, so we can't test a truly missing DB
 		// at the queue level without making the path unwritable. Instead, test
 		// that a fresh empty DB yields all-dry cataractae and zero counts.
-		data := fetchDashboardData(cfgPath, dbPath)
+		data, err := fetchDashboardData(cfgPath, dbPath)
+		if err != nil {
+			t.Fatalf("unexpected error for valid config with fresh DB: %v", err)
+		}
 
 		if data.CataractaeCount != 2 {
 			t.Errorf("CataractaeCount = %d, want 2 (from config)", data.CataractaeCount)
@@ -557,7 +563,7 @@ func TestFetchDashboardData_PooledItems_PopulatedCorrectly(t *testing.T) {
 	c.CloseItem(delivered.ID)
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	if len(data.PooledItems) != 1 {
 		t.Errorf("PooledItems len = %d, want 1", len(data.PooledItems))
@@ -586,7 +592,7 @@ func TestFetchDashboardData_PooledItems_EmptyWhenNonePooled(t *testing.T) {
 	c.CloseItem(delivered.ID)
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	if len(data.PooledItems) != 0 {
 		t.Errorf("PooledItems len = %d, want 0 when no pooled droplets", len(data.PooledItems))
@@ -806,7 +812,7 @@ func TestFetchDashboardData_ActiveAqueduct_ShowsAllSteps(t *testing.T) {
 	c.Assign(item.ID, "virgo", "merge")
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	var virgo *CataractaeInfo
 	for i := range data.Cataractae {
@@ -840,7 +846,7 @@ func TestFetchDashboardData_IdleAqueduct_ShowsAllSteps(t *testing.T) {
 	cfgPath := tempCfg3Steps(t)
 	dbPath := tempDB(t)
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	var virgo *CataractaeInfo
 	for i := range data.Cataractae {
@@ -1189,7 +1195,7 @@ func TestFetchDashboardData_InProgressWithEmptyAssignee_AppearsAsUnassigned(t *t
 	c.GetReady("myrepo")
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	if len(data.UnassignedItems) != 1 {
 		t.Fatalf("UnassignedItems len = %d, want 1", len(data.UnassignedItems))
@@ -1229,7 +1235,7 @@ func TestFetchDashboardData_InProgressWithEmptyAssignee_FlowingCountMatchesVisib
 
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	// FlowingCount must equal assigned + unassigned.
 	if data.FlowingCount != 2 {
@@ -1260,7 +1266,7 @@ func TestFetchDashboardData_AssignedInProgress_NotInUnassigned(t *testing.T) {
 	c.Assign(item.ID, "virgo", "implement")
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	if len(data.UnassignedItems) != 0 {
 		t.Errorf("UnassignedItems len = %d, want 0 for a properly assigned droplet", len(data.UnassignedItems))
@@ -1404,7 +1410,7 @@ func TestFetchDashboardData_AssignedToRemovedAqueduct_AppearsAsUnassigned(t *tes
 	c.Assign(item.ID, "deleted-aqueduct", "implement")
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	// The droplet must appear in UnassignedItems (visible in UNASSIGNED section).
 	if len(data.UnassignedItems) != 1 {

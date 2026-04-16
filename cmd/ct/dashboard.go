@@ -72,15 +72,16 @@ type DashboardData struct {
 }
 
 // fetchDashboardData loads config and queue state into a DashboardData.
-// On any error (missing config, missing DB) it returns a partial/drought result
-// rather than an error, so the dashboard degrades gracefully.
-func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
+// Returns an error when config or DB cannot be opened so callers can decide
+// how to handle it. TUI/dashboard callers may ignore the error and render
+// partial data; the --json CLI path propagates it to give scripts a clear
+// signal when infrastructure is broken.
+func fetchDashboardData(cfgPath, dbPath string) (*DashboardData, error) {
 	data := &DashboardData{FetchedAt: time.Now()}
 
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 	if err != nil {
-		// Config not found — show aqueducts closed.
-		return data
+		return data, fmt.Errorf("loading config: %w", err)
 	}
 
 	// Build aqueduct list and load cataractae chain for each repo.
@@ -119,7 +120,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 			cataractae[i] = ci
 		}
 		data.Cataractae = cataractae
-		return data
+		return data, fmt.Errorf("opening cistern: %w", err)
 	}
 	defer c.Close()
 
@@ -134,7 +135,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 			cataractae[i] = ci
 		}
 		data.Cataractae = cataractae
-		return data
+		return data, fmt.Errorf("listing droplets: %w", err)
 	}
 
 	// Tally counts and build assignee map.
@@ -248,7 +249,7 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	}
 
 	data.FarmRunning = true
-	return data
+	return data, nil
 }
 
 // dashboardStateHash returns a string fingerprint of the key fields in d that
@@ -685,21 +686,21 @@ func renderRecentLine(item *cistern.Droplet) string {
 // state has just changed, slowInterval is used when the Castellarius is idle
 // (FlowingCount == 0 and state hash unchanged since the last poll).
 func runDashboardWith(cfgPath, dbPath string, inputCh <-chan byte, out io.Writer,
-	fetch func(string, string) *DashboardData,
+	fetch func(string, string) (*DashboardData, error),
 	fastInterval, slowInterval time.Duration) error {
 
 	ticker := time.NewTicker(fastInterval)
 	defer ticker.Stop()
 
 	// Initial render immediately.
-	data := fetch(cfgPath, dbPath)
+	data, _ := fetch(cfgPath, dbPath)
 	prevHash := dashboardStateHash(data)
 	fmt.Fprint(out, clearScreen+renderDashboard(data))
 
 	for {
 		select {
 		case <-ticker.C:
-			data = fetch(cfgPath, dbPath)
+			data, _ = fetch(cfgPath, dbPath)
 			newHash := dashboardStateHash(data)
 
 			// Adaptive backoff: slow down when Castellarius is idle.
@@ -722,7 +723,7 @@ func runDashboardWith(cfgPath, dbPath string, inputCh <-chan byte, out io.Writer
 				fmt.Fprint(out, clearScreen)
 				return nil
 			case 'r', 'R':
-				data = fetch(cfgPath, dbPath)
+				data, _ = fetch(cfgPath, dbPath)
 				prevHash = dashboardStateHash(data)
 				fmt.Fprint(out, clearScreen+renderDashboard(data))
 				ticker.Reset(fastInterval) // manual refresh always resets to fast
