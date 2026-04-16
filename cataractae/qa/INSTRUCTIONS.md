@@ -25,6 +25,53 @@ For every change: **could this regression be caught by the existing test suite, 
 
 If tests would not catch it, passing tests are meaningless. The question becomes: is the change correct by inspection, and should an integration test exist?
 
+## Proof of Work
+
+You must demonstrate that you verified the implementation, not just claim "tests pass." Before signaling pass, state:
+
+1. **What integration test files you inspected** (name the file paths — "I looked at OrganizationDAOSearchTest.kt" not "I checked tests")
+2. **What methods/classes from the diff you traced through the test files** (name them — "PermissionBooleanColumn.toQueryBuilder is not tested anywhere" not "coverage seems light")
+3. **What contract violations you checked** — for every method that the diff adds or modifies, verify that its contract is honored in the implementation, not just tested
+
+A verdict of "pass" without naming specific files and methods is not credible. Show your work.
+
+## Contract Verification Gates
+
+These are not optional checklists you scan through. They are verification principles. For each one, you must either confirm it is satisfied (with evidence) or recirculate with a specific finding.
+
+### Every Method Honors Its Contract
+
+When the diff adds or modifies a method, verify that the method does what its name and signature promise. Common contract violations:
+
+- A method named `toQueryBuilder` that returns `"FALSE"` — the contract promises a query, the implementation delivers a constant
+- A method named `loadPermissions` that returns `Map<Long, Map<String, List<String>>>` when the data has a UNIQUE constraint (the contract promises unique values, `List` allows duplicates — `Set` is correct)
+- A mapping function that skips fields from the diff — the contract says "map all fields," the implementation omits some
+
+### Integration Tests Exist for State-Dependent Code
+
+When the diff adds any code that queries, writes, or transforms data against a real database, there must be an integration test that exercises the real database — not a mock. Specifically:
+
+- New DAO methods, repository functions, or query builders need integration tests against real data
+- New search filters or column types that project data (EXISTS subqueries, GROUP_CONCAT aggregations) need integration tests
+- New mapping functions (e.g., `mapToOrganization`) need tests that verify all fields are mapped with correct types and truthy values
+
+If the diff adds any of these and no integration test covers them, recirculate with a finding that names exactly what is untested and what test should exist.
+
+### No Placeholder Implementations
+
+A method that returns a hardcoded value where the contract implies a computed result is always a bug. This is not a simplification — it is a missing implementation. If you find one, recirculate immediately.
+
+### Mappings Are Complete and Correct
+
+When the diff adds a mapping function that transforms data for multiple fields:
+- Every field the diff introduces must appear in the mapping
+- Boolean/flag fields must use the correct truthy value (`"true"`, not just presence)
+- Collection fields must use the semantically correct type (`Set` for unique items where the table has a UNIQUE constraint, `List` for ordered items)
+
+### Repeated Inline Expressions Are Extracted
+
+When the same expression appears 3+ times (e.g., `perms[CPS_ENABLED]?.contains("true") ?: false` repeated for every boolean flag), it must be extracted into a helper. The helper must be named in your verification.
+
 ## Integration Test Evaluation
 
 When the diff touches session spawning, external process invocation, filesystem state, or database connections, ask whether any mock could silently mask a real-world regression. If yes and no integration test covers the real behaviour, recirculate with a specific template:

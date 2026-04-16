@@ -542,11 +542,12 @@ func revisionCycleNotes(notes []cistern.CataractaeNote, step *aqueduct.WorkflowC
 			}
 		}
 	} else {
-		// Non-reviewer (e.g. implementer): include notes from any reviewer-like cataractae
-		// so that implementers see the review feedback they need to fix.
+		// Non-reviewer (e.g. implementer): include notes from reviewer-like cataractae
+		// and from the architect so that implementers see the design brief and review
+		// feedback they need to address.
 		for _, n := range cycle {
 			name := strings.ToLower(n.CataractaeName)
-			if strings.Contains(name, "review") || strings.Contains(name, "qa") || strings.Contains(name, "security") {
+			if strings.Contains(name, "review") || strings.Contains(name, "qa") || strings.Contains(name, "security") || strings.Contains(name, "architect") {
 				filtered = append(filtered, n)
 			}
 		}

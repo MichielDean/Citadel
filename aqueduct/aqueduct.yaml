@@ -9,13 +9,26 @@ complexity:
     level: 3
 
 cataractae:
+  - name: architect
+    type: agent
+    identity: architect
+    context: full_codebase
+    skills:
+      - name: cistern-signaling
+      - name: cistern-git
+      - name: cistern-diff-reader
+    timeout_minutes: 20
+    on_pass: implement
+    on_recirculate: architect
+    on_fail: pooled
+    on_pool: pooled
+
   - name: implement
     type: agent
     identity: implementer
     context: full_codebase
     skills:
       - name: cistern-signaling
-      - name: cistern-droplet-state
       - name: cistern-git
       - name: cistern-test-runner
     timeout_minutes: 30
@@ -29,8 +42,6 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-signaling
-      - name: cistern-droplet-state
-      - name: cistern-reviewer
       - name: cistern-git
       - name: cistern-diff-reader
     timeout_minutes: 20
@@ -45,7 +56,6 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-signaling
-      - name: cistern-droplet-state
       - name: cistern-git
       - name: cistern-test-runner
       - name: cistern-diff-reader
@@ -61,7 +71,6 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-signaling
-      - name: cistern-droplet-state
       - name: cistern-diff-reader
     timeout_minutes: 15
     on_pass: docs
@@ -75,7 +84,6 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-signaling
-      - name: cistern-droplet-state
       - name: cistern-git
       - name: cistern-diff-reader
     timeout_minutes: 20
@@ -90,7 +98,6 @@ cataractae:
     skills:
       - name: cistern-signaling
       - name: cistern-github
-      - name: cistern-droplet-state
       - name: cistern-git
       - name: cistern-test-runner
     timeout_minutes: 60
