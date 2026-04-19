@@ -83,8 +83,13 @@ type Client struct {
 	prefix string
 }
 
-// New opens (or creates) a SQLite database at dbPath, runs the schema, and
-// returns a Client. The prefix is used when generating droplet IDs.
+// New opens (or creates) a SQLite database at dbPath, applies the schema and
+// all numbered migrations, and returns a Client ready for use.
+// The prefix is used when generating droplet IDs (e.g., "bf" → "bf-a3k9x").
+//
+// IMPORTANT: This is the only way to create a valid *Client. The db field is
+// unexported. Do not construct Client manually — migrations and schema must
+// run exactly once, and New guarantees that.
 func New(dbPath, prefix string) (*Client, error) {
 	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
