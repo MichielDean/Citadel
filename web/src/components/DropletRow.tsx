@@ -4,15 +4,13 @@ import { StatusBadge } from './StatusBadge';
 interface DropletRowProps {
   droplet: Droplet;
   blockedBy?: string;
-  onClick?: (id: string) => void;
 }
 
-export function DropletRow({ droplet, blockedBy, onClick }: DropletRowProps) {
+export function DropletRow({ droplet, blockedBy }: DropletRowProps) {
   const age = formatAge(droplet.created_at);
 
   return (
-    <button
-      onClick={onClick ? () => onClick(droplet.id) : undefined}
+    <div
       className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-cistern-border/20 transition-colors text-left"
     >
       <StatusBadge status={droplet.status} />
@@ -24,7 +22,7 @@ export function DropletRow({ droplet, blockedBy, onClick }: DropletRowProps) {
         </span>
       )}
       <span className="text-xs text-cistern-muted whitespace-nowrap">{age}</span>
-    </button>
+    </div>
   );
 }
 

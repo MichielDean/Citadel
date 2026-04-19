@@ -38,7 +38,7 @@ export function AqueductArch({ cataractae, activity, isFlowing, onPeek }: Aquedu
           ? 'border-cistern-accent/40 bg-cistern-surface/80 hover:border-cistern-accent pulse-glow'
           : 'border-cistern-border bg-cistern-surface/40 opacity-60 hover:opacity-80'
       }`}
-      onClick={() => {}}
+      onClick={() => onPeek(cataractae.name)}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">

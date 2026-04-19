@@ -42,7 +42,8 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
         const parsed: DashboardData = JSON.parse(e.data);
         setData(parsed);
         onDataRef.current?.(parsed);
-      } catch {
+      } catch (err) {
+        console.warn('Failed to parse SSE message:', err, e.data);
       }
     };
 
