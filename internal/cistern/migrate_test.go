@@ -129,7 +129,8 @@ func TestMigrationsAreApplied_LegacyCompat(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
+// minInt returns the smaller of a and b (avoids shadowing the Go 1.21 built-in min).
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}

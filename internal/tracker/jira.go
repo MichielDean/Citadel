@@ -23,10 +23,10 @@ var defaultJiraPriorityMap = map[string]int{
 }
 
 type jiraProvider struct {
-	cfg        TrackerConfig
-	client     *http.Client
-	HTTPTimeout time.Duration
-	PriorityMap map[string]int
+	cfg          TrackerConfig
+	client       *http.Client
+	httpTimeout  time.Duration
+	priorityMap  map[string]int
 }
 
 func newJiraProvider(cfg TrackerConfig) (TrackerProvider, error) {
@@ -36,8 +36,8 @@ func newJiraProvider(cfg TrackerConfig) (TrackerProvider, error) {
 	}
 	return &jiraProvider{
 		cfg:         cfg,
-		HTTPTimeout: 30 * time.Second,
-		PriorityMap: prioMap,
+		httpTimeout: 30 * time.Second,
+		priorityMap: prioMap,
 		client:      &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
@@ -45,7 +45,7 @@ func newJiraProvider(cfg TrackerConfig) (TrackerProvider, error) {
 // SetHTTPTimeout replaces the HTTP client timeout. Used by tests to exercise
 // timeout behaviour without waiting 30 s.
 func (p *jiraProvider) SetHTTPTimeout(d time.Duration) {
-	p.HTTPTimeout = d
+	p.httpTimeout = d
 	p.client = &http.Client{Timeout: d}
 }
 
@@ -122,7 +122,7 @@ func (p *jiraProvider) FetchIssue(key string) (*ExternalIssue, error) {
 func (p *jiraProvider) mapPriority(name string) int {
 	pm := p.cfg.PriorityMap
 	if len(pm) == 0 {
-		pm = p.PriorityMap
+		pm = p.priorityMap
 	}
 	if v, ok := pm[name]; ok {
 		return v
