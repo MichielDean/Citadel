@@ -100,6 +100,65 @@ func TestSplitStatements_SemicolonInString(t *testing.T) {
 	}
 }
 
+// TestEndToEndSchemaVerification opens a fresh DB, runs all migrations, and
+// verifies every expected column exists on the droplets table. This catches
+// migration ordering issues or missing columns.
+func TestEndToEndSchemaVerification(t *testing.T) {
+	c := testClient(t)
+	defer c.Close()
+
+	expectedColumns := []string{
+		"id", "repo", "title", "description", "priority", "complexity",
+		"status", "assignee", "current_cataractae", "outcome",
+		"assigned_aqueduct", "last_reviewed_commit", "external_ref",
+		"last_heartbeat_at", "created_at", "updated_at", "stage_dispatched_at",
+	}
+
+	rows, err := c.db.Query(`PRAGMA table_info("droplets")`)
+	if err != nil {
+		t.Fatalf("PRAGMA table_info: %v", err)
+	}
+	defer rows.Close()
+
+	var foundColumns []string
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dfltVal any
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltVal, &pk); err != nil {
+			t.Fatal(err)
+		}
+		foundColumns = append(foundColumns, name)
+	}
+
+	seen := make(map[string]bool, len(foundColumns))
+	for _, col := range foundColumns {
+		seen[col] = true
+	}
+
+	for _, expected := range expectedColumns {
+		if !seen[expected] {
+			t.Errorf("missing column %q on droplets table. Found: %v", expected, foundColumns)
+		}
+	}
+
+	for _, table := range []string{"cataractae_notes", "events", "droplet_dependencies", "droplet_issues"} {
+		var count int
+		c.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count)
+		if count != 1 {
+			t.Errorf("expected table %q to exist", table)
+		}
+	}
+
+	var migrationCount int
+	c.db.QueryRow(`SELECT COUNT(*) FROM "_schema_migrations"`).Scan(&migrationCount)
+	if migrationCount != 15 {
+		t.Errorf("expected 15 migration records, got %d", migrationCount)
+	}
+}
+
 func TestMigrationsAreApplied_LegacyCompat(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "legacy.db")

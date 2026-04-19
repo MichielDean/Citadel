@@ -244,17 +244,13 @@ func TestJiraProvider_FetchIssue_TimesOutOnSlowServer(t *testing.T) {
 	t.Setenv("JIRA_TOKEN_TIMEOUT", "test-token")
 
 	p, err := ctor(tracker.TrackerConfig{
-		Name:     "jira",
-		BaseURL:  srv.URL,
-		TokenEnv: "JIRA_TOKEN_TIMEOUT",
+		Name:        "jira",
+		BaseURL:     srv.URL,
+		TokenEnv:    "JIRA_TOKEN_TIMEOUT",
+		HTTPTimeout: 50 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	// Override the HTTP timeout on the constructed provider.
-	if setter, ok := p.(interface{ SetHTTPTimeout(time.Duration) }); ok {
-		setter.SetHTTPTimeout(50 * time.Millisecond)
 	}
 
 	// When: FetchIssue is called.

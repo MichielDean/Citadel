@@ -763,6 +763,36 @@ func TestHookGitSync_FetchTimeout_SkipsRepoAndContinues(t *testing.T) {
 
 // --- cistern.yaml mtime detection tests ---
 
+func TestRunDroughtHooks_GitFetchTimeout_ZeroDefault(t *testing.T) {
+	// When GitFetchTimeout is zero, RunDroughtHooks should use 30s default.
+	// We can't easily observe the internal value, but we can verify the function
+	// doesn't panic or fail with a zero timeout — and that re-opening with an
+	// explicit timeout works too.
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644); err != nil {
+		t.Fatalf("write cfg: %v", err)
+	}
+
+	// Zero timeout should not panic.
+	RunDroughtHooks(DroughtHookParams{
+		Config:           &aqueduct.AqueductConfig{},
+		SandboxRoot:      tmpDir,
+		Logger:           discardLogger(),
+		CfgPath:          cfgPath,
+		GitFetchTimeout:  0,
+	})
+
+	// Explicit timeout should also not panic.
+	RunDroughtHooks(DroughtHookParams{
+		Config:          &aqueduct.AqueductConfig{},
+		SandboxRoot:     tmpDir,
+		Logger:          discardLogger(),
+		CfgPath:         cfgPath,
+		GitFetchTimeout: 10 * time.Second,
+	})
+}
+
 func TestRunDroughtHooks_CfgMtimeZero_NoDetection(t *testing.T) {
 	// When startupCfgMtime is zero, the detection is disabled regardless of cfgPath.
 	tmpDir := t.TempDir()

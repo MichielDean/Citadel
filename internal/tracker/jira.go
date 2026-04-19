@@ -34,19 +34,16 @@ func newJiraProvider(cfg TrackerConfig) (TrackerProvider, error) {
 	for k, v := range defaultJiraPriorityMap {
 		prioMap[k] = v
 	}
+	timeout := cfg.HTTPTimeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
 	return &jiraProvider{
 		cfg:         cfg,
-		httpTimeout: 30 * time.Second,
+		httpTimeout: timeout,
 		priorityMap: prioMap,
-		client:      &http.Client{Timeout: 30 * time.Second},
+		client:      &http.Client{Timeout: timeout},
 	}, nil
-}
-
-// SetHTTPTimeout replaces the HTTP client timeout. Used by tests to exercise
-// timeout behaviour without waiting 30 s.
-func (p *jiraProvider) SetHTTPTimeout(d time.Duration) {
-	p.httpTimeout = d
-	p.client = &http.Client{Timeout: d}
 }
 
 // Name returns the provider identifier.
