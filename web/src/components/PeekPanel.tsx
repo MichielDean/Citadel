@@ -11,6 +11,8 @@ interface PeekPanelProps {
 export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
   const [output, setOutput] = useState<string>('');
   const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reconnectKey, setReconnectKey] = useState(0);
   const terminalRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const mountedRef = useRef(true);
@@ -27,25 +29,39 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
 
   useEffect(() => {
     mountedRef.current = true;
+    setOutput('');
+    setConnected(false);
+    setError(null);
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const authParams = getAuthParams();
     const wsUrl = `${protocol}//${window.location.host}/ws/aqueducts/${encodeURIComponent(aqueductName)}/peek${authParams ? '?' + authParams : ''}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => { if (mountedRef.current) setConnected(true); };
+    ws.onopen = () => { if (mountedRef.current) { setConnected(true); setError(null); } };
     ws.onmessage = (e) => {
       if (mountedRef.current) appendOutput(e.data as string);
     };
-    ws.onclose = () => { if (mountedRef.current) setConnected(false); };
-    ws.onerror = () => { if (mountedRef.current) setConnected(false); };
+    ws.onclose = (e) => {
+      if (!mountedRef.current) return;
+      setConnected(false);
+      if (e.code === 1008 || e.code === 4001) {
+        setError('Authentication failed. Please check your API key and try again.');
+      }
+    };
+    ws.onerror = () => {
+      if (mountedRef.current) {
+        setConnected(false);
+        setError('Connection failed. The server may be unreachable.');
+      }
+    };
 
     return () => {
       mountedRef.current = false;
       ws.close();
       wsRef.current = null;
     };
-  }, [aqueductName, appendOutput]);
+  }, [aqueductName, appendOutput, reconnectKey]);
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -68,12 +84,27 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
           ×
         </button>
       </div>
-      <pre
-        ref={terminalRef}
-        className="flex-1 overflow-auto p-4 font-mono text-xs text-cistern-green bg-cistern-bg whitespace-pre-wrap break-all"
-      >
-        {output || 'Connecting…'}
-      </pre>
+      {error && !connected && (
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="text-cistern-red text-sm font-mono mb-2">{error}</div>
+            <button
+              onClick={() => setReconnectKey((k) => k + 1)}
+              className="text-xs px-3 py-1 rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+      {!error && (
+        <pre
+          ref={terminalRef}
+          className="flex-1 overflow-auto p-4 font-mono text-xs text-cistern-green bg-cistern-bg whitespace-pre-wrap break-all"
+        >
+          {output || 'Connecting\u2026'}
+        </pre>
+      )}
     </div>
   );
 }

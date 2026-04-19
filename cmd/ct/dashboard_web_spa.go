@@ -31,10 +31,16 @@ func newSPAHandler(apiKey string) *spaHandler {
 
 	// If an API key is configured, inject a meta tag so the frontend knows
 	// authentication is required. This must happen at build-time since the
-	// embedded FS is read-only.
+	// embedded FS is read-only. Validate that the injection succeeded;
+	// strings.Replace returns the original string unchanged if </head> is not
+	// found, which would leave auth-required deployments unprotected.
 	if apiKey != "" {
 		authMeta := `<meta name="cistern-auth" content="required" />`
-		idx = []byte(strings.Replace(string(idx), "</head>", authMeta+"\n  </head>", 1))
+		injected := strings.Replace(string(idx), "</head>", authMeta+"\n  </head>", 1)
+		if injected == string(idx) {
+			panic("dashboard SPA: failed to inject auth meta tag into index.html — </head> tag not found; auth-required deployments would be unprotected")
+		}
+		idx = []byte(injected)
 	}
 
 	assetsSub, err := fs.Sub(webSub, "assets")

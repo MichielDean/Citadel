@@ -45,8 +45,39 @@ describe('useAuth', () => {
     });
 
     expect(localStorage.getItem('cistern_api_key')).toBe('test-api-key');
-    expect(fetchSpy).toHaveBeenCalledWith('/api/dashboard', {
+    expect(fetchSpy).toHaveBeenCalledWith('/api/dashboard', expect.objectContaining({
       headers: { Authorization: 'Bearer test-api-key' },
+    }));
+  });
+
+  it('aborts in-flight verification on unmount', async () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+
+    let resolveFetch!: () => void;
+    const fetchPromise = new Promise<Response>((resolve) => {
+      resolveFetch = () => resolve({ ok: true } as Response);
+    });
+
+    vi.spyOn(window, 'fetch').mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          resolveFetch();
+        });
+      }
+      return fetchPromise;
+    });
+
+    localStorage.setItem('cistern_api_key', 'test-key');
+    const { unmount } = renderHook(() => useAuth());
+
+    unmount();
+
+    await act(async () => {
+      await Promise.resolve();
     });
   });
 

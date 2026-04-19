@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatElapsed } from '../utils/formatElapsed';
+import { formatAge } from '../utils/formatAge';
 
 describe('formatElapsed', () => {
   it('formats seconds only', () => {
@@ -28,5 +29,16 @@ describe('formatElapsed', () => {
 
   it('returns placeholder for undefined coerced to number', () => {
     expect(formatElapsed(Number(undefined))).toBe('--');
+  });
+
+  it('returns placeholder for negative elapsed', () => {
+    expect(formatElapsed(-1_000_000_000)).toBe('--');
+  });
+});
+
+describe('formatAge clock skew guard', () => {
+  it('returns 0m for future timestamps', () => {
+    const future = new Date(Date.now() + 60000).toISOString();
+    expect(formatAge(future)).toBe('0m');
   });
 });

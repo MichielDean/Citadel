@@ -1,5 +1,5 @@
 export function formatElapsed(ns: number): string {
-  if (typeof ns !== 'number' || isNaN(ns)) return '--';
+  if (typeof ns !== 'number' || isNaN(ns) || ns < 0) return '--';
   const totalSeconds = Math.floor(ns / 1e9);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);

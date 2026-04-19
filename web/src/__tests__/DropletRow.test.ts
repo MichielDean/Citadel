@@ -24,4 +24,14 @@ describe('formatAge', () => {
     expect(formatAge('')).toBe('--');
     expect(formatAge('not-a-date')).toBe('--');
   });
+
+  it('returns "0m" for future timestamps (clock skew)', () => {
+    const future = new Date(Date.now() + 60000).toISOString();
+    expect(formatAge(future)).toBe('0m');
+  });
+
+  it('returns "0m" for current timestamp', () => {
+    const now = new Date().toISOString();
+    expect(formatAge(now)).toBe('0m');
+  });
 });

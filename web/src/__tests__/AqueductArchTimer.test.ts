@@ -27,4 +27,17 @@ describe('AqueductArch timer drift correction', () => {
     const currentElapsedNs = (Date.now() - startTimeMs) * 1e6;
     expect(formatElapsed(currentElapsedNs)).toMatch(/0:4[45]/);
   });
+
+  it('recalculates startTime when flowing transitions without SSE update', () => {
+    const elapsedNs = 10_000_000_000;
+    const startMs = computeStartTimeMs(elapsedNs);
+    const currentElapsed = (Date.now() - startMs) * 1e6;
+    expect(formatElapsed(currentElapsed)).toMatch(/0:\d{2}/);
+  });
+});
+
+describe('formatElapsed edge cases', () => {
+  it('returns placeholder for negative values', () => {
+    expect(formatElapsed(-1_000_000_000)).toBe('--');
+  });
 });

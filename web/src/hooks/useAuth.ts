@@ -44,17 +44,21 @@ export function useAuth() {
       setAuthenticated(true);
       return;
     }
-    if (key) {
-      verifyKey(key).then((ok) => {
-        if (ok) {
-          setAuthenticated(true);
-        } else {
-          setKey(null);
-          clearStoredKey();
-          setAuthenticated(false);
-        }
-      });
-    }
+    if (!key) return;
+
+    const controller = new AbortController();
+    verifyKey(key, controller.signal).then((ok) => {
+      if (controller.signal.aborted) return;
+      if (ok) {
+        setAuthenticated(true);
+      } else {
+        setKey(null);
+        clearStoredKey();
+        setAuthenticated(false);
+      }
+    });
+
+    return () => { controller.abort(); };
   }, [required, key]);
 
   const login = useCallback((apiKey: string) => {
@@ -71,10 +75,11 @@ export function useAuth() {
   return { required, key, authenticated, login, logout };
 }
 
-async function verifyKey(apiKey: string): Promise<boolean> {
+async function verifyKey(apiKey: string, signal?: AbortSignal): Promise<boolean> {
   try {
     const resp = await fetch('/api/dashboard', {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal,
     });
     return resp.ok;
   } catch {

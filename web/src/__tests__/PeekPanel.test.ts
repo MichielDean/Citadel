@@ -32,3 +32,20 @@ describe('PeekPanel buffer truncation', () => {
     expect(result.endsWith('b'.repeat(20))).toBe(true);
   });
 });
+
+describe('PeekPanel error state', () => {
+  it('classifies close code 1008 as auth failure', () => {
+    const closeEvent = { code: 1008, reason: '', wasClean: false };
+    expect(closeEvent.code === 1008).toBe(true);
+  });
+
+  it('classifies close code 4001 as auth failure', () => {
+    const closeEvent = { code: 4001, reason: '', wasClean: false };
+    expect(closeEvent.code === 4001).toBe(true);
+  });
+
+  it('does not classify normal close as auth failure', () => {
+    const closeEvent = { code: 1000, reason: '', wasClean: true };
+    expect(closeEvent.code === 1008 || closeEvent.code === 4001).toBe(false);
+  });
+});

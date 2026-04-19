@@ -12,11 +12,19 @@ interface AqueductArchProps {
 export function AqueductArch({ cataractae, activity, isFlowing, onPeek }: AqueductArchProps) {
   const [elapsed, setElapsed] = useState(formatElapsed(cataractae.elapsed));
   const startTimeRef = useRef(Date.now() - cataractae.elapsed / 1e6);
+  const prevIsFlowing = useRef(isFlowing);
 
   useEffect(() => {
     startTimeRef.current = Date.now() - cataractae.elapsed / 1e6;
     setElapsed(formatElapsed(cataractae.elapsed));
   }, [cataractae.elapsed]);
+
+  useEffect(() => {
+    if (isFlowing && !prevIsFlowing.current) {
+      startTimeRef.current = Date.now() - cataractae.elapsed / 1e6;
+    }
+    prevIsFlowing.current = isFlowing;
+  }, [isFlowing, cataractae.elapsed]);
 
   useEffect(() => {
     if (!isFlowing) return;

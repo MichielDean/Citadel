@@ -71,7 +71,7 @@ describe('useDashboardEvents', () => {
     expect(result.current.connected).toBe(true);
   });
 
-  it('handles connection errors and reconnects', () => {
+  it('handles connection errors and reconnects with exponential backoff', () => {
     vi.useFakeTimers();
     renderHook(() => useDashboardEvents());
 
@@ -79,10 +79,65 @@ describe('useDashboardEvents', () => {
       mockEventSource.onerror?.();
     });
 
-    vi.advanceTimersByTime(3000);
-    vi.useRealTimers();
+    expect(EventSource).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
 
     expect(EventSource).toHaveBeenCalledTimes(2);
+  });
+
+  it('increases backoff delay on successive failures', () => {
+    vi.useFakeTimers();
+    renderHook(() => useDashboardEvents());
+
+    act(() => {
+      mockEventSource.onerror?.();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(EventSource).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      mockEventSource.onerror?.();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(EventSource).toHaveBeenCalledTimes(3);
+  });
+
+  it('resets backoff after successful connection', () => {
+    vi.useFakeTimers();
+    renderHook(() => useDashboardEvents());
+
+    act(() => {
+      mockEventSource.onerror?.();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(EventSource).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      mockEventSource.onopen?.();
+    });
+
+    act(() => {
+      mockEventSource.onerror?.();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(EventSource).toHaveBeenCalledTimes(3);
+
+    vi.useRealTimers();
   });
 
   it('does not reconnect after unmount', () => {

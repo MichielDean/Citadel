@@ -24,6 +24,8 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
+  const retryCountRef = useRef(0);
+
   const connect = useCallback(() => {
     if (esRef.current) {
       esRef.current.close();
@@ -35,6 +37,7 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
 
     es.onopen = () => {
       if (!mountedRef.current) return;
+      retryCountRef.current = 0;
       setConnected(true);
       setError(null);
     };
@@ -59,12 +62,14 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
       es.close();
       esRef.current = null;
       if (enabledRef.current) {
+        const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
+        retryCountRef.current++;
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = setTimeout(() => {
           if (mountedRef.current) {
             connect();
           }
-        }, 3000);
+        }, delay);
       }
     };
 
