@@ -1,16 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-function formatAge(iso: string): string {
-  const created = new Date(iso).getTime();
-  const now = Date.now();
-  const diff = now - created;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
-}
+import { formatAge } from '../utils/formatAge';
 
 describe('formatAge', () => {
   it('formats age in minutes for recent items', () => {
@@ -29,5 +18,10 @@ describe('formatAge', () => {
     const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
     const age = formatAge(threeDaysAgo);
     expect(age).toBe('3d');
+  });
+
+  it('returns "--" for invalid created_at', () => {
+    expect(formatAge('')).toBe('--');
+    expect(formatAge('not-a-date')).toBe('--');
   });
 });

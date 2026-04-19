@@ -1,5 +1,6 @@
 import type { Droplet } from '../api/types';
 import { StatusBadge } from './StatusBadge';
+import { formatAge } from '../utils/formatAge';
 
 interface DropletRowProps {
   droplet: Droplet;
@@ -24,16 +25,4 @@ export function DropletRow({ droplet, blockedBy }: DropletRowProps) {
       <span className="text-xs text-cistern-muted whitespace-nowrap">{age}</span>
     </div>
   );
-}
-
-function formatAge(iso: string): string {
-  const created = new Date(iso).getTime();
-  const now = Date.now();
-  const diff = now - created;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
 }
