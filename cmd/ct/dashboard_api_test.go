@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -1066,6 +1067,86 @@ func TestAPI_ExportWithRepoFilter(t *testing.T) {
 	}
 	if droplets[0].Repo != "repo-a" {
 		t.Errorf("expected repo-a, got %s", droplets[0].Repo)
+	}
+}
+
+func TestAPI_ExportWithRepoAndStatusFilter(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("repo-a", "Drop A", "", 1, 2)
+	dropB, _ := c.Add("repo-a", "Drop B", "", 1, 2)
+	c.Add("repo-b", "Drop C", "", 1, 2)
+	c.CloseItem(dropB.ID)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/export?repo=repo-a&status=open&format=json", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var droplets []*cistern.Droplet
+	if err := json.NewDecoder(w.Body).Decode(&droplets); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, d := range droplets {
+		if d.Repo != "repo-a" {
+			t.Errorf("got droplet with repo=%q, want repo-a", d.Repo)
+		}
+		if d.Status != "open" {
+			t.Errorf("got droplet with status=%q, want open", d.Status)
+		}
+	}
+	if len(droplets) != 1 {
+		t.Errorf("expected 1 droplet with repo=repo-a and status=open, got %d", len(droplets))
+	}
+}
+
+func TestAPI_ExportWithRepoAndStatusFilter_CSV(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("repo-a", "Drop A", "", 1, 2)
+	dropB, _ := c.Add("repo-a", "Drop B", "", 1, 2)
+	c.Add("repo-b", "Drop C", "", 1, 2)
+	c.CloseItem(dropB.ID)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/export?repo=repo-a&status=open&format=csv", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "text/csv") {
+		t.Errorf("Content-Type = %q, want text/csv", ct)
+	}
+	reader := csv.NewReader(w.Body)
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("parse CSV: %v", err)
+	}
+	if len(records) < 2 {
+		t.Fatalf("expected header + at least 1 data row, got %d rows", len(records))
+	}
+	for _, row := range records[1:] {
+		if len(row) >= 1 && row[1] != "repo-a" {
+			t.Errorf("got repo=%q, want repo-a", row[1])
+		}
+	}
+	dataRows := len(records) - 1
+	if dataRows != 1 {
+		t.Errorf("expected 1 data row with repo=repo-a and status=open, got %d", dataRows)
 	}
 }
 

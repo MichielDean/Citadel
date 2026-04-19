@@ -1228,6 +1228,18 @@ func handleExportDroplets(dbPath string) http.HandlerFunc {
 			var err error
 			if repo != "" && query == "" && status == "" && priority == 0 {
 				items, err = c.List(repo, "")
+			} else if repo != "" {
+				items, err = c.Search(query, status, priority)
+				if err != nil {
+					return err
+				}
+				filtered := make([]*cistern.Droplet, 0, len(items))
+				for _, d := range items {
+					if strings.EqualFold(d.Repo, repo) {
+						filtered = append(filtered, d)
+					}
+				}
+				items = filtered
 			} else {
 				items, err = c.Search(query, status, priority)
 			}
