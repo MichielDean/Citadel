@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDroplets, useRepos, useSearchDroplets } from '../hooks/useApi';
 import { DropletTable } from '../components/DropletTable';
+import type { DropletSearchResponse } from '../api/types';
 
 const STATUS_TABS = [
   { key: '', label: 'All' },
@@ -32,11 +33,11 @@ export function DropletsList() {
   const { repos } = useRepos();
   const { mutate: searchMutate } = useSearchDroplets();
 
-  const [searchResults, setSearchResults] = useState<{ droplets: ReturnType<typeof searchMutate> extends Promise<infer T> ? T : never } | null>(null);
+  const [searchResults, setSearchResults] = useState<DropletSearchResponse | null>(null);
 
   const isSearching = debouncedSearch.length > 0;
 
-  const { data, loading, error } = useDroplets({
+  const { data, error } = useDroplets({
     status: status || undefined,
     repo: repo || undefined,
     page,
