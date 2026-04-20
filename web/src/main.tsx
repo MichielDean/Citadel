@@ -9,6 +9,7 @@ import { CastellariusPage } from './pages/CastellariusPage';
 import { DoctorPage } from './pages/DoctorPage';
 import { LogsPage } from './pages/LogsPage';
 import { ReposSkillsPage } from './pages/ReposSkillsPage';
+import { CreateDroplet } from './pages/CreateDroplet';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Dashboard /> },
       { path: 'droplets', element: <DropletsList /> },
+      { path: 'droplets/new', element: <CreateDroplet /> },
       { path: 'droplets/:id', element: <DropletDetail /> },
       { path: 'castellarius', element: <CastellariusPage /> },
       { path: 'doctor', element: <DoctorPage /> },

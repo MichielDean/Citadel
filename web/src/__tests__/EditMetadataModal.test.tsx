@@ -26,7 +26,7 @@ function mockFetch(response: unknown, ok = true) {
   } as Response);
 }
 
-describe('EditMetadataModal', () => {
+describe('EditMetadataModal with ComplexitySelector', () => {
   beforeEach(() => { localStorage.clear(); });
   afterEach(() => { vi.restoreAllMocks(); });
 
@@ -45,33 +45,17 @@ describe('EditMetadataModal', () => {
     expect(screen.getByDisplayValue('Original description')).toBeInTheDocument();
   });
 
-  it('resets form values when reopened with changed droplet', () => {
-    const updatedDroplet: Droplet = {
-      ...baseDroplet,
-      title: 'Updated Title',
-      description: 'Updated description',
-    };
-
-    const { rerender } = render(
+  it('shows complexity selector with radio options', () => {
+    render(
       <EditMetadataModal open={true} onClose={vi.fn()} droplet={baseDroplet} onSaved={vi.fn()} />
     );
-
-    expect(screen.getByDisplayValue('Original Title')).toBeInTheDocument();
-
-    rerender(
-      <EditMetadataModal open={false} onClose={vi.fn()} droplet={updatedDroplet} onSaved={vi.fn()} />
-    );
-    expect(screen.queryByDisplayValue('Original Title')).not.toBeInTheDocument();
-
-    rerender(
-      <EditMetadataModal open={true} onClose={vi.fn()} droplet={updatedDroplet} onSaved={vi.fn()} />
-    );
-    expect(screen.getByDisplayValue('Updated Title')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Updated description')).toBeInTheDocument();
+    expect(screen.getByText('Standard (1)')).toBeInTheDocument();
+    expect(screen.getByText('Full (2)')).toBeInTheDocument();
+    expect(screen.getByText('Critical (3)')).toBeInTheDocument();
   });
 
-  it('calls editDroplet and onSaved on submit', async () => {
-    mockFetch(baseDroplet);
+  it('shows confirmation diff when changes are made', async () => {
+    mockFetch({ ...baseDroplet, title: 'Updated Title' });
     const onSaved = vi.fn();
     const onClose = vi.fn();
 
@@ -80,13 +64,25 @@ describe('EditMetadataModal', () => {
     );
 
     const titleInput = screen.getByDisplayValue('Original Title');
-    await act(() => { fireEvent.change(titleInput, { target: { value: 'New Title' } }); });
+    await act(() => { fireEvent.change(titleInput, { target: { value: 'Updated Title' } }); });
 
     const saveBtn = screen.getByRole('button', { name: /save/i });
     await act(() => { fireEvent.click(saveBtn); });
 
-    expect(window.fetch).toHaveBeenCalled();
-    expect(onSaved).toHaveBeenCalled();
+    expect(screen.getByText('Confirm Changes')).toBeInTheDocument();
+    expect(screen.getByText('Updated Title')).toBeInTheDocument();
+  });
+
+  it('calls onClose immediately if no changes were made', async () => {
+    const onClose = vi.fn();
+
+    render(
+      <EditMetadataModal open={true} onClose={onClose} droplet={baseDroplet} onSaved={vi.fn()} />
+    );
+
+    const saveBtn = screen.getByRole('button', { name: /save/i });
+    await act(() => { fireEvent.click(saveBtn); });
+
     expect(onClose).toHaveBeenCalled();
   });
 });

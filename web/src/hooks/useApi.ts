@@ -339,6 +339,13 @@ export async function rejectIssue(issueId: string, body: ResolveIssueRequest): P
   });
 }
 
+export async function renameDroplet(id: string, title: string): Promise<Droplet> {
+  return apiFetch<Droplet>(`/api/droplets/${encodeURIComponent(id)}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
 export async function addDependency(id: string, dependsOn: string): Promise<void> {
   return apiFetch<void>(`/api/droplets/${encodeURIComponent(id)}/dependencies`, {
     method: 'POST',

@@ -7,9 +7,9 @@ import {
   useDropletDependencies,
   useDropletMutation,
   useRepoSteps,
-  addIssue,
   resolveIssue,
   rejectIssue,
+  renameDroplet,
 } from '../hooks/useApi';
 import { StatusBadge } from '../components/StatusBadge';
 import { PipelineIndicator } from '../components/PipelineIndicator';
@@ -20,8 +20,12 @@ import { ActionDialog } from '../components/ActionDialog';
 import { AddNoteModal } from '../components/AddNoteModal';
 import { EditMetadataModal } from '../components/EditMetadataModal';
 import { RestartModal } from '../components/RestartModal';
+import { RenameInput } from '../components/RenameInput';
+import { FileIssueModal } from '../components/FileIssueModal';
+import { CloseModal } from '../components/CloseModal';
+import { ReopenModal } from '../components/ReopenModal';
 import { formatAge } from '../utils/formatAge';
-import type { ActionRequest, Droplet } from '../api/types';
+import type { ActionRequest, Droplet, DropletIssue } from '../api/types';
 
 export function DropletDetail() {
   const { id } = useParams<{ id: string }>();
@@ -30,7 +34,7 @@ export function DropletDetail() {
   const { notes, loading: notesLoading, refetch: refetchNotes } = useDropletNotes(id ?? null, useCallback((d: Droplet) => {
     setSseDroplet(d);
   }, []));
-  const { issues, loading: issuesLoading, refetch: refetchIssues } = useDropletIssues(id ?? null, { open: true });
+  const { issues, loading: issuesLoading, refetch: refetchIssues } = useDropletIssues(id ?? null);
   const { dependencies, loading: depsLoading, refetch: refetchDeps } = useDropletDependencies(id ?? null);
   const { mutate } = useDropletMutation();
 
@@ -50,6 +54,9 @@ export function DropletDetail() {
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showRestartModal, setShowRestartModal] = useState(false);
+  const [showFileIssueModal, setShowFileIssueModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showReopenModal, setShowReopenModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const refetchAll = useCallback(() => {
@@ -67,6 +74,11 @@ export function DropletDetail() {
     await mutate(dropletId, action, body);
     refetchAll();
   }, [mutate, refetchAll]);
+
+  const handleRename = useCallback(async (newTitle: string) => {
+    await renameDroplet(id!, newTitle);
+    refetchAll();
+  }, [id, refetchAll]);
 
   const handleCopyId = useCallback(() => {
     if (currentDroplet?.id) {
@@ -110,7 +122,7 @@ export function DropletDetail() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-mono font-bold text-cistern-fg truncate">{d.title}</h1>
+            <RenameInput value={d.title} onSave={handleRename} />
             <StatusBadge status={d.status} size="md" />
           </div>
           <div className="flex items-center gap-2 text-xs text-cistern-muted font-mono">
@@ -147,10 +159,10 @@ export function DropletDetail() {
             </>
           )}
           {(isPooled || isDelivered || isCancelled) && (
-            <button type="button" onClick={() => setActionDialog({ open: true, title: 'Reopen Droplet', action: 'reopen' })} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Reopen</button>
+            <button type="button" onClick={() => setShowReopenModal(true)} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Reopen</button>
           )}
           {isInProgress && (
-            <button type="button" onClick={() => setActionDialog({ open: true, title: 'Deliver Droplet', action: 'close' })} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Deliver</button>
+            <button type="button" onClick={() => setShowCloseModal(true)} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Deliver</button>
           )}
           <button type="button" onClick={() => navigate('/app/droplets')} className="px-3 py-1.5 text-sm rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg transition-colors">Back</button>
         </div>
@@ -189,17 +201,17 @@ export function DropletDetail() {
         <section className="bg-cistern-surface border border-cistern-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-mono text-cistern-muted uppercase tracking-wider">Issues</h2>
-            <FileIssueButton dropletId={d.id} onFiled={() => refetchAll()} />
+            <button type="button" onClick={() => setShowFileIssueModal(true)} className="text-xs px-2 py-1 rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg transition-colors">+ File Issue</button>
           </div>
           <IssuesList
             issues={issues}
             loading={issuesLoading}
-            onResolve={async (issueId, evidence) => {
-              await resolveIssue(issueId, { evidence });
+            onResolve={async (issueId, ev) => {
+              await resolveIssue(issueId, { evidence: ev });
               refetchAll();
             }}
-            onReject={async (issueId, evidence) => {
-              await rejectIssue(issueId, { evidence });
+            onReject={async (issueId, ev) => {
+              await rejectIssue(issueId, { evidence: ev });
               refetchAll();
             }}
           />
@@ -256,62 +268,33 @@ export function DropletDetail() {
         steps={steps}
         onRestarted={() => refetchAll()}
       />
+
+      <FileIssueModal
+        open={showFileIssueModal}
+        onClose={() => setShowFileIssueModal(false)}
+        dropletId={d.id}
+        onFiled={(_issue: DropletIssue) => refetchAll()}
+      />
+
+      <CloseModal
+        open={showCloseModal}
+        onClose={() => setShowCloseModal(false)}
+        dropletId={d.id}
+        onConfirm={async (dropletId: string) => {
+          await mutate(dropletId, 'close');
+          refetchAll();
+        }}
+      />
+
+      <ReopenModal
+        open={showReopenModal}
+        onClose={() => setShowReopenModal(false)}
+        dropletId={d.id}
+        onConfirm={async (dropletId: string) => {
+          await mutate(dropletId, 'reopen');
+          refetchAll();
+        }}
+      />
     </div>
-  );
-}
-
-function FileIssueButton({ dropletId, onFiled }: { dropletId: string; onFiled: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [description, setDescription] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setDescription('');
-      setSubmitting(false);
-      setError(null);
-    }
-  }, [open]);
-
-  const handleSubmit = async () => {
-    if (!description.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await addIssue(dropletId, { description: description.trim() });
-      setDescription('');
-      setOpen(false);
-      onFiled();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to file issue');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className="text-xs px-2 py-1 rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg transition-colors">+ File Issue</button>
-      {open && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setOpen(false)}>
-          <div className="bg-cistern-surface border border-cistern-border rounded-lg p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-mono text-cistern-fg text-lg mb-3">File Issue</h3>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the issue..."
-              className="w-full bg-cistern-bg border border-cistern-border rounded p-2 text-sm text-cistern-fg resize-y min-h-[100px] mb-3"
-              autoFocus
-            />
-            {error && <div className="mb-3 text-sm text-cistern-red font-mono">{error}</div>}
-            <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setOpen(false)} className="px-3 py-1.5 text-sm rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg">Cancel</button>
-              <button type="button" onClick={handleSubmit} disabled={submitting || !description.trim()} className="px-3 py-1.5 text-sm rounded bg-cistern-red text-white font-medium disabled:opacity-50">{submitting ? '…' : 'File Issue'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
