@@ -31,6 +31,18 @@ describe('ExportButton', () => {
     expect(calledUrl).toContain('format=json');
   });
 
+  it('encodes special chars in API key without double-encoding', () => {
+    localStorage.setItem('cistern_api_key', 'key+with=special&chars');
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<ExportButton />);
+    fireEvent.click(screen.getByText('Export'));
+    fireEvent.click(screen.getByText('JSON'));
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const calledUrl = openSpy.mock.calls[0][0] as string;
+    const url = new URL(calledUrl, 'http://localhost');
+    expect(url.searchParams.get('token')).toBe('key+with=special&chars');
+  });
+
   it('omits token query param when no API key stored', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<ExportButton />);

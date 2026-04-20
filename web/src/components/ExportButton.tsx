@@ -1,10 +1,18 @@
 import { useState } from 'react';
-import { getAuthParams } from '../hooks/useAuth';
+import { getAuthHeaders } from '../hooks/useAuth';
 
 interface ExportButtonProps {
   status?: string;
   repo?: string;
   priority?: number;
+}
+
+function getApiKey(): string | null {
+  try {
+    return localStorage.getItem('cistern_api_key');
+  } catch {
+    return null;
+  }
 }
 
 export function ExportButton({ status, repo, priority }: ExportButtonProps) {
@@ -16,8 +24,8 @@ export function ExportButton({ status, repo, priority }: ExportButtonProps) {
     if (status) params.set('status', status);
     if (repo) params.set('repo', repo);
     if (priority !== undefined && priority > 0) params.set('priority', String(priority));
-    const authParams = getAuthParams();
-    if (authParams) params.set('token', authParams.replace(/^token=/, ''));
+    const apiKey = getApiKey();
+    if (apiKey) params.set('token', apiKey);
     const qs = params.toString();
     return `/api/droplets/export?${qs}`;
   };

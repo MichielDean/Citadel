@@ -3040,6 +3040,7 @@ func handleFilterNew(cfgPath, dbPath string) http.HandlerFunc {
 			}
 
 			session.Messages = string(msgJSON)
+			session.LLMSessionID = result.SessionID
 
 			w.Header().Set("Content-Type", "application/json")
 			writeAPIJSON(w, http.StatusCreated, map[string]any{
