@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Web UI: Droplets list and detail view (ci-zalz9)
+
+Built the Droplets pages — the core interaction surface for monitoring and managing droplets in the web UI.
+
+**Key features:**
+- **Droplets list** (`/app/droplets`): Filterable, sortable, paginated table with columns for ID, title, status (colored badge), current step, complexity, elapsed time, and repo. Status filter tabs (All/Open/In Progress/Pooled/Delivered/Cancelled), repo filter dropdown, debounced search, sort options (priority/created_at/updated_at/title), and pagination.
+- **Droplet detail** (`/app/droplets/:id`): Copyable ID, status badge, repo badge, pipeline position indicator (visual progress bar showing completed/active/pending steps), live-updating elapsed time, complexity display.
+- **Notes timeline**: Chronological note list with SSE real-time updates, collapsible long notes, cataractae attribution and timestamps.
+- **Signal actions**: Context-dependent action buttons (Pass, Recirculate with step selector, Pool) with confirmation dialogs and notes textareas.
+- **Issues section**: List open issues with file/resolve/reject actions, filter by status and flagged_by role.
+- **Dependencies section**: Add/remove dependencies with semantic types (resolves/blocked_by/blocks), displayed by category.
+- **Modals**: Add note, edit metadata (title/priority/complexity/description), restart with cataractae step selector.
+
+**API changes:**
+- `GET /api/droplets` now returns paginated responses (`{droplets, total, page, per_page}`) and accepts `sort`, `page`, `per_page` query params. `per_page` capped at 500, defaults to 50.
+- `GET /api/droplets/search` now returns paginated responses with `page`/`per_page` params.
+- `GET /api/droplets/{id}/dependencies` returns typed dependency objects `[{depends_on, type}]` where type is `resolves`, `blocked_by`, or `blocks`.
+- `POST /api/droplets/{id}/dependencies` response also uses typed format.
+- New endpoint: `GET /api/repos/{name}/steps` returns pipeline step names for a repo.
+- `GET /api/repos/{name}/steps` endpoint — returns ordered list of cataractae step names for a given repo's workflow.
+
+**Files added:**
+- `web/src/pages/DropletsList.tsx`, `web/src/pages/DropletDetail.tsx`
+- `web/src/components/DropletTable.tsx`, `StatusBadge.tsx`, `PipelineIndicator.tsx`
+- `web/src/components/NotesTimeline.tsx`, `IssuesList.tsx`, `DependenciesList.tsx`
+- `web/src/components/ActionDialog.tsx`, `AddNoteModal.tsx`, `EditMetadataModal.tsx`, `RestartModal.tsx`
+- `web/src/api/types.ts`, `web/src/hooks/useApi.ts`
+- `web/src/__tests__/` — 127 frontend tests
+
+**Files changed:**
+- `cmd/ct/dashboard_web.go` — pagination/sort for list/search, typed dependencies response, new `/api/repos/{name}/steps` endpoint, `sortDroplets` function, `maxPerPage` constant
+- `internal/cistern/client.go` — `GetDependents` method for reverse dependency direction
+- `web/src/main.tsx` — routes for `/app/droplets` and `/app/droplets/:id`
+
 ### Web UI: Front-end foundation and dashboard (ci-jecbi)
 
 Added a React SPA dashboard at `/app/` with live aqueduct visualization, real-time SSE updates, authentication, and live terminal peek — the visual centerpiece of the web UI.

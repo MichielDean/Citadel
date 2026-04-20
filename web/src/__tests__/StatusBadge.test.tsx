@@ -13,9 +13,9 @@ describe('StatusBadge', () => {
     expect(screen.getByText('Open')).toBeInTheDocument();
   });
 
-  it('renders "Done" for done status', () => {
-    render(<StatusBadge status="done" />);
-    expect(screen.getByText('Done')).toBeInTheDocument();
+  it('renders "Delivered" for delivered status', () => {
+    render(<StatusBadge status="delivered" />);
+    expect(screen.getByText('Delivered')).toBeInTheDocument();
   });
 
   it('renders "Pooled" for pooled status', () => {
@@ -23,9 +23,9 @@ describe('StatusBadge', () => {
     expect(screen.getByText('Pooled')).toBeInTheDocument();
   });
 
-  it('renders "Closed" for closed status', () => {
-    render(<StatusBadge status="closed" />);
-    expect(screen.getByText('Closed')).toBeInTheDocument();
+  it('renders "Cancelled" for cancelled status', () => {
+    render(<StatusBadge status="cancelled" />);
+    expect(screen.getByText('Cancelled')).toBeInTheDocument();
   });
 
   it('renders raw status for unknown statuses', () => {
@@ -49,6 +49,18 @@ describe('StatusBadge', () => {
     const { container } = render(<StatusBadge status="in_progress" />);
     const badge = container.querySelector('span');
     expect(badge?.className).toContain('text-cistern-accent');
+  });
+
+  it('applies correct color classes for delivered', () => {
+    const { container } = render(<StatusBadge status="delivered" />);
+    const badge = container.querySelector('span');
+    expect(badge?.className).toContain('text-cistern-green');
+  });
+
+  it('applies correct color classes for cancelled', () => {
+    const { container } = render(<StatusBadge status="cancelled" />);
+    const badge = container.querySelector('span');
+    expect(badge?.className).toContain('text-cistern-muted');
   });
 
   it('applies correct color classes for open', () => {

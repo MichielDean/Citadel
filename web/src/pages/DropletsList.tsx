@@ -9,8 +9,8 @@ const STATUS_TABS = [
   { key: 'open', label: 'Open' },
   { key: 'in_progress', label: 'In Progress' },
   { key: 'pooled', label: 'Pooled' },
-  { key: 'done', label: 'Delivered' },
-  { key: 'closed', label: 'Cancelled' },
+  { key: 'delivered', label: 'Delivered' },
+  { key: 'cancelled', label: 'Cancelled' },
 ];
 
 const SORT_OPTIONS = [
@@ -128,7 +128,7 @@ export function DropletsList() {
         </select>
         <select
           value={sort}
-          onChange={(e) => setSort(e.target.value)}
+          onChange={(e) => { setSort(e.target.value); setPage(1); }}
           className="bg-cistern-surface border border-cistern-border rounded px-2 py-1.5 text-sm text-cistern-fg"
         >
           {SORT_OPTIONS.map((opt) => (

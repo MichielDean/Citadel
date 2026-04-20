@@ -604,6 +604,12 @@ SSE stream and `/ws/aqueducts/{name}/peek` WebSocket used by the TUI.
 - Recent flow — last 5 delivered/pooled droplets
 - Live terminal peek — click an aqueduct to open a slideover viewing the agent's
   tmux session via WebSocket
+- Droplets list (`/app/droplets`) — filterable, sortable, paginated table of all
+  droplets with status badges, search, and repo filter; click any row for detail
+- Droplet detail (`/app/droplets/:id`) — copyable ID, status badge, pipeline position
+  indicator with progress bar, real-time notes timeline (SSE), signal action dialogs
+  (pass/recirculate/pool), dependencies with add/remove (resolves/blocked_by/blocks),
+  issue tracker with file/resolve/reject, modals for notes/metadata/restart
 - Dark theme matching the Cistern color palette
 - Responsive sidebar navigation that collapses on mobile
 - Authentication — when `CISTERN_DASHBOARD_API_KEY` is configured, a login page
@@ -631,8 +637,8 @@ The web dashboard exposes a REST API at `/api/` that mirrors all TUI operations.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/droplets` | List droplets (query params: `?repo=&status=&output=json`) |
-| `GET` | `/api/droplets/search` | Search droplets (query params: `?query=&status=&priority=`) |
+| `GET` | `/api/droplets` | List droplets (query params: `?repo=&status=&sort=&page=&per_page=&output=json`). Response: `{droplets, total, page, per_page}`. Sort: `priority` (default), `created_at`, `updated_at`, `title`. `per_page` capped at 500, defaults to 50 |
+| `GET` | `/api/droplets/search` | Search droplets (query params: `?query=&status=&priority=&page=&per_page=`). Response: `{droplets, total, page, per_page}`. `per_page` capped at 500, defaults to 50 |
 | `GET` | `/api/droplets/{id}` | Get single droplet detail |
 | `POST` | `/api/droplets` | Create droplet (JSON body: `repo`, `title`, `description`, `priority`, `complexity`, `depends_on`) |
 | `PATCH` | `/api/droplets/{id}` | Edit mutable fields (JSON body: `title`, `description`, `priority`, `complexity`) |
@@ -672,8 +678,8 @@ The web dashboard exposes a REST API at `/api/` that mirrors all TUI operations.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/droplets/{id}/dependencies` | List dependencies |
-| `POST` | `/api/droplets/{id}/dependencies` | Add dependency (JSON body: `depends_on`) |
+| `GET` | `/api/droplets/{id}/dependencies` | List dependencies — returns `[{depends_on, type}]` where type is `resolves` (delivered forward dep), `blocked_by` (undelivered forward dep), or `blocks` (reverse dep: droplets that depend on this one) |
+| `POST` | `/api/droplets/{id}/dependencies` | Add dependency (JSON body: `depends_on`) — returns updated dependency list with typed entries |
 | `DELETE` | `/api/droplets/{id}/dependencies/{dep_id}` | Remove dependency |
 
 ### History & Stats
@@ -707,6 +713,7 @@ The web dashboard exposes a REST API at `/api/` that mirrors all TUI operations.
 | `POST` | `/api/castellarius/restart` | Restart the daemon (requires auth) |
 | `GET` | `/api/doctor` | Run health check (query param: `?fix=true`) |
 | `GET` | `/api/repos` | List configured repos |
+| `GET` | `/api/repos/{name}/steps` | List pipeline step names for a repo |
 | `GET` | `/api/skills` | List installed skills |
 
 ### Input validation

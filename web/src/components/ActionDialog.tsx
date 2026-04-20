@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ActionRequest } from '../api/types';
 
 interface ActionDialogProps {
@@ -18,6 +18,15 @@ export function ActionDialog({ open, onClose, title, action, dropletId, showNote
   const [target, setTarget] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setNotes('');
+      setTarget('');
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [open]);
 
   if (!open) return null;
 

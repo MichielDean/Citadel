@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha1"
 	"crypto/subtle"
@@ -22,6 +23,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +72,7 @@ const (
 	maxDependsOnLen   = 128
 	maxNotesLen       = 65536
 	maxReasonLen      = 65536
+	maxPerPage        = 500
 )
 
 // apiMaxBodyBytes is the maximum request body size accepted by API endpoints.
@@ -1282,10 +1285,40 @@ func decodeJSONOptional(w http.ResponseWriter, r *http.Request, dst any) bool {
 
 // ── Droplet CRUD handlers ──
 
+func sortDroplets(items []*cistern.Droplet, sort string) {
+	switch sort {
+	case "created_at":
+		slices.SortFunc(items, func(a, b *cistern.Droplet) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	case "updated_at":
+		slices.SortFunc(items, func(a, b *cistern.Droplet) int { return a.UpdatedAt.Compare(b.UpdatedAt) })
+	case "title":
+		slices.SortFunc(items, func(a, b *cistern.Droplet) int { return cmp.Compare(a.Title, b.Title) })
+	default:
+		slices.SortFunc(items, func(a, b *cistern.Droplet) int {
+			if c := cmp.Compare(a.Priority, b.Priority); c != 0 {
+				return c
+			}
+			return a.CreatedAt.Compare(b.CreatedAt)
+		})
+	}
+}
+
 func handleGetDroplets(dbPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		repo := r.URL.Query().Get("repo")
 		status := r.URL.Query().Get("status")
+		sort := r.URL.Query().Get("sort")
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if page < 1 {
+			page = 1
+		}
+		if perPage < 1 {
+			perPage = 50
+		}
+		if perPage > maxPerPage {
+			perPage = maxPerPage
+		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			items, err := c.List(repo, status)
 			if err != nil {
@@ -1294,11 +1327,21 @@ func handleGetDroplets(dbPath string) http.HandlerFunc {
 			if items == nil {
 				items = []*cistern.Droplet{}
 			}
+			sortDroplets(items, sort)
+			total := len(items)
+			start := (page - 1) * perPage
+			if start > total {
+				start = total
+			}
+			end := start + perPage
+			if end > total {
+				end = total
+			}
 			writeAPIJSON(w, http.StatusOK, map[string]any{
-				"droplets": items,
-				"total":    len(items),
-				"page":     1,
-				"per_page": len(items),
+				"droplets": items[start:end],
+				"total":    total,
+				"page":     page,
+				"per_page": perPage,
 			})
 			return nil
 		})
@@ -1310,6 +1353,17 @@ func handleSearchDroplets(dbPath string) http.HandlerFunc {
 		query := r.URL.Query().Get("query")
 		status := r.URL.Query().Get("status")
 		priority, _ := strconv.Atoi(r.URL.Query().Get("priority"))
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if page < 1 {
+			page = 1
+		}
+		if perPage < 1 {
+			perPage = 50
+		}
+		if perPage > maxPerPage {
+			perPage = maxPerPage
+		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			items, err := c.Search(query, status, priority)
 			if err != nil {
@@ -1318,9 +1372,20 @@ func handleSearchDroplets(dbPath string) http.HandlerFunc {
 			if items == nil {
 				items = []*cistern.Droplet{}
 			}
+			total := len(items)
+			start := (page - 1) * perPage
+			if start > total {
+				start = total
+			}
+			end := start + perPage
+			if end > total {
+				end = total
+			}
 			writeAPIJSON(w, http.StatusOK, map[string]any{
-				"droplets": items,
-				"total":    len(items),
+				"droplets": items[start:end],
+				"total":    total,
+				"page":     page,
+				"per_page": perPage,
 			})
 			return nil
 		})
@@ -1933,9 +1998,13 @@ func handleGetDependencies(dbPath string) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			result := make([]map[string]string, 0, len(deps)+len(undelivered))
+			dependents, err := c.GetDependents(id)
+			if err != nil {
+				return err
+			}
+			result := make([]map[string]string, 0, len(deps)+len(dependents))
 			for _, d := range deps {
-				ty := "blocking"
+				ty := "resolves"
 				for _, u := range undelivered {
 					if u == d {
 						ty = "blocked_by"
@@ -1943,6 +2012,9 @@ func handleGetDependencies(dbPath string) http.HandlerFunc {
 					}
 				}
 				result = append(result, map[string]string{"depends_on": d, "type": ty})
+			}
+			for _, d := range dependents {
+				result = append(result, map[string]string{"depends_on": d, "type": "blocks"})
 			}
 			writeAPIJSON(w, http.StatusOK, result)
 			return nil
@@ -1981,9 +2053,13 @@ func handleAddDependency(dbPath string) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			result := make([]map[string]string, 0, len(deps)+len(undelivered))
+			dependents, err := c.GetDependents(id)
+			if err != nil {
+				return err
+			}
+			result := make([]map[string]string, 0, len(deps)+len(dependents))
 			for _, d := range deps {
-				ty := "blocking"
+				ty := "resolves"
 				for _, u := range undelivered {
 					if u == d {
 						ty = "blocked_by"
@@ -1991,6 +2067,9 @@ func handleAddDependency(dbPath string) http.HandlerFunc {
 					}
 				}
 				result = append(result, map[string]string{"depends_on": d, "type": ty})
+			}
+			for _, d := range dependents {
+				result = append(result, map[string]string{"depends_on": d, "type": "blocks"})
 			}
 			writeAPIJSON(w, http.StatusCreated, result)
 			return nil

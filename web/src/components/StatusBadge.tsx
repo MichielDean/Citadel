@@ -6,9 +6,9 @@ interface StatusBadgeProps {
 const statusMap: Record<string, { bg: string; text: string; label: string }> = {
   open: { bg: 'bg-cistern-yellow/20', text: 'text-cistern-yellow', label: 'Open' },
   in_progress: { bg: 'bg-cistern-accent/20', text: 'text-cistern-accent', label: 'In Progress' },
-  done: { bg: 'bg-cistern-green/20', text: 'text-cistern-green', label: 'Done' },
+  delivered: { bg: 'bg-cistern-green/20', text: 'text-cistern-green', label: 'Delivered' },
   pooled: { bg: 'bg-cistern-red/20', text: 'text-cistern-red', label: 'Pooled' },
-  closed: { bg: 'bg-cistern-muted/20', text: 'text-cistern-muted', label: 'Closed' },
+  cancelled: { bg: 'bg-cistern-muted/20', text: 'text-cistern-muted', label: 'Cancelled' },
 };
 
 export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
