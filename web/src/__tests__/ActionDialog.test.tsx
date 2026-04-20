@@ -4,7 +4,7 @@ import { ActionDialog } from '../components/ActionDialog';
 
 describe('ActionDialog', () => {
   it('renders nothing when open is false', () => {
-    const { container } = render(
+    render(
       <ActionDialog
         open={false}
         onClose={vi.fn()}
@@ -14,7 +14,7 @@ describe('ActionDialog', () => {
         onConfirm={vi.fn()}
       />
     );
-    expect(container.querySelector('.fixed.inset-0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('renders dialog when open is true', () => {
@@ -74,9 +74,26 @@ describe('ActionDialog', () => {
         onConfirm={vi.fn()}
       />
     );
-    const backdrop = container.querySelector('.fixed.inset-0');
-    if (backdrop) fireEvent.click(backdrop);
+    const backdrop = container.querySelector('[aria-modal="true"]');
+    fireEvent.click(backdrop!);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does not call onClose when content is clicked', () => {
+    const onClose = vi.fn();
+    render(
+      <ActionDialog
+        open={true}
+        onClose={onClose}
+        title="Confirm"
+        action="pass"
+        dropletId="ct-abc123"
+        onConfirm={vi.fn()}
+      />
+    );
+    const content = screen.getByRole('heading', { name: 'Confirm' });
+    fireEvent.click(content);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('disables confirm button while submitting', () => {
@@ -108,5 +125,19 @@ describe('ActionDialog', () => {
       />
     );
     expect(screen.getByText('Target Step')).toBeInTheDocument();
+  });
+
+  it('has aria-modal attribute', () => {
+    const { container } = render(
+      <ActionDialog
+        open={true}
+        onClose={vi.fn()}
+        title="Confirm"
+        action="pass"
+        dropletId="ct-abc123"
+        onConfirm={vi.fn()}
+      />
+    );
+    expect(container.querySelector('[aria-modal="true"]')).toBeInTheDocument();
   });
 });

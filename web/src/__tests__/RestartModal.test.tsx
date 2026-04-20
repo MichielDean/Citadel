@@ -24,10 +24,10 @@ describe('RestartModal', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   it('renders nothing when closed', () => {
-    const { container } = render(
+    render(
       <RestartModal open={false} onClose={vi.fn()} dropletId="ct-abc" steps={[]} onRestarted={vi.fn()} />
     );
-    expect(container.querySelector('.fixed.inset-0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('renders step selector when steps provided', () => {
