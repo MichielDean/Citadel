@@ -7,10 +7,10 @@ import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './components/LoginPage';
 
 export function AppLayout() {
-  const { required, authenticated, login } = useAuth();
+  const { required, authenticated, authError, login } = useAuth();
 
   if (required && !authenticated) {
-    return <LoginPage onLogin={login} />;
+    return <LoginPage onLogin={login} error={authError} />;
   }
 
   return (

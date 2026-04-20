@@ -92,6 +92,60 @@ describe('useAuth', () => {
 
     expect(localStorage.getItem('cistern_api_key')).toBeNull();
   });
+
+  it('sets authError=true when verification fails', async () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+
+    vi.spyOn(window, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+    } as Response);
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      result.current.login('bad-key');
+    });
+
+    expect(result.current.authError).toBe(true);
+    expect(result.current.authenticated).toBe(false);
+  });
+
+  it('clears authError when login is retried', async () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+
+    const fetchSpy = vi.spyOn(window, 'fetch');
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+    } as Response);
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      result.current.login('bad-key');
+    });
+
+    expect(result.current.authError).toBe(true);
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+    } as Response);
+
+    await act(async () => {
+      result.current.login('good-key');
+    });
+
+    expect(result.current.authError).toBe(false);
+    expect(result.current.authenticated).toBe(true);
+  });
 });
 
 describe('getAuthHeaders', () => {

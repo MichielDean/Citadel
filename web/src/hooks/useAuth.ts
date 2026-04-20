@@ -38,6 +38,7 @@ export function useAuth() {
     return getStoredKey();
   });
   const [authenticated, setAuthenticated] = useState(false);
+  const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
     if (!required) {
@@ -51,10 +52,12 @@ export function useAuth() {
       if (controller.signal.aborted) return;
       if (ok) {
         setAuthenticated(true);
+        setAuthError(false);
       } else {
         setKey(null);
         clearStoredKey();
         setAuthenticated(false);
+        setAuthError(true);
       }
     });
 
@@ -64,6 +67,7 @@ export function useAuth() {
   const login = useCallback((apiKey: string) => {
     storeKey(apiKey);
     setKey(apiKey);
+    setAuthError(false);
   }, []);
 
   const logout = useCallback(() => {
@@ -72,7 +76,7 @@ export function useAuth() {
     setAuthenticated(false);
   }, []);
 
-  return { required, key, authenticated, login, logout };
+  return { required, key, authenticated, authError, login, logout };
 }
 
 async function verifyKey(apiKey: string, signal?: AbortSignal): Promise<boolean> {
