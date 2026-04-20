@@ -2299,6 +2299,8 @@ func handleGetSkills() http.HandlerFunc {
 
 const maxLogLines = 5000
 
+const maxScanTokenSize = 1024 * 1024 // 1MB — accommodate long log lines
+
 // isValidLogSource checks that source is a safe, non-traversal log file name.
 // Only alphanumeric, hyphens, and underscores are allowed. No dots, slashes,
 // or other characters that could enable path traversal.
@@ -2374,6 +2376,7 @@ func handleGetLogs(cfgPath string) http.HandlerFunc {
 		// Ring buffer approach: only keep the last `lines` entries in memory.
 		ring := make([]string, 0, lines)
 		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
 		count := 0
 		for scanner.Scan() {
 			if len(ring) < lines {
@@ -2463,9 +2466,19 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 				}
 				f.Seek(offset, io.SeekStart)
 				scanner := bufio.NewScanner(f)
+				scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
 				for scanner.Scan() {
 					line := scanner.Text()
 					fmt.Fprintf(w, "data: %s\n\n", sanitizeSSEData(line))
+				}
+				if err := scanner.Err(); err != nil {
+					newOffset, _ := f.Seek(0, io.SeekCurrent)
+					if newOffset > offset {
+						offset = newOffset
+					}
+					f.Close()
+					flusher.Flush()
+					continue
 				}
 				offset, _ = f.Seek(0, io.SeekCurrent)
 				f.Close()
