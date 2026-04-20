@@ -67,11 +67,13 @@ export interface DropletListResponse {
 export interface DropletSearchResponse {
   droplets: Droplet[];
   total: number;
+  page: number;
+  per_page: number;
 }
 
 export interface DropletDependency {
   depends_on: string;
-  type: 'blocking' | 'blocked_by';
+  type: 'blocked_by' | 'resolves' | 'blocks';
 }
 
 export interface CreateDropletRequest {
@@ -93,6 +95,7 @@ export interface EditDropletRequest {
 export interface ActionRequest {
   notes?: string;
   to?: string;
+  cataractae?: string;
 }
 
 export interface AddNoteRequest {

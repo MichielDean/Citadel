@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { addNote } from '../hooks/useApi';
 
 interface AddNoteModalProps {
@@ -12,6 +12,14 @@ export function AddNoteModal({ open, onClose, dropletId, onSaved }: AddNoteModal
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setContent('');
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [open]);
 
   if (!open) return null;
 

@@ -1091,6 +1091,27 @@ func (c *Client) GetBlockedBy(dropletID string) ([]string, error) {
 	return ids, rows.Err()
 }
 
+// GetDependents returns the IDs of droplets that depend on dropletID (reverse direction).
+func (c *Client) GetDependents(dropletID string) ([]string, error) {
+	rows, err := c.db.Query(
+		`SELECT droplet_id FROM droplet_dependencies WHERE depends_on = ? ORDER BY droplet_id`,
+		dropletID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("cistern: get dependents %s: %w", dropletID, err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("cistern: scan dependent: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func checkRowsAffected(res sql.Result, id string) error {
 	n, err := res.RowsAffected()
 	if err != nil {

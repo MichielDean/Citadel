@@ -140,6 +140,143 @@ func TestAPI_GetDroplets_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestAPI_GetDroplets_Pagination(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		c.Add("myrepo", fmt.Sprintf("Drop %d", i), "", 1, 2)
+	}
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	tests := []struct {
+		name     string
+		url      string
+		wantLen  int
+		wantPage int
+		wantPer  int
+		wantTot  int
+	}{
+		{"defaults", "/api/droplets", 5, 1, 50, 5},
+		{"page 1 per_page 2", "/api/droplets?page=1&per_page=2", 2, 1, 2, 5},
+		{"page 2 per_page 2", "/api/droplets?page=2&per_page=2", 2, 2, 2, 5},
+		{"page 3 per_page 2", "/api/droplets?page=3&per_page=2", 1, 3, 2, 5},
+		{"page past end", "/api/droplets?page=99&per_page=2", 0, 99, 2, 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			var resp struct {
+				Droplets []*cistern.Droplet `json:"droplets"`
+				Total    int                `json:"total"`
+				Page     int                `json:"page"`
+				PerPage  int                `json:"per_page"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(resp.Droplets) != tt.wantLen {
+				t.Errorf("len(droplets) = %d, want %d", len(resp.Droplets), tt.wantLen)
+			}
+			if resp.Total != tt.wantTot {
+				t.Errorf("total = %d, want %d", resp.Total, tt.wantTot)
+			}
+			if resp.Page != tt.wantPage {
+				t.Errorf("page = %d, want %d", resp.Page, tt.wantPage)
+			}
+			if resp.PerPage != tt.wantPer {
+				t.Errorf("per_page = %d, want %d", resp.PerPage, tt.wantPer)
+			}
+		})
+	}
+}
+
+func TestAPI_GetDroplets_PerPageCap(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		c.Add("myrepo", fmt.Sprintf("Drop %d", i), "", 1, 2)
+	}
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets?per_page=999999999", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	var resp struct {
+		Droplets []*cistern.Droplet `json:"droplets"`
+		Total    int                `json:"total"`
+		Page     int                `json:"page"`
+		PerPage  int                `json:"per_page"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.PerPage != maxPerPage {
+		t.Errorf("per_page = %d, want capped at %d", resp.PerPage, maxPerPage)
+	}
+	if len(resp.Droplets) != 5 {
+		t.Errorf("returned %d droplets, want all 5", len(resp.Droplets))
+	}
+}
+
+func TestAPI_GetDroplets_Sort(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("myrepo", "Bravo", "", 2, 2)
+	c.Add("myrepo", "Alpha", "", 1, 2)
+	c.Add("myrepo", "Charlie", "", 3, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	tests := []struct {
+		name      string
+		url       string
+		wantOrder []string
+	}{
+		{"default sort by priority", "/api/droplets", []string{"Alpha", "Bravo", "Charlie"}},
+		{"sort by title", "/api/droplets?sort=title", []string{"Alpha", "Bravo", "Charlie"}},
+		{"sort by created_at", "/api/droplets?sort=created_at", []string{"Bravo", "Alpha", "Charlie"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			var resp struct {
+				Droplets []*cistern.Droplet `json:"droplets"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(resp.Droplets) != len(tt.wantOrder) {
+				t.Fatalf("len(droplets) = %d, want %d", len(resp.Droplets), len(tt.wantOrder))
+			}
+			for i, want := range tt.wantOrder {
+				if resp.Droplets[i].Title != want {
+					t.Errorf("droplet[%d] title = %q, want %q", i, resp.Droplets[i].Title, want)
+				}
+			}
+		})
+	}
+}
+
 func TestAPI_GetDropletByID_ReturnsDroplet(t *testing.T) {
 	db := tempDB(t)
 	c, err := cistern.New(db, "mr")
@@ -197,6 +334,8 @@ func TestAPI_GetDropletsSearch_ReturnsMatches(t *testing.T) {
 	var resp struct {
 		Droplets []*cistern.Droplet `json:"droplets"`
 		Total    int                `json:"total"`
+		Page     int                `json:"page"`
+		PerPage  int                `json:"per_page"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -209,6 +348,69 @@ func TestAPI_GetDropletsSearch_ReturnsMatches(t *testing.T) {
 	}
 	if resp.Droplets[0].Title != "Feature Alpha" {
 		t.Errorf("Title = %q, want 'Feature Alpha'", resp.Droplets[0].Title)
+	}
+	if resp.Page != 1 {
+		t.Errorf("page = %d, want 1", resp.Page)
+	}
+	if resp.PerPage != 50 {
+		t.Errorf("per_page = %d, want 50", resp.PerPage)
+	}
+}
+
+func TestAPI_SearchDroplets_Pagination(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		c.Add("myrepo", fmt.Sprintf("Search Hit %d", i), "", 1, 2)
+	}
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	tests := []struct {
+		name     string
+		url      string
+		wantLen  int
+		wantPage int
+		wantPer  int
+		wantTot  int
+	}{
+		{"defaults", "/api/droplets/search?query=Search", 5, 1, 50, 5},
+		{"page 1 per_page 2", "/api/droplets/search?query=Search&page=1&per_page=2", 2, 1, 2, 5},
+		{"page 3 per_page 2", "/api/droplets/search?query=Search&page=3&per_page=2", 1, 3, 2, 5},
+		{"per_page capped", "/api/droplets/search?query=Search&per_page=999999999", 5, 1, maxPerPage, 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			var resp struct {
+				Droplets []*cistern.Droplet `json:"droplets"`
+				Total    int                `json:"total"`
+				Page     int                `json:"page"`
+				PerPage  int                `json:"per_page"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(resp.Droplets) != tt.wantLen {
+				t.Errorf("len(droplets) = %d, want %d", len(resp.Droplets), tt.wantLen)
+			}
+			if resp.Total != tt.wantTot {
+				t.Errorf("total = %d, want %d", resp.Total, tt.wantTot)
+			}
+			if resp.Page != tt.wantPage {
+				t.Errorf("page = %d, want %d", resp.Page, tt.wantPage)
+			}
+			if resp.PerPage != tt.wantPer {
+				t.Errorf("per_page = %d, want %d", resp.PerPage, tt.wantPer)
+			}
+		})
 	}
 }
 
@@ -721,6 +923,82 @@ func TestAPI_GetDependencies_ReturnsDeps(t *testing.T) {
 	}
 	if deps[0].Type != "blocked_by" {
 		t.Errorf("type = %q, want %q (parent is undelivered, so child is blocked by it)", deps[0].Type, "blocked_by")
+	}
+}
+
+func TestAPI_GetDependencies_ResolvesAndBlocks(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, _ := c.Add("myrepo", "Parent", "", 1, 2)
+	child, _ := c.Add("myrepo", "Child", "", 2, 2, parent.ID)
+	grandchild, _ := c.Add("myrepo", "Grandchild", "", 3, 2, child.ID)
+	c.CloseItem(parent.ID)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	tests := []struct {
+		name    string
+		id      string
+		wantLen int
+	}{
+		{
+			name:    "child sees parent as resolves (delivered) and grandchild as blocks",
+			id:      child.ID,
+			wantLen: 2,
+		},
+		{
+			name:    "parent sees child as blocks (reverse direction)",
+			id:      parent.ID,
+			wantLen: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+tt.id+"/dependencies", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			var deps []struct {
+				DependsOn string `json:"depends_on"`
+				Type      string `json:"type"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&deps); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(deps) != tt.wantLen {
+				t.Fatalf("len(deps) = %d, want %d", len(deps), tt.wantLen)
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+child.ID+"/dependencies", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	var childDeps []struct {
+		DependsOn string `json:"depends_on"`
+		Type      string `json:"type"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&childDeps); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	foundResolves := false
+	foundBlocks := false
+	for _, d := range childDeps {
+		if d.DependsOn == parent.ID && d.Type == "resolves" {
+			foundResolves = true
+		}
+		if d.DependsOn == grandchild.ID && d.Type == "blocks" {
+			foundBlocks = true
+		}
+	}
+	if !foundResolves {
+		t.Error("expected parent dependency with type 'resolves' (delivered dep)")
+	}
+	if !foundBlocks {
+		t.Error("expected grandchild dependency with type 'blocks' (reverse direction)")
 	}
 }
 

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   useDroplet,
@@ -36,6 +36,10 @@ export function DropletDetail() {
 
   const [sseDroplet, setSseDroplet] = useState<Droplet | null>(null);
   const currentDroplet = sseDroplet ?? droplet;
+
+  useEffect(() => {
+    setSseDroplet(null);
+  }, [id]);
   const { steps: pipelineSteps } = useRepoSteps(currentDroplet?.repo ?? null);
 
   const [actionDialog, setActionDialog] = useState<{
@@ -95,8 +99,8 @@ export function DropletDetail() {
   const isInProgress = d.status === 'in_progress';
   const isOpen = d.status === 'open';
   const isPooled = d.status === 'pooled';
-  const isDone = d.status === 'done';
-  const isClosed = d.status === 'closed';
+  const isDelivered = d.status === 'delivered';
+  const isCancelled = d.status === 'cancelled';
 
   const steps = pipelineSteps.length > 0 ? pipelineSteps : (d.current_cataractae ? [d.current_cataractae] : []);
   const currentStepIndex = steps.indexOf(d.current_cataractae);
@@ -142,7 +146,7 @@ export function DropletDetail() {
               <button type="button" onClick={() => setActionDialog({ open: true, title: 'Approve Droplet', action: 'approve' })} className="px-3 py-1.5 text-sm rounded bg-cistern-green/20 text-cistern-green border border-cistern-green/40 hover:bg-cistern-green/30 transition-colors">Approve</button>
             </>
           )}
-          {(isPooled || isDone || isClosed) && (
+          {(isPooled || isDelivered || isCancelled) && (
             <button type="button" onClick={() => setActionDialog({ open: true, title: 'Reopen Droplet', action: 'reopen' })} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Reopen</button>
           )}
           {isInProgress && (
@@ -261,6 +265,14 @@ function FileIssueButton({ dropletId, onFiled }: { dropletId: string; onFiled: (
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setDescription('');
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [open]);
 
   const handleSubmit = async () => {
     if (!description.trim()) return;

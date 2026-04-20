@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Droplet } from '../api/types';
 import { editDroplet } from '../hooks/useApi';
 
@@ -16,6 +16,17 @@ export function EditMetadataModal({ open, onClose, droplet, onSaved }: EditMetad
   const [description, setDescription] = useState(droplet.description);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setTitle(droplet.title);
+      setPriority(droplet.priority);
+      setComplexity(droplet.complexity);
+      setDescription(droplet.description);
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [open, droplet.title, droplet.priority, droplet.complexity, droplet.description]);
 
   if (!open) return null;
 

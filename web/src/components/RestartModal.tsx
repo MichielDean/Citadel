@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDropletMutation } from '../hooks/useApi';
 
 interface RestartModalProps {
@@ -15,13 +15,21 @@ export function RestartModal({ open, onClose, dropletId, steps, onRestarted }: R
   const [error, setError] = useState<string | null>(null);
   const { mutate } = useDropletMutation();
 
+  useEffect(() => {
+    if (open) {
+      setSelectedStep('');
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [open]);
+
   if (!open) return null;
 
   const handleSubmit = async () => {
     setSubmitting(true);
     setError(null);
     try {
-      const body = selectedStep ? { to: selectedStep } : undefined;
+      const body = selectedStep ? { cataractae: selectedStep } : undefined;
       await mutate(dropletId, 'restart', body);
       onRestarted();
       onClose();

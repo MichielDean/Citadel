@@ -16,6 +16,7 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
   const [modalMode, setModalMode] = useState<'resolve' | 'reject'>('resolve');
   const [evidence, setEvidence] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const flaggedBySet = new Set(issues.map((i) => i.flagged_by));
   const filteredIssues = issues.filter((i) => {
@@ -31,6 +32,7 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
   const handleSubmit = async () => {
     if (!modalIssue || !evidence.trim()) return;
     setSubmitting(true);
+    setModalError(null);
     try {
       if (modalMode === 'resolve') {
         await onResolve(modalIssue.id, evidence);
@@ -39,6 +41,8 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
       }
       setModalIssue(null);
       setEvidence('');
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : 'Failed to update issue');
     } finally {
       setSubmitting(false);
     }
@@ -102,6 +106,7 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
               placeholder="Evidence..."
               className="w-full bg-cistern-bg border border-cistern-border rounded p-2 text-sm text-cistern-fg resize-y min-h-[80px] mb-3"
             />
+            {modalError && <div className="mb-3 text-sm text-cistern-red font-mono">{modalError}</div>}
             <div className="flex gap-2 justify-end">
               <button
                 type="button"

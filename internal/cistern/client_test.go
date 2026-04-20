@@ -667,6 +667,28 @@ func TestGetBlockedBy(t *testing.T) {
 	}
 }
 
+func TestGetDependents(t *testing.T) {
+	c := testClient(t)
+	parent, _ := c.Add("myrepo", "Parent", "", 1, 3)
+	child, _ := c.Add("myrepo", "Child", "", 1, 3, parent.ID)
+
+	dependents, err := c.GetDependents(parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dependents) != 1 || dependents[0] != child.ID {
+		t.Errorf("GetDependents = %v, want [%s]", dependents, child.ID)
+	}
+
+	noDeps, err := c.GetDependents(child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(noDeps) != 0 {
+		t.Errorf("GetDependents for leaf = %v, want []", noDeps)
+	}
+}
+
 func TestGetReady_SkipsBlocked(t *testing.T) {
 	c := testClient(t)
 	parent, _ := c.Add("myrepo", "Parent", "", 1, 3)

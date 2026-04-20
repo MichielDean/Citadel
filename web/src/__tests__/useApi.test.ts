@@ -194,7 +194,7 @@ describe('useDropletDependencies', () => {
 
   it('fetches dependencies for a droplet', async () => {
     const mockDeps = [
-      { depends_on: 'ct-dep1', type: 'blocking' as const },
+      { depends_on: 'ct-dep1', type: 'resolves' as const },
       { depends_on: 'ct-dep2', type: 'blocked_by' as const },
     ];
     mockFetch(mockDeps);
@@ -467,7 +467,7 @@ describe('useDropletDependencies refetch', () => {
 
   it('exposes a refetch function', async () => {
     const mockDeps = [
-      { depends_on: 'ct-dep1', type: 'blocking' as const },
+      { depends_on: 'ct-dep1', type: 'resolves' as const },
     ];
     mockFetch(mockDeps);
 

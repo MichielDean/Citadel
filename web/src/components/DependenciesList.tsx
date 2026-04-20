@@ -12,27 +12,30 @@ interface DependenciesListProps {
 export function DependenciesList({ dropletId, dependencies, loading, onChange }: DependenciesListProps) {
   const [newDepId, setNewDepId] = useState('');
   const [adding, setAdding] = useState(false);
+  const [depError, setDepError] = useState<string | null>(null);
 
   const handleAdd = async () => {
     if (!newDepId.trim()) return;
     setAdding(true);
+    setDepError(null);
     try {
       await addDependency(dropletId, newDepId.trim());
       setNewDepId('');
       onChange();
     } catch (err) {
-      console.error('Failed to add dependency:', err);
+      setDepError(err instanceof Error ? err.message : 'Failed to add dependency');
     } finally {
       setAdding(false);
     }
   };
 
   const handleRemove = async (depId: string) => {
+    setDepError(null);
     try {
       await removeDependency(dropletId, depId);
       onChange();
     } catch (err) {
-      console.error('Failed to remove dependency:', err);
+      setDepError(err instanceof Error ? err.message : 'Failed to remove dependency');
     }
   };
 
@@ -40,8 +43,9 @@ export function DependenciesList({ dropletId, dependencies, loading, onChange }:
     return <div className="text-center py-4 text-cistern-muted font-mono text-sm">Loading dependencies…</div>;
   }
 
-  const blocking = dependencies.filter((d) => d.type === 'blocking');
   const blockedBy = dependencies.filter((d) => d.type === 'blocked_by');
+  const resolves = dependencies.filter((d) => d.type === 'resolves');
+  const blocks = dependencies.filter((d) => d.type === 'blocks');
 
   return (
     <div className="space-y-4">
@@ -51,7 +55,7 @@ export function DependenciesList({ dropletId, dependencies, loading, onChange }:
           <div className="space-y-1">
             {blockedBy.map((dep) => (
               <div key={dep.depends_on} className="flex items-center gap-2 text-sm">
-                <a href={`/app/droplets/${dep.depends_on}`} className="font-mono text-cistern-accent hover:underline">{dep.depends_on}</a>
+                <a href={`/app/droplets/${dep.depends_on}`} className="font-mono text-cistern-red hover:underline">{dep.depends_on}</a>
                 <button
                   type="button"
                   onClick={() => handleRemove(dep.depends_on)}
@@ -63,11 +67,11 @@ export function DependenciesList({ dropletId, dependencies, loading, onChange }:
         </div>
       )}
 
-      {blocking.length > 0 && (
+      {resolves.length > 0 && (
         <div>
-          <h4 className="text-xs font-mono text-cistern-muted uppercase tracking-wider mb-2">Blocking</h4>
+          <h4 className="text-xs font-mono text-cistern-muted uppercase tracking-wider mb-2">Resolves</h4>
           <div className="space-y-1">
-            {blocking.map((dep) => (
+            {resolves.map((dep) => (
               <div key={dep.depends_on} className="flex items-center gap-2 text-sm">
                 <a href={`/app/droplets/${dep.depends_on}`} className="font-mono text-cistern-accent hover:underline">{dep.depends_on}</a>
                 <button
@@ -81,7 +85,24 @@ export function DependenciesList({ dropletId, dependencies, loading, onChange }:
         </div>
       )}
 
-      {dependencies.length === 0 && (
+      {blocks.length > 0 && (
+        <div>
+          <h4 className="text-xs font-mono text-cistern-muted uppercase tracking-wider mb-2">Blocks</h4>
+          <div className="space-y-1">
+            {blocks.map((dep) => (
+              <div key={dep.depends_on} className="flex items-center gap-2 text-sm">
+                <a href={`/app/droplets/${dep.depends_on}`} className="font-mono text-cistern-accent hover:underline">{dep.depends_on}</a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {depError && (
+        <div className="text-sm text-cistern-red font-mono">{depError}</div>
+      )}
+
+      {dependencies.length === 0 && !depError && (
         <div className="text-center py-2 text-cistern-muted font-mono text-sm">No dependencies</div>
       )}
 
