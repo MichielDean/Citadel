@@ -196,11 +196,17 @@ func (s *Session) collectEnvArgs() []string {
 	// OPENCODE_SERVER_* causes "session not found" errors when opencode run
 	// tries to connect to an authenticated server instead of starting fresh.
 	// See: https://github.com/anomalyco/opencode/issues/8502
+	//
+	// GIT_EDITOR / GIT_SEQUENCE_EDITOR set to "true" so git never opens an
+	// interactive editor (Vim) inside agent sessions. Without these, git rebase
+	// --continue and similar commands hang forever waiting for terminal input.
 	args = append(args,
 		"-e", "OPENCODE_SERVER_USERNAME=",
 		"-e", "OPENCODE_SERVER_PASSWORD=",
 		"-e", "OPENCODE_PID=",
 		"-e", "OPENCODE=",
+		"-e", "GIT_EDITOR=true",
+		"-e", "GIT_SEQUENCE_EDITOR=true",
 	)
 
 	// Provider-specific context isolation: when AgentFlag is set (opencode),

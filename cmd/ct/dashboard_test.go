@@ -131,13 +131,13 @@ func TestFetchDashboardData_FeedsDataCorrectly(t *testing.T) {
 	}
 
 	// Add: 1 flowing assigned to "virgo", 1 queued, 1 closed.
-	flowing, _ := c.Add("myrepo", "Feature A", "", 1, 2)
+	flowing, _ := c.Add("myrepo", "Feature A", "", 1)
 	c.GetReady("myrepo") // marks it in_progress
 	c.Assign(flowing.ID, "virgo", "implement")
 
-	_, _ = c.Add("myrepo", "Feature B", "", 2, 2) // stays open/queued
+	_, _ = c.Add("myrepo", "Feature B", "", 2) // stays open/queued
 
-	closed, _ := c.Add("myrepo", "Feature C", "", 1, 2)
+	closed, _ := c.Add("myrepo", "Feature C", "", 1)
 	c.CloseItem(closed.ID)
 	c.Close()
 
@@ -521,7 +521,7 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 			{Name: "marcia", Steps: steps},
 		},
 		CisternItems: []*cistern.Droplet{
-			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataractae: "implement", Complexity: 2},
+			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataractae: "implement"},
 		},
 		RecentItems: []*cistern.Droplet{
 			{ID: "ci-xyz99", Status: "delivered", CurrentCataractae: "merge", UpdatedAt: time.Now()},
@@ -780,11 +780,11 @@ func TestFetchDashboardData_PooledItems_PopulatedCorrectly(t *testing.T) {
 	}
 
 	// Add a pooled item and a delivered item.
-	pooled, _ := c.Add("myrepo", "Stuck Feature", "", 1, 2)
+	pooled, _ := c.Add("myrepo", "Stuck Feature", "", 1)
 	c.GetReady("myrepo")
 	c.Pool(pooled.ID, "test pooling")
 
-	delivered, _ := c.Add("myrepo", "Done Feature", "", 1, 2)
+	delivered, _ := c.Add("myrepo", "Done Feature", "", 1)
 	c.GetReady("myrepo")
 	c.CloseItem(delivered.ID)
 	c.Close()
@@ -813,7 +813,7 @@ func TestFetchDashboardData_PooledItems_EmptyWhenNonePooled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	delivered, _ := c.Add("myrepo", "Done Feature", "", 1, 2)
+	delivered, _ := c.Add("myrepo", "Done Feature", "", 1)
 	c.GetReady("myrepo")
 	c.CloseItem(delivered.ID)
 	c.Close()
@@ -1033,7 +1033,7 @@ func TestFetchDashboardData_ActiveAqueduct_ShowsAllSteps(t *testing.T) {
 
 	// Complexity 1 droplet assigned at "merge" (the 3rd step). All 3 steps must
 	// appear and CataractaeIndex must correctly reflect position in the full list.
-	item, _ := c.Add("myrepo", "Trivial task", "", 1, 1)
+	item, _ := c.Add("myrepo", "Trivial task", "", 1)
 	c.GetReady("myrepo")
 	c.Assign(item.ID, "virgo", "merge")
 	c.Close()
@@ -1674,7 +1674,7 @@ func TestFetchDashboardData_InProgressWithEmptyAssignee_AppearsAsUnassigned(t *t
 	}
 
 	// Add and immediately mark in_progress — skip Assign so Assignee stays empty.
-	orphan, _ := c.Add("myrepo", "Orphaned Feature", "", 1, 2)
+	orphan, _ := c.Add("myrepo", "Orphaned Feature", "", 1)
 	c.GetReady("myrepo")
 	c.Close()
 
@@ -1708,12 +1708,12 @@ func TestFetchDashboardData_InProgressWithEmptyAssignee_FlowingCountMatchesVisib
 	}
 
 	// Assigned item — visible in the "virgo" aqueduct row.
-	assigned, _ := c.Add("myrepo", "Assigned Feature", "", 1, 2)
+	assigned, _ := c.Add("myrepo", "Assigned Feature", "", 1)
 	c.GetReady("myrepo")
 	c.Assign(assigned.ID, "virgo", "implement")
 
 	// Unassigned item — in_progress but no Assign call.
-	_, _ = c.Add("myrepo", "Orphaned Feature", "", 1, 2)
+	_, _ = c.Add("myrepo", "Orphaned Feature", "", 1)
 	c.GetReady("myrepo")
 
 	c.Close()
@@ -1744,7 +1744,7 @@ func TestFetchDashboardData_AssignedInProgress_NotInUnassigned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	item, _ := c.Add("myrepo", "Normal Feature", "", 1, 2)
+	item, _ := c.Add("myrepo", "Normal Feature", "", 1)
 	c.GetReady("myrepo")
 	c.Assign(item.ID, "virgo", "implement")
 	c.Close()
@@ -1887,7 +1887,7 @@ func TestFetchDashboardData_AssignedToRemovedAqueduct_AppearsAsUnassigned(t *tes
 		t.Fatal(err)
 	}
 
-	item, _ := c.Add("myrepo", "Stale Assignment", "", 1, 2)
+	item, _ := c.Add("myrepo", "Stale Assignment", "", 1)
 	c.GetReady("myrepo")
 	// Assign to an aqueduct that no longer exists in the config.
 	c.Assign(item.ID, "deleted-aqueduct", "implement")
@@ -1940,7 +1940,7 @@ func TestFetchDashboardData_StageElapsed_UsesStageDispatchedAt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	flowing, _ := c.Add("myrepo", "Stage elapsed test", "", 1, 2)
+	flowing, _ := c.Add("myrepo", "Stage elapsed test", "", 1)
 	c.GetReady("myrepo")
 	c.Assign(flowing.ID, "virgo", "implement")
 	c.Close()
@@ -1975,7 +1975,7 @@ func TestFetchDashboardData_StageElapsed_ZeroWhenNotDispatched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	flowing, _ := c.Add("myrepo", "No stage dispatch test", "", 1, 2)
+	flowing, _ := c.Add("myrepo", "No stage dispatch test", "", 1)
 	c.GetReady("myrepo")
 	c.Close()
 

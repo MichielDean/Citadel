@@ -40,7 +40,7 @@ func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
 	// Without this, send-keys can fire before the shell has started, causing the
 	// script to be lost or partially captured — the root cause of the flake.
 	shellReady := false
-	readyDeadline := time.Now().Add(5 * time.Second)
+	readyDeadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(readyDeadline) {
 		raw, _ := exec.Command("tmux", "capture-pane", "-t", session+":0.0", "-p").Output()
 		if strings.Contains(string(raw), "$") || strings.Contains(string(raw), "#") || strings.Contains(string(raw), "~") {

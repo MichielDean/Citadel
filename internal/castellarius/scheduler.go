@@ -51,9 +51,9 @@ type CisternClient interface {
 	// Cancel marks a droplet as cancelled. Used by the Architecti for
 	// irrecoverable droplets.
 	Cancel(id, reason string) error
-	// FileDroplet creates a new droplet in the given repo. Used by the Architecti
-	// to file structural/code fix work items.
-	FileDroplet(repo, title, description string, priority, complexity int) (*cistern.Droplet, error)
+	// FileDroplet creates a new droplet in the given repo. Used by the Architect
+	// to file structural fix work items.
+	FileDroplet(repo, title, description string, priority int) (*cistern.Droplet, error)
 	// Heartbeat records the current time as the agent's most recent activity
 	// timestamp. Called by agents via `ct droplet heartbeat <id>` every 60 seconds.
 	Heartbeat(id string) error
@@ -883,11 +883,6 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 			continue
 		}
 
-		// For critical droplets, insert a human gate before delivery.
-		if wf.Complexity.RequireHumanForLevel(item.Complexity) && next == "delivery" {
-			next = "human"
-		}
-
 		if isTerminal(next) {
 			keepBranch := strings.ToLower(next) != "done"
 			cleanupBranch(keepBranch)
@@ -1164,7 +1159,7 @@ func route(step aqueduct.WorkflowCataractae, result Result) string {
 // isTerminal returns true if the target is a terminal state.
 func isTerminal(name string) bool {
 	switch strings.ToLower(name) {
-	case "done", "pooled", "human", "pool":
+	case "done", "pooled", "pool":
 		return true
 	}
 	return false
@@ -1177,16 +1172,11 @@ func (s *Castellarius) handleTerminal(client CisternClient, itemID, terminal, fr
 		if err := client.CloseItem(itemID); err != nil {
 			s.logger.Error("close failed", "droplet", itemID, "error", err)
 		}
-	case "pooled", "human", "pool":
+	case "pooled", "pool":
 		s.logger.Info("Droplet pooled at terminal", "droplet", itemID, "terminal", terminal, "from_cataractae", fromStep)
 		reason := fmt.Sprintf("reached terminal %q from cataractae %q", terminal, fromStep)
 		if err := client.Pool(itemID, reason); err != nil {
 			s.logger.Error("pool at terminal failed", "droplet", itemID, "error", err)
-		}
-		if strings.ToLower(terminal) == "human" {
-			if err := client.SetCataractae(itemID, "human"); err != nil {
-				s.logger.Error("set cataractae human failed", "droplet", itemID, "error", err)
-			}
 		}
 	}
 }
@@ -1537,6 +1527,8 @@ func prepareBranchInSandbox(dir, itemID string) error {
 	for _, args := range [][]string{
 		{"git", "config", "user.name", "Cistern Agent"},
 		{"git", "config", "user.email", "agent@cistern.local"},
+		{"git", "config", "core.editor", "true"},
+		{"git", "config", "sequence.editor", "true"},
 	} {
 		c := exec.Command(args[0], args[1:]...)
 		c.Dir = dir

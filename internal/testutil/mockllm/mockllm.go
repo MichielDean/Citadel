@@ -33,7 +33,7 @@ import (
 
 // HardcodedProposalsJSON is the raw JSON array that every mock response embeds.
 // Tests can unmarshal this to verify the full round-trip.
-const HardcodedProposalsJSON = `[{"title":"mock proposal","description":"test description","complexity":"standard","depends_on":[]}]`
+const HardcodedProposalsJSON = `[{"title":"mock proposal","description":"test description","depends_on":[]}]`
 
 // Request is a snapshot of an HTTP request received by the mock server.
 type Request struct {
