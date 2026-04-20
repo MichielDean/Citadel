@@ -136,7 +136,7 @@ export function EditMetadataModal({ open, onClose, droplet, onSaved }: EditMetad
             className="w-full bg-cistern-bg border border-cistern-border rounded px-2 py-1.5 text-sm text-cistern-fg"
           />
         </div>
-        <ComplexitySelector value={complexity} onChange={setComplexity} />
+        <ComplexitySelector value={complexity} onChange={setComplexity} repoName={droplet.repo} />
         <div>
           <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Description</label>
           <textarea

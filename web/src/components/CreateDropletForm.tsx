@@ -165,7 +165,7 @@ export function CreateDropletForm({ onSuccess, onCancel }: CreateDropletFormProp
         />
       </div>
 
-      <ComplexitySelector value={complexity} onChange={(v) => { setComplexity(v); markDirty(); }} />
+      <ComplexitySelector value={complexity} onChange={(v) => { setComplexity(v); markDirty(); }} repoName={repo || undefined} />
 
       <div>
         <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Dependencies</label>
