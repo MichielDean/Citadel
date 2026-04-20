@@ -2192,9 +2192,9 @@ func TestAPI_SSALimit_ConnectionLimit(t *testing.T) {
 	d, _ := c.Add("myrepo", "Test", "", 1, 2)
 	c.Close()
 
-	original := currentSSEConnections
-	defer func() { currentSSEConnections = original }()
-	atomic.StoreInt64(&currentSSEConnections, maxSSEConnections)
+	original := currentDropletSSEConnections
+	defer func() { currentDropletSSEConnections = original }()
+	atomic.StoreInt64(&currentDropletSSEConnections, maxDropletSSEConnections)
 
 	mux := newDashboardMux(tempCfg(t), db)
 	req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+d.ID+"/events", nil)
@@ -2658,9 +2658,9 @@ func TestAPI_LogSources_ReturnsAvailableLogs(t *testing.T) {
 }
 
 func TestAPI_LogSSE_PathTraversalInSource(t *testing.T) {
-	orig := currentSSEConnections
-	defer func() { currentSSEConnections = orig }()
-	atomic.StoreInt64(&currentSSEConnections, 0)
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
 
 	mux := newDashboardMux(tempCfg(t), tempDB(t))
 	req := httptest.NewRequest(http.MethodGet, "/api/logs/events?source=..%2Fetc%2Fpasswd", nil)
@@ -2738,9 +2738,9 @@ func TestAPI_Logs_InvalidSource_NoUserInputInError(t *testing.T) {
 }
 
 func TestAPI_LogSSE_InitialContext(t *testing.T) {
-	orig := currentSSEConnections
-	defer func() { currentSSEConnections = orig }()
-	atomic.StoreInt64(&currentSSEConnections, 0)
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
 
 	origHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", origHome)
@@ -2807,9 +2807,9 @@ func TestAPI_LogSSE_InitialContext(t *testing.T) {
 }
 
 func TestAPI_LogSSE_StreamResumesAfterRotation(t *testing.T) {
-	orig := currentSSEConnections
-	defer func() { currentSSEConnections = orig }()
-	atomic.StoreInt64(&currentSSEConnections, 0)
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
 
 	origHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", origHome)
@@ -2973,9 +2973,9 @@ func TestAPI_Logs_ReturnsAbsoluteLineNumbers(t *testing.T) {
 }
 
 func TestAPI_LogSSE_ScannerError_DoesNotStall(t *testing.T) {
-	orig := currentSSEConnections
-	defer func() { currentSSEConnections = orig }()
-	atomic.StoreInt64(&currentSSEConnections, 0)
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
 
 	origHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", origHome)
@@ -3074,9 +3074,9 @@ func TestCountLinesUpTo(t *testing.T) {
 }
 
 func TestAPI_LogSSE_LineNumbersInJSON(t *testing.T) {
-	orig := currentSSEConnections
-	defer func() { currentSSEConnections = orig }()
-	atomic.StoreInt64(&currentSSEConnections, 0)
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
 
 	origHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", origHome)
@@ -3154,5 +3154,119 @@ func TestAPI_LogSSE_LineNumbersInJSON(t *testing.T) {
 		}
 	case <-time.After(4 * time.Second):
 		t.Fatalf("timed out; data so far: %q", allData[:min(len(allData), 500)])
+	}
+}
+
+func TestAPI_LogSSE_TerminatesOnMissingFile(t *testing.T) {
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+	cisternDir := filepath.Join(tmpDir, ".cistern")
+	if err := os.MkdirAll(cisternDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := tempCfg(t)
+	mux := newDashboardMux(cfg, tempDB(t))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/logs/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	buf := make([]byte, 1024)
+	_, readErr := resp.Body.Read(buf)
+	if readErr == nil {
+		_, readErr = resp.Body.Read(buf)
+	}
+
+	if readErr == nil {
+		t.Error("expected SSE stream to terminate when log file is missing, but it continued indefinitely")
+	}
+}
+
+func TestAPI_SSE_SeparateConnectionPools(t *testing.T) {
+	origDroplet := currentDropletSSEConnections
+	defer func() { currentDropletSSEConnections = origDroplet }()
+
+	origLog := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = origLog }()
+
+	atomic.StoreInt64(&currentDropletSSEConnections, maxDropletSSEConnections)
+	atomic.StoreInt64(&currentLogSSEConnections, 0)
+
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+d.ID+"/events", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("droplet SSE at connection limit: status = %d, want 503", w.Code)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+	cisternDir := filepath.Join(tmpDir, ".cistern")
+	if err := os.MkdirAll(cisternDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(cisternDir, "castellarius.log")
+	if err := os.WriteFile(logPath, []byte("test log line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	logReq := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	logW := httptest.NewRecorder()
+	mux.ServeHTTP(logW, logReq)
+	if logW.Code != http.StatusOK {
+		t.Errorf("log API should still work even when droplet SSE pool is full: status = %d", logW.Code)
+	}
+}
+
+func TestAPI_LogSSE_ConnectionLimit(t *testing.T) {
+	orig := currentLogSSEConnections
+	defer func() { currentLogSSEConnections = orig }()
+	atomic.StoreInt64(&currentLogSSEConnections, maxLogSSEConnections)
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+
+	cfg := tempCfg(t)
+	mux := newDashboardMux(cfg, tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/events", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("log SSE at connection limit: status = %d, want 503", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if !strings.Contains(body["error"], "too many") {
+		t.Errorf("error = %q, want 'too many' keyword", body["error"])
 	}
 }

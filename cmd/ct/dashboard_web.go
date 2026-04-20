@@ -79,12 +79,21 @@ const (
 // Prevents unbounded memory consumption from large payloads.
 const apiMaxBodyBytes = 1 << 20 // 1 MiB
 
-// maxSSEConnections limits the number of simultaneous SSE client connections
-// per server to prevent resource exhaustion.
-const maxSSEConnections = 64
+// maxDropletSSEConnections limits the number of simultaneous SSE connections
+// for droplet detail streams, preventing resource exhaustion independent of
+// log viewer connections.
+const maxDropletSSEConnections = 64
 
-// currentSSEConnections tracks the number of active SSE connections.
-var currentSSEConnections int64
+// maxLogSSEConnections limits the number of simultaneous SSE connections
+// for log viewer streams. Separate from droplet connections so log viewers
+// cannot starve dashboard detail views.
+const maxLogSSEConnections = 32
+
+// currentDropletSSEConnections tracks the number of active droplet SSE connections.
+var currentDropletSSEConnections int64
+
+// currentLogSSEConnections tracks the number of active log SSE connections.
+var currentLogSSEConnections int64
 
 // dashboardDefaultFontFamily is the CSS font-family fallback used when
 // dashboard_font_family is not set in cistern.yaml.
@@ -2455,15 +2464,19 @@ func handleGetLogs(cfgPath string) http.HandlerFunc {
 	}
 }
 
+// maxLogSSERetries is the maximum number of consecutive poll cycles where the
+// log file is missing before the SSE handler terminates the connection.
+const maxLogSSERetries = 20 // 20 × 500ms = 10 seconds
+
 // handleLogEvents streams new log lines via SSE.
 func handleLogEvents(cfgPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if atomic.AddInt64(&currentSSEConnections, 1) > maxSSEConnections {
-			atomic.AddInt64(&currentSSEConnections, -1)
-			writeAPIError(w, http.StatusServiceUnavailable, "too many SSE connections")
+		if atomic.AddInt64(&currentLogSSEConnections, 1) > maxLogSSEConnections {
+			atomic.AddInt64(&currentLogSSEConnections, -1)
+			writeAPIError(w, http.StatusServiceUnavailable, "too many log SSE connections")
 			return
 		}
-		defer atomic.AddInt64(&currentSSEConnections, -1)
+		defer atomic.AddInt64(&currentLogSSEConnections, -1)
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -2499,6 +2512,7 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 			}
 		}
 
+		missCount := 0
 		for {
 			select {
 			case <-r.Context().Done():
@@ -2506,8 +2520,13 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 			case <-ticker.C:
 				info, err := os.Stat(path)
 				if err != nil {
+					missCount++
+					if missCount >= maxLogSSERetries {
+						return
+					}
 					continue
 				}
+				missCount = 0
 				if info.Size() < offset {
 					offset = 0
 					lineNum = 1
@@ -2609,12 +2628,12 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 		id := r.PathValue("id")
 
 		// Limit concurrent SSE connections to prevent resource exhaustion.
-		if atomic.AddInt64(&currentSSEConnections, 1) > maxSSEConnections {
-			atomic.AddInt64(&currentSSEConnections, -1)
+		if atomic.AddInt64(&currentDropletSSEConnections, 1) > maxDropletSSEConnections {
+			atomic.AddInt64(&currentDropletSSEConnections, -1)
 			writeAPIError(w, http.StatusServiceUnavailable, "too many SSE connections")
 			return
 		}
-		defer atomic.AddInt64(&currentSSEConnections, -1)
+		defer atomic.AddInt64(&currentDropletSSEConnections, -1)
 
 		// Validate droplet existence and flusher support before setting SSE headers,
 		// so error responses use clean Content-Type instead of text/event-stream.
