@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { StatusIndicator } from '../components/StatusIndicator';
 import { ActionButton } from '../components/ActionButton';
 import { useCastellariusStatus, castellariusAction } from '../api/castellarius';
@@ -11,11 +11,26 @@ interface Toast {
 export function CastellariusPage() {
   const { status, loading, error, refresh } = useCastellariusStatus(5000);
   const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = (message: string, type: Toast['type']) => {
+  const showToast = useCallback((message: string, type: Toast['type']) => {
+    if (toastTimerRef.current !== null) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+    toastTimerRef.current = setTimeout(() => {
+      toastTimerRef.current = null;
+      setToast(null);
+    }, 3000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleAction = async (action: 'start' | 'stop' | 'restart') => {
     try {

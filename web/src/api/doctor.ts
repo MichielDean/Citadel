@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuthHeaders } from '../hooks/useAuth';
 import type { DoctorResult, DoctorCheck } from './types';
 
@@ -41,22 +41,29 @@ export function useDoctor() {
   const [result, setResult] = useState<DoctorResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const mountedRef = useRef(true);
 
   const runDoctor = useCallback(async (fix = false) => {
     setLoading(true);
     setError(null);
     try {
       const data = await fetchDoctor(fix);
+      if (!mountedRef.current) return;
       setResult(data);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     runDoctor();
+    return () => {
+      mountedRef.current = false;
+    };
   }, [runDoctor]);
 
   const rerun = useCallback(() => runDoctor(false), [runDoctor]);

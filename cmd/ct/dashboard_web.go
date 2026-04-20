@@ -2504,7 +2504,11 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 				}
 				func() {
 					defer f.Close()
-					f.Seek(offset, io.SeekStart)
+					seekOffset, seekErr := f.Seek(offset, io.SeekStart)
+					if seekErr != nil {
+						return
+					}
+					_ = seekOffset
 					scanner := bufio.NewScanner(f)
 					scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
 					var newOffset int64
