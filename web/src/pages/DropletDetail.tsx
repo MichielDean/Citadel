@@ -34,7 +34,7 @@ export function DropletDetail() {
   const { notes, loading: notesLoading, refetch: refetchNotes } = useDropletNotes(id ?? null, useCallback((d: Droplet) => {
     setSseDroplet(d);
   }, []));
-  const { issues, loading: issuesLoading, refetch: refetchIssues } = useDropletIssues(id ?? null, { open: true });
+  const { issues, loading: issuesLoading, refetch: refetchIssues } = useDropletIssues(id ?? null);
   const { dependencies, loading: depsLoading, refetch: refetchDeps } = useDropletDependencies(id ?? null);
   const { mutate } = useDropletMutation();
 

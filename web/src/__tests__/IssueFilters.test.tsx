@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { IssueFilters } from '../components/IssueFilters';
 
 describe('IssueFilters', () => {
@@ -70,5 +70,39 @@ describe('IssueFilters', () => {
     );
     const openBtn = screen.getByText('Open');
     expect(openBtn.className).toContain('border-cistern-accent');
+  });
+
+  it('calls onRoleFilterChange to toggle off when clicking active role filter', () => {
+    const onRoleFilterChange = vi.fn();
+    render(
+      <IssueFilters
+        issues={issues}
+        statusFilter="open"
+        roleFilter="review"
+        sortOrder="newest"
+        onStatusFilterChange={() => {}}
+        onRoleFilterChange={onRoleFilterChange}
+        onSortOrderChange={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText('review'));
+    expect(onRoleFilterChange).toHaveBeenCalledWith('review');
+  });
+
+  it('calls onRoleFilterChange to select when clicking inactive role filter', () => {
+    const onRoleFilterChange = vi.fn();
+    render(
+      <IssueFilters
+        issues={issues}
+        statusFilter="open"
+        roleFilter=""
+        sortOrder="newest"
+        onStatusFilterChange={() => {}}
+        onRoleFilterChange={onRoleFilterChange}
+        onSortOrderChange={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText('review'));
+    expect(onRoleFilterChange).toHaveBeenCalledWith('review');
   });
 });

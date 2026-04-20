@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { DropletIssue } from '../api/types';
 import { IssueCard } from './IssueCard';
 import { IssueFilters } from './IssueFilters';
@@ -14,6 +14,9 @@ interface IssuesListProps {
 export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListProps) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open'>('open');
   const [roleFilter, setRoleFilter] = useState('');
+  const handleRoleFilterChange = useCallback((role: string) => {
+    setRoleFilter((prev) => prev === role ? '' : role);
+  }, []);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [actionIssue, setActionIssue] = useState<DropletIssue | null>(null);
   const [actionMode, setActionMode] = useState<'resolve' | 'reject'>('resolve');
@@ -78,7 +81,7 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
         roleFilter={roleFilter}
         sortOrder={sortOrder}
         onStatusFilterChange={setStatusFilter}
-        onRoleFilterChange={setRoleFilter}
+        onRoleFilterChange={handleRoleFilterChange}
         onSortOrderChange={setSortOrder}
       />
 
