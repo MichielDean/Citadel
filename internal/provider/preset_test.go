@@ -36,6 +36,8 @@ func TestBuiltins_OpencodePreset(t *testing.T) {
 	assertStr(t, "Subcommand", "run", got.Subcommand)
 	assertStr(t, "ModelFlag", "--model", got.ModelFlag)
 	assertStr(t, "InstructionsFile", "AGENTS.md", got.InstructionsFile)
+	assertStr(t, "AgentFlag", "--agent", got.AgentFlag)
+	assertStr(t, "PromptFileTemplate", "", got.PromptFileTemplate)
 }
 
 // TestBuiltins_NonInteractiveConfig verifies the NonInteractive fields for the opencode preset.
