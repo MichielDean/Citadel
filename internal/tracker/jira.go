@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var validIssueKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func init() {
 	Register("jira", newJiraProvider)
@@ -68,6 +71,10 @@ type jiraIssueResponse struct {
 // FetchIssue retrieves an issue from Jira by key (e.g. "PROJ-123") and maps
 // it to an ExternalIssue.
 func (p *jiraProvider) FetchIssue(key string) (*ExternalIssue, error) {
+	if !validIssueKeyRe.MatchString(key) {
+		return nil, fmt.Errorf("tracker: invalid issue key %q: must contain only alphanumeric characters, hyphens, and underscores", key)
+	}
+
 	token := os.Getenv(p.cfg.TokenEnv)
 	if token == "" {
 		return nil, fmt.Errorf("tracker: env var %s is not set", p.cfg.TokenEnv)

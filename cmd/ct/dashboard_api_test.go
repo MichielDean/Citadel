@@ -3439,3 +3439,179 @@ func TestAPI_ImportPreview_UnknownProvider(t *testing.T) {
 		t.Errorf("GET /api/import/preview (unknown provider) status = %d, want 400", w.Code)
 	}
 }
+
+func TestAPI_FilterNew_DescriptionExceedsMaxLength(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	longDesc := strings.Repeat("x", maxDescriptionLen+1)
+	body := fmt.Sprintf(`{"title":"test","description":%q}`, longDesc)
+	req := httptest.NewRequest(http.MethodPost, "/api/filter/new", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/filter/new (long description) status = %d, want 400", w.Code)
+	}
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !strings.Contains(resp["error"], "description exceeds maximum length") {
+		t.Errorf("error = %q, want description length message", resp["error"])
+	}
+}
+
+func TestAPI_FilterResume_IgnoresLLMSessionIDHeader(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := c.CreateFilterSession("Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := `[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]`
+	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "", "stored-session-id"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	body := strings.NewReader(`{"message":"test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/filter/"+s.ID+"/resume", body)
+	req.Header.Set("X-LLM-Session-ID", "attacker-session-id")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	_ = w.Code
+}
+
+func TestAPI_Import_KeyExceedsMaxLength(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	longKey := strings.Repeat("A", maxImportKeyLen+1)
+	body := fmt.Sprintf(`{"provider":"jira","key":%q,"repo":"myrepo"}`, longKey)
+	req := httptest.NewRequest(http.MethodPost, "/api/import", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/import (long key) status = %d, want 400", w.Code)
+	}
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !strings.Contains(resp["error"], "key exceeds maximum length") {
+		t.Errorf("error = %q, want key length message", resp["error"])
+	}
+}
+
+func TestAPI_Import_InvalidKeyCharacters(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{"slash", "PROJ/123"},
+		{"dot", "PROJ.123"},
+		{"space", "PROJ 123"},
+		{"path traversal", "../etc/passwd"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := newDashboardMux(tempCfg(t), tempDB(t))
+			body := fmt.Sprintf(`{"provider":"jira","key":%q,"repo":"myrepo"}`, tt.key)
+			req := httptest.NewRequest(http.MethodPost, "/api/import", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("POST /api/import (key=%q) status = %d, want 400", tt.key, w.Code)
+			}
+			var resp map[string]string
+			json.NewDecoder(w.Body).Decode(&resp)
+			if !strings.Contains(resp["error"], "invalid characters") {
+				t.Errorf("error = %q, want invalid characters message", resp["error"])
+			}
+		})
+	}
+}
+
+func TestAPI_ImportPreview_InvalidKeyCharacters(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/import/preview?provider=jira&key=PROJ%2F123", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("GET /api/import/preview (path traversal key) status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_Import_NoErrorDisclosure(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := `{"provider":"jira","key":"PROJ-123","repo":"myrepo"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/import", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code == http.StatusBadGateway {
+		var resp map[string]string
+		json.NewDecoder(w.Body).Decode(&resp)
+		if strings.Contains(resp["error"], "env") || strings.Contains(resp["error"], "JIRA") {
+			t.Errorf("error message leaks internal details: %q", resp["error"])
+		}
+		if !strings.Contains(resp["error"], "failed to fetch issue") {
+			t.Errorf("error = %q, want generic 'failed to fetch issue' message", resp["error"])
+		}
+	}
+}
+
+func TestAPI_OutboundRateLimiter_RejectsExcessRequests(t *testing.T) {
+	limiter := newOutboundRateLimiter()
+	limiter.limit = 2
+	limiter.window = time.Minute
+
+	callCount := 0
+	handler := limiter.wrap(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusOK)
+	})
+
+	allowed := 0
+	rejected := 0
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/filter/new", nil)
+		req.RemoteAddr = "1.2.3.4:5678"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code == http.StatusOK {
+			allowed++
+		} else if w.Code == http.StatusTooManyRequests {
+			rejected++
+		}
+	}
+
+	if allowed != 2 {
+		t.Errorf("allowed %d requests, want 2", allowed)
+	}
+	if rejected != 3 {
+		t.Errorf("rejected %d requests, want 3", rejected)
+	}
+}
+
+func TestIsValidTrackerKey(t *testing.T) {
+	tests := []struct {
+		key  string
+		want bool
+	}{
+		{"PROJ-123", true},
+		{"ABC_XYZ", true},
+		{"simple", true},
+		{"PROJ/123", false},
+		{"PROJ.123", false},
+		{"../etc", false},
+		{"key with spaces", false},
+		{"", false},
+		{"PROJ%20", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got := isValidTrackerKey(tt.key)
+			if got != tt.want {
+				t.Errorf("isValidTrackerKey(%q) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}

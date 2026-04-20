@@ -74,6 +74,7 @@ const (
 	maxNotesLen       = 65536
 	maxReasonLen      = 65536
 	maxPerPage        = 500
+	maxImportKeyLen   = 128
 )
 
 // apiMaxBodyBytes is the maximum request body size accepted by API endpoints.
@@ -162,6 +163,23 @@ func isValidAqueductName(name string) bool {
 		return false
 	}
 	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// isValidTrackerKey validates that a tracker issue key contains only
+// alphanumeric characters, hyphens, and underscores — the format expected
+// by issue trackers (e.g., "PROJ-123"). Rejects keys containing slashes,
+// dots, or other characters that could enable path traversal when the key
+// is concatenated into a URL path segment.
+func isValidTrackerKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for _, ch := range key {
 		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
 			return false
 		}
@@ -1092,15 +1110,16 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	apiMux.HandleFunc("GET /api/logs/events", handleLogEvents(cfgPath))
 	apiMux.HandleFunc("GET /api/logs/sources", handleGetLogSources(cfgPath))
 
-	// Filter/refine sessions
-	apiMux.HandleFunc("POST /api/filter/new", handleFilterNew(cfgPath, dbPath))
-	apiMux.HandleFunc("POST /api/filter/{session_id}/resume", handleFilterResume(cfgPath, dbPath))
+	// Filter/refine sessions — rate-limited (expensive outbound LLM calls)
+	outboundLimiter := newOutboundRateLimiter()
+	apiMux.HandleFunc("POST /api/filter/new", outboundLimiter.wrap(handleFilterNew(cfgPath, dbPath)))
+	apiMux.HandleFunc("POST /api/filter/{session_id}/resume", outboundLimiter.wrap(handleFilterResume(cfgPath, dbPath)))
 	apiMux.HandleFunc("GET /api/filter/sessions", handleFilterSessions(dbPath))
 	apiMux.HandleFunc("GET /api/filter/{session_id}", handleFilterSession(dbPath))
 
-	// Import
-	apiMux.HandleFunc("POST /api/import", handleImport(cfgPath, dbPath))
-	apiMux.HandleFunc("GET /api/import/preview", handleImportPreview(cfgPath))
+	// Import — rate-limited (expensive outbound tracker HTTP calls)
+	apiMux.HandleFunc("POST /api/import", outboundLimiter.wrap(handleImport(cfgPath, dbPath)))
+	apiMux.HandleFunc("GET /api/import/preview", outboundLimiter.wrap(handleImportPreview(cfgPath)))
 
 	// SSE for droplet detail
 	apiMux.HandleFunc("GET /api/droplets/{id}/events", handleDropletEvents(cfgPath, dbPath))
@@ -1242,6 +1261,57 @@ func apiBodyLimitMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+type outboundRateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*outboundBucket
+	limit   int
+	window  time.Duration
+}
+
+type outboundBucket struct {
+	count   int
+	resetAt time.Time
+}
+
+func newOutboundRateLimiter() *outboundRateLimiter {
+	return &outboundRateLimiter{
+		buckets: make(map[string]*outboundBucket),
+		limit:   10,
+		window:  time.Minute,
+	}
+}
+
+func (l *outboundRateLimiter) wrap(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if h := r.Header.Get("X-Forwarded-For"); h != "" {
+			ip = strings.SplitN(h, ",", 2)[0]
+		}
+		if !l.allow(ip) {
+			w.Header().Set("Retry-After", strconv.Itoa(int(l.window.Seconds())))
+			writeAPIError(w, http.StatusTooManyRequests, "too many requests")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+func (l *outboundRateLimiter) allow(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	b, ok := l.buckets[ip]
+	if !ok || now.After(b.resetAt) {
+		b = &outboundBucket{count: 0, resetAt: now.Add(l.window)}
+		l.buckets[ip] = b
+	}
+	if b.count >= l.limit {
+		return false
+	}
+	b.count++
+	return true
 }
 
 // corsMiddleware wraps an http.Handler with CORS headers.
@@ -3006,6 +3076,10 @@ func handleFilterNew(cfgPath, dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("title exceeds maximum length (%d)", maxTitleLen))
 			return
 		}
+		if len(req.Description) > maxDescriptionLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("description exceeds maximum length (%d)", maxDescriptionLen))
+			return
+		}
 
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			session, err := c.CreateFilterSession(req.Title, req.Description)
@@ -3083,9 +3157,6 @@ func handleFilterResume(cfgPath, dbPath string) http.HandlerFunc {
 			}
 
 			llmSessionID := session.LLMSessionID
-			if r.Header.Get("X-LLM-Session-ID") != "" {
-				llmSessionID = r.Header.Get("X-LLM-Session-ID")
-			}
 
 			var result filterSessionResult
 			if llmSessionID != "" {
@@ -3190,6 +3261,14 @@ func handleImport(cfgPath, dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "key is required")
 			return
 		}
+		if len(req.Key) > maxImportKeyLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("key exceeds maximum length (%d)", maxImportKeyLen))
+			return
+		}
+		if !isValidTrackerKey(req.Key) {
+			writeAPIError(w, http.StatusBadRequest, "key contains invalid characters")
+			return
+		}
 		if req.Repo == "" {
 			writeAPIError(w, http.StatusBadRequest, "repo is required")
 			return
@@ -3203,7 +3282,7 @@ func handleImport(cfgPath, dbPath string) http.HandlerFunc {
 
 		trackerCfg, err := loadTrackerConfig(req.Provider)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "tracker config: "+err.Error())
+			writeAPIError(w, http.StatusBadRequest, "tracker configuration error")
 			return
 		}
 
@@ -3214,13 +3293,13 @@ func handleImport(cfgPath, dbPath string) http.HandlerFunc {
 		}
 		tp, err := constructor(trackerCfg)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "init tracker: "+err.Error())
+			writeAPIError(w, http.StatusBadRequest, "tracker initialization error")
 			return
 		}
 
 		issue, err := tp.FetchIssue(req.Key)
 		if err != nil {
-			writeAPIError(w, http.StatusBadGateway, "fetch issue: "+err.Error())
+			writeAPIError(w, http.StatusBadGateway, "failed to fetch issue")
 			return
 		}
 
@@ -3258,10 +3337,18 @@ func handleImportPreview(cfgPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "key is required")
 			return
 		}
+		if len(key) > maxImportKeyLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("key exceeds maximum length (%d)", maxImportKeyLen))
+			return
+		}
+		if !isValidTrackerKey(key) {
+			writeAPIError(w, http.StatusBadRequest, "key contains invalid characters")
+			return
+		}
 
 		trackerCfg, err := loadTrackerConfig(providerName)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "tracker config: "+err.Error())
+			writeAPIError(w, http.StatusBadRequest, "tracker configuration error")
 			return
 		}
 
@@ -3272,13 +3359,13 @@ func handleImportPreview(cfgPath string) http.HandlerFunc {
 		}
 		tp, err := constructor(trackerCfg)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "init tracker: "+err.Error())
+			writeAPIError(w, http.StatusBadRequest, "tracker initialization error")
 			return
 		}
 
 		issue, err := tp.FetchIssue(key)
 		if err != nil {
-			writeAPIError(w, http.StatusBadGateway, "fetch issue: "+err.Error())
+			writeAPIError(w, http.StatusBadGateway, "failed to fetch issue")
 			return
 		}
 
