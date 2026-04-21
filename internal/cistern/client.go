@@ -664,7 +664,7 @@ func (c *Client) Pass(id, cataractaeName, notes string) error {
 
 	now := time.Now().UTC()
 	res, err := tx.Exec(
-		`UPDATE droplets SET outcome = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE droplets SET outcome = ?, updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
 		"pass", now, id,
 	)
 	if err != nil {
@@ -719,7 +719,7 @@ func (c *Client) Recirculate(id, cataractaeName, target, notes string) error {
 		var res sql.Result
 		res, err = tx.Exec(
 			`UPDATE droplets SET assignee = ?, current_cataractae = ?, outcome = NULL, status = 'open',
-			 assigned_aqueduct = '', updated_at = ? WHERE id = ?`,
+			 assigned_aqueduct = '', updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
 			"", effectiveTarget, now, id,
 		)
 		if err != nil {
@@ -730,7 +730,7 @@ func (c *Client) Recirculate(id, cataractaeName, target, notes string) error {
 		}
 	} else {
 		res, err := tx.Exec(
-			`UPDATE droplets SET outcome = ?, updated_at = ? WHERE id = ?`,
+			`UPDATE droplets SET outcome = ?, updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
 			outcome, now, id,
 		)
 		if err != nil {
@@ -776,7 +776,7 @@ func (c *Client) Approve(id, cataractaeName string) error {
 	now := time.Now().UTC()
 	res, err := tx.Exec(
 		`UPDATE droplets SET assignee = ?, current_cataractae = ?, outcome = NULL, status = 'open',
-		 assigned_aqueduct = '', updated_at = ? WHERE id = ?`,
+		 assigned_aqueduct = '', updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled') AND current_cataractae = 'human'`,
 		"", "delivery", now, id,
 	)
 	if err != nil {

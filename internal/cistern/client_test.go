@@ -3566,3 +3566,42 @@ func TestApprove_NotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent droplet")
 	}
 }
+
+func TestPass_DeliveredGuardInWhere(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Pass guard test", "", 1, 2)
+	c.UpdateStatus(item.ID, "in_progress")
+
+	c.CloseItem(item.ID)
+
+	err := c.Pass(item.ID, "reviewer", "")
+	if err == nil {
+		t.Fatal("expected error when droplet becomes delivered before Pass")
+	}
+}
+
+func TestRecirculate_CancelledGuardInWhere(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Recirculate guard test", "", 1, 2)
+	c.UpdateStatus(item.ID, "in_progress")
+
+	c.Cancel(item.ID, "obsolete")
+
+	err := c.Recirculate(item.ID, "reviewer", "implement", "fix it")
+	if err == nil {
+		t.Fatal("expected error when droplet becomes cancelled before Recirculate")
+	}
+}
+
+func TestApprove_CataractaeGuardInWhere(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Approve guard test", "", 1, 2)
+	c.SetCataractae(item.ID, "human")
+
+	c.SetCataractae(item.ID, "delivery")
+
+	err := c.Approve(item.ID, "manual")
+	if err == nil {
+		t.Fatal("expected error when cataractae changed from human before Approve")
+	}
+}
