@@ -1018,7 +1018,7 @@ llm:
   base_url: https://llm.example.com
 `
 
-// minimalCisternConfigWithMismatchYAML has agent provider=opencode but llm.provider=anthropic.
+// minimalCisternConfigWithMismatchYAML has agent provider=opencode but llm.provider=anthropic (LLM API mismatch, not agent CLI).
 const minimalCisternConfigWithMismatchYAML = `repos:
   - name: testrepo
     url: https://github.com/example/testrepo
@@ -1651,7 +1651,7 @@ func TestRunDoctorExtendedChecks_LLMCustomWithBaseURL_Passes(t *testing.T) {
 // --- Provider + LLM mismatch advisory (check 5) ---
 
 func TestRunDoctorExtendedChecks_ProviderLLMMismatch_Advisory_NoCrash(t *testing.T) {
-	// opencode agent + anthropic LLM — advisory note, does not fail the check.
+	// opencode agent + anthropic LLM API — advisory note, does not fail the check.
 	home := t.TempDir()
 
 	cisternDir := filepath.Join(home, ".cistern")

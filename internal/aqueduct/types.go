@@ -187,8 +187,8 @@ type AqueductConfig struct {
 	// When omitted, the "opencode" built-in preset is used as the default.
 	Provider *ProviderConfig `yaml:"provider,omitempty"`
 	// LLM configures the LLM API backend for AI-assisted features such as
-	// ct droplet add --filter. When omitted, the default anthropic preset is used
-	// for API calls.
+	// ct droplet add --filter. When omitted, the default LLM provider is used
+	// (anthropic) for API calls.
 	LLM *LLMConfig `yaml:"llm,omitempty"`
 
 	// DrainTimeoutMinutes is the maximum time (in minutes) the Castellarius

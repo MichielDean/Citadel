@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Migrate to opencode as the only agent CLI provider (ci-6zxwb)
+
+Cistern now uses opencode as the only agent CLI provider. The claude, codex, gemini, and copilot provider presets have been removed from the codebase. ANTHROPIC_API_KEY is no longer required for agent operation. CLAUDE.md instruction files have been replaced by AGENTS.md across the codebase. The LLM API backend (used by ct filter/refine) remains independently configurable and continues to support anthropic, openai, openrouter, ollama, and custom providers — these are LLM API backends, not agent CLI providers.
+
+**Key changes:**
+- Removed `ANTHROPIC_API_KEY` and `CLAUDE_PATH` from `.env.example`; replaced with opencode/GH_TOKEN guidance
+- Updated `internal/aqueduct/types.go` comment: "default anthropic preset" → "default LLM provider is used (anthropic)" to distinguish LLM API from agent CLI
+- Updated `internal/testutil/mockllm/mockllm.go` doc comments to clarify endpoints are for LLM API backends, not agent CLI providers
+- Updated `cmd/ct/refine_test.go` comment to clarify LLM API mock testing vs agent CLI
+- Updated `cmd/ct/doctor_test.go` comments to distinguish LLM API provider from agent CLI provider
+- Updated `AGENTS.md` to remove multi-provider InstructionsFile references (now AGENTS.md only)
+
 ### Web UI: Integration, routing, and peek (ci-k67x9)
 
 Wired the React SPA into the Go server, established routing, added the live session peek viewer, and finalized the web UI as a first-class Cistern interface alongside the existing TUI and CLI.
