@@ -991,6 +991,8 @@ var dropletPassCmd = &cobra.Command{
 		if err := c.SetOutcome(args[0], "pass"); err != nil {
 			return err
 		}
+		passPayload, _ := json.Marshal(map[string]any{"cataractae": cataractaeName(), "notes": passNotes})
+		_ = c.RecordEvent(args[0], cistern.EventPass, string(passPayload))
 		notifyCastellarius()
 		fmt.Printf("droplet %s: outcome=pass\n", args[0])
 		return nil
@@ -1045,12 +1047,16 @@ var dropletRecirculateCmd = &cobra.Command{
 			if err := c.Assign(args[0], "", target); err != nil {
 				return err
 			}
+			recircPayload, _ := json.Marshal(map[string]any{"cataractae": cataractaeName(), "target": target, "notes": recirculateNotes})
+			_ = c.RecordEvent(args[0], cistern.EventRecirculate, string(recircPayload))
 			fmt.Printf("droplet %s: outcome=%s\n", args[0], outcome)
 			return nil
 		}
 		if err := c.SetOutcome(args[0], outcome); err != nil {
 			return err
 		}
+		recircPayload, _ := json.Marshal(map[string]any{"cataractae": cataractaeName(), "target": recirculateTo, "notes": recirculateNotes})
+		_ = c.RecordEvent(args[0], cistern.EventRecirculate, string(recircPayload))
 		notifyCastellarius()
 		fmt.Printf("droplet %s: outcome=%s\n", args[0], outcome)
 		return nil
@@ -1108,6 +1114,8 @@ var dropletApproveCmd = &cobra.Command{
 		if err := c.Assign(id, "", "delivery"); err != nil {
 			return err
 		}
+		approvePayload, _ := json.Marshal(map[string]any{"cataractae": cataractaeName()})
+		_ = c.RecordEvent(id, cistern.EventApprove, string(approvePayload))
 		fmt.Printf("Droplet %s approved for delivery\n", id)
 		return nil
 	},

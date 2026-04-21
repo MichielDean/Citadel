@@ -1795,6 +1795,8 @@ func handlePassDroplet(dbPath string) http.HandlerFunc {
 			if err := c.SetOutcome(id, "pass"); err != nil {
 				return err
 			}
+			passPayload, _ := json.Marshal(map[string]any{"cataractae": "manual", "notes": req.Notes})
+			_ = c.RecordEvent(id, cistern.EventPass, string(passPayload))
 			notifyCastellarius()
 			writeAPIJSON(w, http.StatusOK, map[string]string{"id": id, "outcome": "pass"})
 			return nil
@@ -1826,6 +1828,8 @@ func handleRecirculateDroplet(dbPath string) http.HandlerFunc {
 			if err := c.SetOutcome(id, outcome); err != nil {
 				return err
 			}
+			recircPayload, _ := json.Marshal(map[string]any{"cataractae": "manual", "target": req.To, "notes": req.Notes})
+			_ = c.RecordEvent(id, cistern.EventRecirculate, string(recircPayload))
 			notifyCastellarius()
 			writeAPIJSON(w, http.StatusOK, map[string]string{"id": id, "outcome": outcome})
 			return nil
@@ -1867,6 +1871,7 @@ func handleCloseDroplet(dbPath string) http.HandlerFunc {
 			if err := c.CloseItem(id); err != nil {
 				return err
 			}
+			_ = c.RecordEvent(id, cistern.EventDelivered, "{}")
 			writeAPIJSON(w, http.StatusOK, map[string]string{"id": id, "status": "delivered"})
 			return nil
 		})
@@ -1953,6 +1958,8 @@ func handleApproveDroplet(dbPath string) http.HandlerFunc {
 			if err := c.Assign(id, "", "delivery"); err != nil {
 				return err
 			}
+			approvePayload, _ := json.Marshal(map[string]any{"cataractae": "manual"})
+			_ = c.RecordEvent(id, cistern.EventApprove, string(approvePayload))
 			writeAPIJSON(w, http.StatusOK, map[string]string{"id": id, "status": "approved"})
 			return nil
 		})

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -16,6 +17,32 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+const (
+	EventCreate      = "create"
+	EventDispatch    = "dispatch"
+	EventPass        = "pass"
+	EventRecirculate = "recirculate"
+	EventDelivered   = "delivered"
+	EventRestart     = "restart"
+	EventApprove     = "approve"
+	EventEdit        = "edit"
+	EventPool        = "pool"
+	EventCancel      = "cancel"
+)
+
+var validEventTypes = map[string]bool{
+	EventCreate:      true,
+	EventDispatch:    true,
+	EventPass:        true,
+	EventRecirculate: true,
+	EventDelivered:   true,
+	EventRestart:     true,
+	EventApprove:     true,
+	EventEdit:        true,
+	EventPool:        true,
+	EventCancel:      true,
+}
 
 // externalRefRE validates the 'provider:key' format for external_ref values.
 // Both parts must consist solely of characters safe for use in git branch names
@@ -182,6 +209,14 @@ func (c *Client) Add(repo, title, description string, priority, complexity int, 
 		return nil, fmt.Errorf("cistern: commit: %w", err)
 	}
 
+	createPayload, _ := json.Marshal(map[string]any{
+		"repo":       repo,
+		"title":      title,
+		"priority":   priority,
+		"complexity": complexity,
+	})
+	_ = c.RecordEvent(id, EventCreate, string(createPayload))
+
 	return &Droplet{
 		ID:          id,
 		Repo:        repo,
@@ -263,6 +298,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 
 	droplet.Status = "in_progress"
 	droplet.UpdatedAt = now
+	_ = c.RecordEvent(droplet.ID, EventDispatch, "{}")
 	return &droplet, nil
 }
 
@@ -320,6 +356,11 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 	}
 	droplet.Status = "in_progress"
 	droplet.UpdatedAt = now
+	dispatchPayload, _ := json.Marshal(map[string]any{
+		"aqueduct": aqueductName,
+		"assignee": droplet.Assignee,
+	})
+	_ = c.RecordEvent(droplet.ID, EventDispatch, string(dispatchPayload))
 	return &droplet, nil
 }
 
@@ -505,6 +546,23 @@ func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
 		}
 		return fmt.Errorf("droplet %s is %s — cannot edit a droplet that has been picked up", id, d.Status)
 	}
+
+	var changedFields []string
+	if fields.Title != nil {
+		changedFields = append(changedFields, "title")
+	}
+	if fields.Description != nil {
+		changedFields = append(changedFields, "description")
+	}
+	if fields.Complexity != nil {
+		changedFields = append(changedFields, "complexity")
+	}
+	if fields.Priority != nil {
+		changedFields = append(changedFields, "priority")
+	}
+	editPayload, _ := json.Marshal(map[string]any{"fields": changedFields})
+	_ = c.RecordEvent(id, EventEdit, string(editPayload))
+
 	return nil
 }
 
@@ -528,6 +586,26 @@ func (c *Client) AddNote(id, step, content string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("cistern: add note %s: %w", id, err)
+	}
+	return nil
+}
+
+// RecordEvent inserts a typed event row into the events table. eventType must
+// be one of the Event* constants; payload must be valid JSON (use "{}" for
+// empty). Returns an error for unknown event types or invalid JSON.
+func (c *Client) RecordEvent(id, eventType, payload string) error {
+	if !validEventTypes[eventType] {
+		return fmt.Errorf("cistern: unknown event type %q", eventType)
+	}
+	if !json.Valid([]byte(payload)) {
+		return fmt.Errorf("cistern: event payload must be valid JSON, got %q", payload)
+	}
+	_, err := c.db.Exec(
+		`INSERT INTO events (droplet_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)`,
+		id, eventType, payload, time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("cistern: record %s event %s: %w", eventType, id, err)
 	}
 	return nil
 }
@@ -571,12 +649,9 @@ func (c *Client) Pool(id, reason string) error {
 		return err
 	}
 
-	_, err = c.db.Exec(
-		`INSERT INTO events (droplet_id, event_type, payload, created_at) VALUES (?, 'pool', ?, ?)`,
-		id, reason, time.Now().UTC(),
-	)
-	if err != nil {
-		return fmt.Errorf("cistern: pool event %s: %w", id, err)
+	poolPayload, _ := json.Marshal(map[string]any{"reason": reason})
+	if err := c.RecordEvent(id, EventPool, string(poolPayload)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -585,8 +660,7 @@ func (c *Client) Pool(id, reason string) error {
 // dispatch queue and from default list views. They can still be retrieved with
 // List(repo, "cancelled"). It clears outcome and assigned_aqueduct atomically
 // so no ghost assignments linger. The assignee is preserved so the scheduler's
-// external-cancel pool-release path can find and free the slot. A scheduler
-// note with timestamp is recorded, and the reason (if non-empty) is included.
+// external-cancel pool-release path can find and free the slot.
 // The cancel is recorded as an event in the events table for the audit trail.
 func (c *Client) Cancel(id, reason string) error {
 	now := time.Now().UTC()
@@ -609,22 +683,9 @@ func (c *Client) Cancel(id, reason string) error {
 		return fmt.Errorf("cistern: cancel %s: droplet has terminal status %q", id, item.Status)
 	}
 
-	ts := now.Format("2006-01-02 15:04:05")
-	label := "cancelled"
-	if reason != "" {
-		label = "cancelled: " + reason
-	}
-	note := fmt.Sprintf("%s [%s]", label, ts)
-	if err := c.AddNote(id, "scheduler", note); err != nil {
-		return fmt.Errorf("cistern: cancel note %s: %w", id, err)
-	}
-
-	_, err = c.db.Exec(
-		`INSERT INTO events (droplet_id, event_type, payload, created_at) VALUES (?, 'cancel', ?, ?)`,
-		id, reason, now,
-	)
-	if err != nil {
-		return fmt.Errorf("cistern: cancel event %s: %w", id, err)
+	cancelPayload, _ := json.Marshal(map[string]any{"reason": reason})
+	if err := c.RecordEvent(id, EventCancel, string(cancelPayload)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -645,7 +706,11 @@ func (c *Client) CloseItem(id string) error {
 	if err != nil {
 		return fmt.Errorf("cistern: close %s: %w", id, err)
 	}
-	return checkRowsAffected(res, id)
+	if err := checkRowsAffected(res, id); err != nil {
+		return err
+	}
+	_ = c.RecordEvent(id, EventDelivered, "{}")
+	return nil
 }
 
 // SetOutcome records the agent outcome on a droplet. Pass empty string to clear
@@ -1293,11 +1358,8 @@ func (c *Client) Restart(id, cataractaeName string) (*Droplet, error) {
 		return nil, err
 	}
 
-	ts := now.Format("2006-01-02 15:04:05")
-	note := fmt.Sprintf("restarted at cataractae %q [%s]", cataractaeName, ts)
-	if err := c.AddNote(id, "scheduler", note); err != nil {
-		return nil, fmt.Errorf("cistern: restart note %s: %w", id, err)
-	}
+	restartPayload, _ := json.Marshal(map[string]any{"cataractae": cataractaeName})
+	_ = c.RecordEvent(id, EventRestart, string(restartPayload))
 
 	droplet.Status = "open"
 	droplet.Assignee = ""

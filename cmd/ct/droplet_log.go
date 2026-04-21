@@ -71,14 +71,6 @@ func runLog(out io.Writer, id string) error {
 func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []logEntry {
 	var entries []logEntry
 
-	entries = append(entries, logEntry{
-		sortTime:   item.CreatedAt,
-		Time:       item.CreatedAt.Format("2006-01-02 15:04:05"),
-		Cataractae: "",
-		Event:      "created",
-		Detail:     fmt.Sprintf("status=open title=%q priority=%d", item.Title, item.Priority),
-	})
-
 	for _, ch := range changes {
 		var evt, detail, cataractae string
 
@@ -98,12 +90,7 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 			} else {
 				evt = ch.Value
 			}
-			if evt == "pool" {
-				evt = "pooled"
-				if detail != "" {
-					detail = "reason: " + detail
-				}
-			}
+			evt, detail = remapEvent(evt, detail)
 		}
 
 		entries = append(entries, logEntry{
@@ -130,6 +117,46 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 	})
 
 	return entries
+}
+
+func remapEvent(evt, detail string) (string, string) {
+	switch evt {
+	case "create":
+		return "created", detail
+	case "pool":
+		return "pooled", remapPayloadReason(detail)
+	case "cancel":
+		return "cancelled", remapPayloadReason(detail)
+	case "dispatch":
+		return "dispatched", detail
+	case "pass":
+		return "pass", detail
+	case "recirculate":
+		return "recirculate", detail
+	case "delivered":
+		return "delivered", detail
+	case "restart":
+		return "restart", detail
+	case "approve":
+		return "approved", detail
+	case "edit":
+		return "edit", detail
+	default:
+		return evt, detail
+	}
+}
+
+func remapPayloadReason(detail string) string {
+	if detail == "" || detail == "{}" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(detail), &payload); err == nil {
+		if reason, ok := payload["reason"]; ok && reason != "" {
+			return "reason: " + fmt.Sprintf("%v", reason)
+		}
+	}
+	return detail
 }
 
 func printLogText(out io.Writer, item *cistern.Droplet, entries []logEntry) error {
