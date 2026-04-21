@@ -385,7 +385,7 @@ func TestBuildPrompt_NonAddDirProvider_InjectsSkills(t *testing.T) {
 // containing spaces is shell-quoted before being interpolated into the tmux
 // command string.
 func TestBuildPresetCmd_ModelWithSpaces_IsShellQuoted(t *testing.T) {
-	s := &Session{ID: "test", WorkDir: "/tmp", Model: "claude opus 4.6"}
+	s := &Session{ID: "test", WorkDir: "/tmp", Model: "opencode llama 3.3"}
 	preset := provider.ProviderPreset{
 		Name:      "myagent",
 		Command:   "myagent",
@@ -395,10 +395,10 @@ func TestBuildPresetCmd_ModelWithSpaces_IsShellQuoted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPresetCmd: %v", err)
 	}
-	if strings.Contains(cmd, "--model claude opus") {
+	if strings.Contains(cmd, "--model opencode llama") {
 		t.Errorf("buildPresetCmd contains unquoted model with space — will break shell: %s", cmd)
 	}
-	want := "--model 'claude opus 4.6'"
+	want := "--model 'opencode llama 3.3'"
 	if !strings.Contains(cmd, want) {
 		t.Errorf("buildPresetCmd missing shell-quoted model\nwant substring: %s\ngot: %s", want, cmd)
 	}
@@ -463,8 +463,6 @@ func TestBuildPresetCmd_PromptFlag_OmittedWhenEmpty(t *testing.T) {
 // is included in env args when using the preset path.
 func TestCollectEnvArgs_GHToken_AlwaysForwarded_PresetPath(t *testing.T) {
 	t.Setenv("GH_TOKEN", "ghtoken-preset-123")
-	t.Setenv("OPENAI_API_KEY", "")
-
 	s := &Session{
 		ID:     "test",
 		Preset: provider.ProviderPreset{Name: "opencode"},

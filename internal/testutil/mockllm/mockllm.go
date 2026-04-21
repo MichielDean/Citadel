@@ -15,7 +15,7 @@
 //	mock := mockllm.New()
 //	defer mock.Close()
 //
-//	t.Setenv("OPENAI_API_KEY", "test-key")
+//	t.Setenv("GH_TOKEN", "test-key")
 //	t.Setenv("ANTHROPIC_BASE_URL", mock.URL)
 //
 //	// make an HTTP call that hits the mock server, then:
@@ -98,7 +98,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		"type":          "message",
 		"role":          "assistant",
 		"content":       []map[string]string{{"type": "text", "text": HardcodedProposalsJSON}},
-		"model":         "claude-haiku-4-5-20251001",
+		"model":         "mock-model-001",
 		"stop_reason":   "end_turn",
 		"stop_sequence": nil,
 		"usage":         map[string]int{"input_tokens": 10, "output_tokens": 20},
@@ -119,7 +119,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"id":     "chatcmpl-test0001",
 		"object": "chat.completion",
-		"model":  "claude-haiku-4-5-20251001",
+		"model":  "mock-model-001",
 		"choices": []map[string]any{
 			{
 				"index": 0,

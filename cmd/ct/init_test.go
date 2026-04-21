@@ -490,10 +490,13 @@ func TestInit_WritesCisternYAML_ContainsDashboardFontFamily(t *testing.T) {
 	}
 }
 
-func TestInit_NextStepsMessage_DoesNotMentionAnthropicAPIKey(t *testing.T) {
+func TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars(t *testing.T) {
 	output := captureInitOutput(t)
-	if strings.Contains(output, "ANTHROPIC_API_KEY") {
-		t.Errorf("ct init next-steps message must not mention ANTHROPIC_API_KEY; output:\n%s", output)
+	removedEnvVars := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
+	for _, envVar := range removedEnvVars {
+		if strings.Contains(output, envVar) {
+			t.Errorf("ct init next-steps message must not mention %s; output:\n%s", envVar, output)
+		}
 	}
 }
 
