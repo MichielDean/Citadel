@@ -93,9 +93,9 @@ func resolveFilterPreset(repo string) provider.ProviderPreset {
 			return preset
 		}
 	}
-	// Fallback: built-in claude preset.
+	// Fallback: built-in opencode preset.
 	for _, p := range provider.Builtins() {
-		if p.Name == "claude" {
+		if p.Name == "opencode" {
 			return p
 		}
 	}

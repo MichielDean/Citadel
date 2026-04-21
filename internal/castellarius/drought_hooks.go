@@ -74,7 +74,7 @@ func RunDroughtHooks(p DroughtHookParams) {
 
 	// Warn if git_sync exists but is not the first hook.
 	// git_sync deploys skills and workflow YAML — it must precede cataractae_generate
-	// so CLAUDE.md files are rebuilt from the freshest sources.
+	// so AGENTS.md files are rebuilt from the freshest sources.
 	for i, hook := range p.Hooks {
 		if hook.Action == "git_sync" {
 			if i > 0 {
@@ -248,7 +248,7 @@ func hookGitSync(cfg *aqueduct.AqueductConfig, sandboxRoot string, gitFetchTimeo
 
 		// Reset _primary to origin/main after a successful fetch so it always
 		// reflects upstream exactly. New worktrees are spawned from _primary, so
-		// this ensures they get the latest CLAUDE.md and repo files. Agent
+		// this ensures they get the latest AGENTS.md and repo files. Agent
 		// worktrees (non-_primary names) are never reset — they carry
 		// in-progress work on feature branches.
 		if filepath.Base(cloneDir) == "_primary" {
@@ -396,8 +396,8 @@ func hookCataractaeGenerate(cfg *aqueduct.AqueductConfig, logger *slog.Logger) e
 		if !e.IsDir() {
 			continue
 		}
-		claudePath := filepath.Join(cataractaeDir, e.Name(), "CLAUDE.md")
-		info, err := os.Stat(claudePath)
+		agentsPath := filepath.Join(cataractaeDir, e.Name(), "AGENTS.md")
+		info, err := os.Stat(agentsPath)
 		if err != nil {
 			continue
 		}
@@ -427,7 +427,7 @@ func hookCataractaeGenerate(cfg *aqueduct.AqueductConfig, logger *slog.Logger) e
 			}
 			preset, err := cfg.ResolveProvider(repo.Name)
 			if err != nil {
-				logger.Warn("cataractae_generate: resolve provider failed, defaulting to CLAUDE.md", "repo", repo.Name, "error", err)
+				logger.Warn("cataractae_generate: resolve provider failed, defaulting to AGENTS.md", "repo", repo.Name, "error", err)
 			}
 			written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir, preset.InstrFile())
 			if err != nil {

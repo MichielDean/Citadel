@@ -9,7 +9,7 @@ import (
 
 // TestBuiltins_ReturnsExpectedPresetNames verifies the built-in presets are present.
 func TestBuiltins_ReturnsExpectedPresetNames(t *testing.T) {
-	want := []string{"claude", "ollama-claude", "codex", "gemini", "copilot", "opencode"}
+	want := []string{"opencode"}
 	got := Builtins()
 
 	if len(got) != len(want) {
@@ -27,105 +27,31 @@ func TestBuiltins_ReturnsExpectedPresetNames(t *testing.T) {
 	}
 }
 
-// TestBuiltins_ClaudePreset validates each field of the claude built-in.
-func TestBuiltins_ClaudePreset(t *testing.T) {
-	got := builtinByName(t, "claude")
-
-	assertStr(t, "Command", "claude", got.Command)
-	assertStrs(t, "Args", []string{"--dangerously-skip-permissions"}, got.Args)
-	assertStrs(t, "EnvPassthrough", []string{}, got.EnvPassthrough)
-	assertStr(t, "ModelFlag", "--model", got.ModelFlag)
-	assertStr(t, "AddDirFlag", "--add-dir", got.AddDirFlag)
-	assertStr(t, "PromptFlag", "-p", got.PromptFlag)
-	assertStr(t, "InstructionsFile", "CLAUDE.md", got.InstructionsFile)
-}
-
-// TestBuiltins_CodexPreset validates each field of the codex built-in.
-func TestBuiltins_CodexPreset(t *testing.T) {
-	got := builtinByName(t, "codex")
-
-	assertStr(t, "Command", "codex", got.Command)
-	assertStrs(t, "Args", []string{"--dangerously-bypass-approvals-and-sandbox"}, got.Args)
-	assertStrs(t, "EnvPassthrough", []string{"OPENAI_API_KEY"}, got.EnvPassthrough)
-	assertStr(t, "InstructionsFile", "AGENTS.md", got.InstructionsFile)
-	assertStr(t, "ResumeStyle", string(ResumeStyleSubcommand), string(got.ResumeStyle))
-}
-
-// TestBuiltins_GeminiPreset validates each field of the gemini built-in.
-func TestBuiltins_GeminiPreset(t *testing.T) {
-	got := builtinByName(t, "gemini")
-
-	assertStr(t, "Command", "gemini", got.Command)
-	assertStrs(t, "Args", []string{"--yolo"}, got.Args)
-	assertStrs(t, "EnvPassthrough", []string{"GEMINI_API_KEY"}, got.EnvPassthrough)
-	assertStr(t, "ModelFlag", "--model", got.ModelFlag)
-	assertStr(t, "InstructionsFile", "GEMINI.md", got.InstructionsFile)
-}
-
-// TestBuiltins_CopilotPreset validates each field of the copilot built-in.
-func TestBuiltins_CopilotPreset(t *testing.T) {
-	got := builtinByName(t, "copilot")
-
-	assertStr(t, "Command", "copilot", got.Command)
-	assertStrs(t, "Args", []string{"--yolo"}, got.Args)
-	assertStr(t, "PromptFlag", "-p", got.PromptFlag)
-	assertStrs(t, "EnvPassthrough", []string{"GH_TOKEN"}, got.EnvPassthrough)
-	assertStr(t, "InstructionsFile", "AGENTS.md", got.InstructionsFile)
-}
-
 // TestBuiltins_OpencodePreset validates each field of the opencode built-in.
 func TestBuiltins_OpencodePreset(t *testing.T) {
 	got := builtinByName(t, "opencode")
 
 	assertStr(t, "Command", "opencode", got.Command)
+	assertStrs(t, "Args", []string{"--dangerously-skip-permissions"}, got.Args)
+	assertStr(t, "Subcommand", "run", got.Subcommand)
+	assertStr(t, "ModelFlag", "--model", got.ModelFlag)
 	assertStr(t, "InstructionsFile", "AGENTS.md", got.InstructionsFile)
 }
 
-// TestBuiltins_NonInteractiveConfig verifies the NonInteractive fields for each built-in preset.
+// TestBuiltins_NonInteractiveConfig verifies the NonInteractive fields for the opencode preset.
 func TestBuiltins_NonInteractiveConfig(t *testing.T) {
 	tests := []struct {
-		name             string
-		subcommand       string
-		printFlag        string
-		promptFlag       string
-		allowedToolsFlag string
+		name       string
+		subcommand string
+		promptFlag string
 	}{
-		{"claude", "", "--print", "-p", "--allowedTools"},
-		{"codex", "exec", "", "-p", ""},
-		{"gemini", "", "", "-p", ""},
-		{"copilot", "", "", "-p", ""},
-		{"opencode", "run", "", "", ""},
+		{"opencode", "run", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := builtinByName(t, tt.name)
 			assertStr(t, "NonInteractive.Subcommand", tt.subcommand, p.NonInteractive.Subcommand)
-			assertStr(t, "NonInteractive.PrintFlag", tt.printFlag, p.NonInteractive.PrintFlag)
 			assertStr(t, "NonInteractive.PromptFlag", tt.promptFlag, p.NonInteractive.PromptFlag)
-			assertStr(t, "NonInteractive.AllowedToolsFlag", tt.allowedToolsFlag, p.NonInteractive.AllowedToolsFlag)
-		})
-	}
-}
-
-// TestBuiltins_SupportsAddDir verifies that only the claude preset has SupportsAddDir=true.
-// Other providers lack --add-dir support and must inject context via prompt preamble.
-func TestBuiltins_SupportsAddDir(t *testing.T) {
-	tests := []struct {
-		name           string
-		wantSupportsAddDir bool
-	}{
-		{"claude", true},
-		{"codex", false},
-		{"gemini", false},
-		{"copilot", false},
-		{"opencode", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := builtinByName(t, tt.name)
-			if p.SupportsAddDir != tt.wantSupportsAddDir {
-				t.Errorf("SupportsAddDir = %v, want %v", p.SupportsAddDir, tt.wantSupportsAddDir)
-			}
 		})
 	}
 }
@@ -181,7 +107,7 @@ func TestLoadUserPresets_NoFileReturnsBuiltins(t *testing.T) {
 
 // TestLoadUserPresets_OverridesBuiltinByName verifies user entries replace built-ins with matching names.
 func TestLoadUserPresets_OverridesBuiltinByName(t *testing.T) {
-	override := ProviderPreset{Name: "claude", Command: "my-claude"}
+	override := ProviderPreset{Name: "opencode", Command: "my-opencode"}
 	path := writePresetsJSON(t, []ProviderPreset{override})
 
 	presets, err := LoadUserPresets(path)
@@ -189,16 +115,11 @@ func TestLoadUserPresets_OverridesBuiltinByName(t *testing.T) {
 		t.Fatalf("LoadUserPresets: %v", err)
 	}
 
-	got := findByName(presets, "claude")
+	got := findByName(presets, "opencode")
 	if got == nil {
-		t.Fatal("claude preset not found after override")
+		t.Fatal("opencode preset not found after override")
 	}
-	assertStr(t, "Command", "my-claude", got.Command)
-
-	// Other built-ins must still be present.
-	if findByName(presets, "gemini") == nil {
-		t.Error("gemini built-in missing after user override")
-	}
+	assertStr(t, "Command", "my-opencode", got.Command)
 }
 
 // TestLoadUserPresets_AppendsUnknownPreset verifies that unknown presets are appended.
@@ -218,8 +139,8 @@ func TestLoadUserPresets_AppendsUnknownPreset(t *testing.T) {
 	assertStr(t, "Command", "my-agent", got.Command)
 
 	// Built-ins must still be present.
-	if findByName(presets, "claude") == nil {
-		t.Error("claude built-in missing after user preset append")
+	if findByName(presets, "opencode") == nil {
+		t.Error("opencode built-in missing after user preset append")
 	}
 }
 
@@ -239,7 +160,7 @@ func TestLoadUserPresets_InvalidJSONReturnsError(t *testing.T) {
 // TestLoadUserPresets_MultipleOverridesAndAppends exercises a realistic mixed JSON file.
 func TestLoadUserPresets_MultipleOverridesAndAppends(t *testing.T) {
 	user := []ProviderPreset{
-		{Name: "claude", Command: "claude-dev", ModelFlag: "--model-override"},
+		{Name: "opencode", Command: "opencode-dev", ModelFlag: "--model-override"},
 		{Name: "new-agent", Command: "new-agent-bin", InstructionsFile: "NEW.md"},
 	}
 	path := writePresetsJSON(t, user)
@@ -249,23 +170,18 @@ func TestLoadUserPresets_MultipleOverridesAndAppends(t *testing.T) {
 		t.Fatalf("LoadUserPresets: %v", err)
 	}
 
-	claude := findByName(presets, "claude")
-	if claude == nil {
-		t.Fatal("claude not found")
+	opencode := findByName(presets, "opencode")
+	if opencode == nil {
+		t.Fatal("opencode not found")
 	}
-	assertStr(t, "claude Command", "claude-dev", claude.Command)
-	assertStr(t, "claude ModelFlag", "--model-override", claude.ModelFlag)
+	assertStr(t, "opencode Command", "opencode-dev", opencode.Command)
+	assertStr(t, "opencode ModelFlag", "--model-override", opencode.ModelFlag)
 
 	newAgent := findByName(presets, "new-agent")
 	if newAgent == nil {
 		t.Fatal("new-agent not found")
 	}
 	assertStr(t, "new-agent InstructionsFile", "NEW.md", newAgent.InstructionsFile)
-
-	// Unmodified built-ins survive.
-	if findByName(presets, "codex") == nil {
-		t.Error("codex built-in missing")
-	}
 }
 
 // TestProviderConfigMerge verifies that MergePresets correctly applies layered
@@ -274,45 +190,34 @@ func TestLoadUserPresets_MultipleOverridesAndAppends(t *testing.T) {
 func TestProviderConfigMerge(t *testing.T) {
 	t.Run("top-level shadows built-in defaults", func(t *testing.T) {
 		topLevel := []ProviderPreset{
-			{Name: "claude", Command: "claude-custom", ModelFlag: "--custom-model"},
+			{Name: "opencode", Command: "opencode-custom", ModelFlag: "--custom-model"},
 		}
 		merged := MergePresets(Builtins(), topLevel)
 
-		claude := findByName(merged, "claude")
-		if claude == nil {
-			t.Fatal("claude not found after top-level override")
+		opencode := findByName(merged, "opencode")
+		if opencode == nil {
+			t.Fatal("opencode not found after top-level override")
 		}
-		assertStr(t, "Command", "claude-custom", claude.Command)
-		assertStr(t, "ModelFlag", "--custom-model", claude.ModelFlag)
-
-		// Other built-ins must still be present.
-		if findByName(merged, "codex") == nil {
-			t.Error("codex missing after top-level override")
-		}
-		if findByName(merged, "gemini") == nil {
-			t.Error("gemini missing after top-level override")
-		}
+		assertStr(t, "Command", "opencode-custom", opencode.Command)
+		assertStr(t, "ModelFlag", "--custom-model", opencode.ModelFlag)
 	})
 
 	t.Run("repo-level shadows top-level", func(t *testing.T) {
-		// Apply a top-level override first.
 		afterTopLevel := MergePresets(Builtins(), []ProviderPreset{
-			{Name: "claude", Command: "claude-top-level"},
+			{Name: "opencode", Command: "opencode-top-level"},
 		})
-		// Then apply a repo-level override on top.
 		afterRepoLevel := MergePresets(afterTopLevel, []ProviderPreset{
-			{Name: "claude", Command: "claude-repo"},
+			{Name: "opencode", Command: "opencode-repo"},
 		})
 
-		claude := findByName(afterRepoLevel, "claude")
-		if claude == nil {
-			t.Fatal("claude not found after repo-level override")
+		opencode := findByName(afterRepoLevel, "opencode")
+		if opencode == nil {
+			t.Fatal("opencode not found after repo-level override")
 		}
-		assertStr(t, "Command", "claude-repo", claude.Command)
+		assertStr(t, "Command", "opencode-repo", opencode.Command)
 	})
 
 	t.Run("new preset appended survives further merge", func(t *testing.T) {
-		// A new preset added at top-level must survive a repo-level merge.
 		afterTopLevel := MergePresets(Builtins(), []ProviderPreset{
 			{Name: "project-agent", Command: "project-bin"},
 		})
@@ -327,8 +232,8 @@ func TestProviderConfigMerge(t *testing.T) {
 		assertStr(t, "Command", "repo-bin", agent.Command)
 
 		// Original built-ins are still intact.
-		if findByName(afterRepoLevel, "claude") == nil {
-			t.Error("claude missing after layered merge")
+		if findByName(afterRepoLevel, "opencode") == nil {
+			t.Error("opencode missing after layered merge")
 		}
 	})
 
@@ -354,11 +259,9 @@ func TestProviderConfigMerge(t *testing.T) {
 			t.Fatal("custom not found in merged result")
 		}
 
-		// Mutate the original override's slice fields after the merge.
 		override.Args[0] = "mutated-after-merge"
 		override.EnvPassthrough[0] = "MUTATED_KEY"
 
-		// The merged result must not reflect mutations to the original override.
 		if got.Args[0] == "mutated-after-merge" {
 			t.Error("MergePresets aliased override Args: mutation of original override propagated into merged result")
 		}
@@ -374,9 +277,9 @@ func TestProviderConfigMerge(t *testing.T) {
 func TestUserPresetsJSON(t *testing.T) {
 	user := []ProviderPreset{
 		{
-			Name:     "claude",
-			Command:  "claude-patched",
-			Args:     []string{"--dangerously-skip-permissions", "--extra-flag"},
+			Name:      "opencode",
+			Command:   "opencode-patched",
+			Args:      []string{"--dangerously-skip-permissions", "--extra-flag"},
 			ModelFlag: "--model",
 		},
 		{
@@ -394,16 +297,14 @@ func TestUserPresetsJSON(t *testing.T) {
 		t.Fatalf("LoadUserPresets: %v", err)
 	}
 
-	// Claude override is applied.
-	claude := findByName(presets, "claude")
-	if claude == nil {
-		t.Fatal("claude not found after JSON load")
+	opencode := findByName(presets, "opencode")
+	if opencode == nil {
+		t.Fatal("opencode not found after JSON load")
 	}
-	assertStr(t, "claude Command", "claude-patched", claude.Command)
-	assertStrs(t, "claude Args", []string{"--dangerously-skip-permissions", "--extra-flag"}, claude.Args)
-	assertStr(t, "claude ModelFlag", "--model", claude.ModelFlag)
+	assertStr(t, "opencode Command", "opencode-patched", opencode.Command)
+	assertStrs(t, "opencode Args", []string{"--dangerously-skip-permissions", "--extra-flag"}, opencode.Args)
+	assertStr(t, "opencode ModelFlag", "--model", opencode.ModelFlag)
 
-	// Custom provider is resolvable by name.
 	custom := findByName(presets, "my-custom-agent")
 	if custom == nil {
 		t.Fatal("my-custom-agent not found after JSON load")
@@ -412,28 +313,20 @@ func TestUserPresetsJSON(t *testing.T) {
 	assertStrs(t, "custom Args", []string{"--no-confirm"}, custom.Args)
 	assertStrs(t, "custom EnvPassthrough", []string{"MY_KEY"}, custom.EnvPassthrough)
 	assertStr(t, "custom InstructionsFile", "MY.md", custom.InstructionsFile)
-
-	// Built-ins other than claude are still present.
-	if findByName(presets, "codex") == nil {
-		t.Error("codex built-in missing after JSON load")
-	}
-	if findByName(presets, "gemini") == nil {
-		t.Error("gemini built-in missing after JSON load")
-	}
 }
 
-// TestResolvePreset_DefaultsToClaudeWhenEmpty verifies that ResolvePreset("")
-// returns the "claude" preset as the default fallback.
-func TestResolvePreset_DefaultsToClaudeWhenEmpty(t *testing.T) {
+// TestResolvePreset_DefaultsToOpencodeWhenEmpty verifies that ResolvePreset("")
+// returns the "opencode" preset as the default fallback.
+func TestResolvePreset_DefaultsToOpencodeWhenEmpty(t *testing.T) {
 	p := ResolvePreset("")
-	if p.Name != "claude" {
-		t.Errorf("ResolvePreset(\"\") = %q, want %q", p.Name, "claude")
+	if p.Name != "opencode" {
+		t.Errorf("ResolvePreset(\"\") = %q, want %q", p.Name, "opencode")
 	}
 }
 
 // TestResolvePreset_ReturnsMatchByName verifies that a known name is resolved.
 func TestResolvePreset_ReturnsMatchByName(t *testing.T) {
-	for _, name := range []string{"claude", "codex", "gemini", "copilot", "opencode"} {
+	for _, name := range []string{"opencode"} {
 		p := ResolvePreset(name)
 		if p.Name != name {
 			t.Errorf("ResolvePreset(%q) = %q, want %q", name, p.Name, name)
@@ -441,12 +334,12 @@ func TestResolvePreset_ReturnsMatchByName(t *testing.T) {
 	}
 }
 
-// TestResolvePreset_UnknownNameFallsBackToClaude verifies the fallback for
+// TestResolvePreset_UnknownNameFallsBackToOpencode verifies the fallback for
 // an unknown provider name.
-func TestResolvePreset_UnknownNameFallsBackToClaude(t *testing.T) {
+func TestResolvePreset_UnknownNameFallsBackToOpencode(t *testing.T) {
 	p := ResolvePreset("does-not-exist")
-	if p.Name != "claude" {
-		t.Errorf("ResolvePreset(\"does-not-exist\") = %q, want %q", p.Name, "claude")
+	if p.Name != "opencode" {
+		t.Errorf("ResolvePreset(\"does-not-exist\") = %q, want %q", p.Name, "opencode")
 	}
 }
 

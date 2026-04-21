@@ -774,7 +774,7 @@ func TestUncommittedFiles_NoExcludeKeepsAll(t *testing.T) {
 }
 
 // TestUncommittedFiles_CustomInstructionsFile verifies that a non-default
-// InstructionsFile (e.g. GEMINI.md, CLAUDE.md) is also excluded when specified.
+// InstructionsFile (e.g. GEMINI.md, AGENTS.md) is also excluded when specified.
 func TestUncommittedFiles_CustomInstructionsFile(t *testing.T) {
 	dir := initTestRepo(t)
 

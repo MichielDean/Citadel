@@ -15,35 +15,17 @@ import (
 // does not define non-interactive invocation.
 type NonInteractiveConfig struct {
 	// Subcommand is the positional subcommand inserted after Command
-	// (e.g. "exec" for codex, "run" for opencode). Empty means no subcommand.
+	// (e.g. "run" for opencode). Empty means no subcommand.
 	Subcommand string `json:"subcommand,omitempty"`
-	// PrintFlag causes the agent to print its response to stdout and exit
-	// (e.g. "--print" for claude). Empty means no flag is needed.
-	PrintFlag string `json:"print_flag,omitempty"`
 	// PromptFlag is the flag used to pass the combined prompt (e.g. "-p").
 	PromptFlag string `json:"prompt_flag,omitempty"`
-	// AllowedToolsFlag is the CLI flag used to restrict which tools the agent
-	// may call during a non-interactive session (e.g. "--allowedTools" for claude).
-	// When non-empty, Cistern appends this flag with "Glob,Grep,Read" so the
-	// agent can explore the repository read-only but cannot modify files.
-	AllowedToolsFlag string `json:"allowed_tools_flag,omitempty"`
 }
-
-// ResumeStyle controls how a resumed session is expressed on the CLI.
-type ResumeStyle string
-
-const (
-	// ResumeStyleFlag passes the session ID as a flag: --resume=<id>.
-	ResumeStyleFlag ResumeStyle = "flag"
-	// ResumeStyleSubcommand passes the session ID as a subcommand: <cmd> resume <id>.
-	ResumeStyleSubcommand ResumeStyle = "subcommand"
-)
 
 // ProviderPreset describes how to launch and interact with a specific agent CLI.
 type ProviderPreset struct {
-	// Name is the canonical identifier for this provider (e.g. "claude").
+	// Name is the canonical identifier for this provider (e.g. "opencode").
 	Name string `json:"name"`
-	// Command is the executable to invoke (e.g. "claude").
+	// Command is the executable to invoke (e.g. "opencode").
 	Command string `json:"command"`
 	// Args are fixed arguments always appended to the command.
 	Args []string `json:"args,omitempty"`
@@ -54,8 +36,6 @@ type ProviderPreset struct {
 	EnvPassthrough []string `json:"env_passthrough,omitempty"`
 	// ModelFlag is the CLI flag used to select the model (e.g. "--model").
 	ModelFlag string `json:"model_flag,omitempty"`
-	// AddDirFlag is the CLI flag used to add a working directory (e.g. "--add-dir").
-	AddDirFlag string `json:"add_dir_flag,omitempty"`
 	// PromptFlag is the CLI flag used to pass the prompt to the agent (e.g. "-p").
 	// When empty, no prompt flag is appended and the prompt must be delivered via
 	// an alternative mechanism (stdin, instructions file, etc.).
@@ -68,19 +48,12 @@ type ProviderPreset struct {
 	PromptPositional bool `json:"prompt_positional,omitempty"`
 	// PermissionsFlag is the CLI flag used to grant additional permissions.
 	PermissionsFlag string `json:"permissions_flag,omitempty"`
-	// InstructionsFile is the filename the agent reads for task instructions (e.g. "CLAUDE.md").
+	// InstructionsFile is the filename the agent reads for task instructions (e.g. "AGENTS.md").
 	InstructionsFile string `json:"instructions_file,omitempty"`
 	// ReadyPromptPrefix is text that signals the agent is ready to receive input.
 	ReadyPromptPrefix string `json:"ready_prompt_prefix,omitempty"`
 	// ResumeFlag is the CLI flag used to resume a previous session (e.g. "--resume").
 	ResumeFlag string `json:"resume_flag,omitempty"`
-	// ResumeStyle controls whether resuming uses a flag or a positional subcommand.
-	ResumeStyle ResumeStyle `json:"resume_style,omitempty"`
-	// ContinueFlag is the CLI flag used to continue the most recent session in the
-	// working directory (e.g. "--continue" for claude). When set, Cistern uses this
-	// flag instead of re-injecting the full prompt when resuming a previously-started
-	// session. The agent already has full context from the prior run.
-	ContinueFlag string `json:"continue_flag,omitempty"`
 	// ExtraEnv maps additional environment variable names to values injected into
 	// the agent process. These are set in addition to (and may override) EnvPassthrough.
 	ExtraEnv map[string]string `json:"extra_env,omitempty"`
@@ -97,80 +70,22 @@ type ProviderPreset struct {
 	// The template may contain "{identity}" as a placeholder for the resolved
 	// identity file path.
 	PromptFileTemplate string `json:"prompt_file_template,omitempty"`
-	// SupportsAddDir indicates whether this provider supports the AddDirFlag for
-	// filesystem-based context injection (e.g. SKILL.md, instructions files).
-	// When false, context must be injected as text in the prompt preamble.
-	SupportsAddDir bool `json:"supports_add_dir,omitempty"`
 }
 
-// InstrFile returns InstructionsFile, defaulting to "CLAUDE.md" when empty.
+// InstrFile returns InstructionsFile, defaulting to "AGENTS.md" when empty.
 func (p ProviderPreset) InstrFile() string {
 	if p.InstructionsFile != "" {
 		return p.InstructionsFile
 	}
-	return "CLAUDE.md"
+	return "AGENTS.md"
 }
 
 // builtins is the canonical set of provider presets shipped with Cistern.
 var builtins = []ProviderPreset{
 	{
-		Name:             "claude",
-		Command:          "claude",
-		Args:             []string{"--dangerously-skip-permissions"},
-		ModelFlag:        "--model",
-		AddDirFlag:       "--add-dir",
-		PromptFlag:       "-p",
-		ContinueFlag:     "--continue",
-		ResumeFlag:       "--resume",
-		InstructionsFile: "CLAUDE.md",
-		SupportsAddDir:   true,
-		NonInteractive:   NonInteractiveConfig{PrintFlag: "--print", PromptFlag: "-p", AllowedToolsFlag: "--allowedTools"},
-	},
-	{
-		Name:             "ollama-claude",
-		Command:          "ollama-claude-wrapper",
-		Args:             []string{},
-		ModelFlag:        "--model",
-		DefaultModel:     "kimi-k2.5:cloud",
-		AddDirFlag:       "--add-dir",
-		PromptFlag:       "-p",
-		ContinueFlag:     "--continue",
-		ResumeFlag:       "--resume",
-		InstructionsFile: "CLAUDE.md",
-		SupportsAddDir:   true,
-		NonInteractive:   NonInteractiveConfig{PrintFlag: "--print", PromptFlag: "-p", AllowedToolsFlag: "--allowedTools"},
-	},
-	{
-		Name:             "codex",
-		Command:          "codex",
-		Args:             []string{"--dangerously-bypass-approvals-and-sandbox"},
-		EnvPassthrough:   []string{"OPENAI_API_KEY"},
-		InstructionsFile: "AGENTS.md",
-		ResumeStyle:      ResumeStyleSubcommand,
-		NonInteractive:   NonInteractiveConfig{Subcommand: "exec", PromptFlag: "-p"},
-	},
-	{
-		Name:             "gemini",
-		Command:          "gemini",
-		Args:             []string{"--yolo"},
-		EnvPassthrough:   []string{"GEMINI_API_KEY"},
-		ModelFlag:        "--model",
-		InstructionsFile: "GEMINI.md",
-		NonInteractive:   NonInteractiveConfig{PromptFlag: "-p"},
-	},
-	{
-		Name:             "copilot",
-		Command:          "copilot",
-		Args:             []string{"--yolo"},
-		PromptFlag:       "-p",
-		EnvPassthrough:   []string{"GH_TOKEN"},
-		InstructionsFile: "AGENTS.md",
-		NonInteractive:   NonInteractiveConfig{PromptFlag: "-p"},
-	},
-	{
-		Name:                "opencode",
+		Name:               "opencode",
 		Command:            "opencode",
-		Subcommand:          "run",
+		Subcommand:         "run",
 		Args:               []string{"--dangerously-skip-permissions"},
 		ModelFlag:          "--model",
 		DefaultModel:       "ollama/glm-5.1:cloud",
@@ -224,7 +139,7 @@ func MergePresets(base, overrides []ProviderPreset) []ProviderPreset {
 }
 
 // ResolvePreset returns the built-in preset matching name.
-// If name is empty or no preset matches, the "claude" preset is returned as
+// If name is empty or no preset matches, the "opencode" preset is returned as
 // the default fallback.
 func ResolvePreset(name string) ProviderPreset {
 	builtins := Builtins()
@@ -233,13 +148,13 @@ func ResolvePreset(name string) ProviderPreset {
 			return p
 		}
 	}
-	// Default: fall back to the claude preset by explicit name lookup.
+	// Default: fall back to the opencode preset by explicit name lookup.
 	for _, p := range builtins {
-		if p.Name == "claude" {
+		if p.Name == "opencode" {
 			return p
 		}
 	}
-	// Unreachable: claude is always in the built-in set.
+	// Unreachable: opencode is always in the built-in set.
 	return builtins[0]
 }
 

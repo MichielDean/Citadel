@@ -21,7 +21,7 @@ only place the runtime reads from. Install skills explicitly before use; the
 Castellarius never fetches skills automatically during agent spawn.
 
 To use a skill in a cataractae, add it to the cataractae's skills: list in your
-aqueduct YAML, then run ct cataractae generate to rebuild CLAUDE.md files.
+aqueduct YAML, then run ct cataractae generate to rebuild AGENTS.md files.
 
 In-repo skills (located under skills/ in the repository) are deployed
 automatically into ~/.cistern/skills/ by the git_sync drought hook.`,

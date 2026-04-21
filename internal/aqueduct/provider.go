@@ -14,7 +14,7 @@ import (
 // → repo-specific RepoConfig.Provider overrides.
 //
 // The preset name is resolved with repo-level taking precedence over top-level,
-// which takes precedence over the default ("claude"). The special name "custom"
+// which takes precedence over the default ("opencode"). The special name "custom"
 // starts from an empty preset instead of a built-in.
 //
 // If repoName does not match any configured repo, only the top-level provider
@@ -24,7 +24,7 @@ import (
 // is not "custom".
 func (cfg *AqueductConfig) ResolveProvider(repoName string) (provider.ProviderPreset, error) {
 	// Determine effective preset name: repo level > top level > default.
-	name := "claude"
+	name := "opencode"
 	if cfg.Provider != nil && cfg.Provider.Name != "" {
 		name = cfg.Provider.Name
 	}
@@ -55,9 +55,9 @@ func (cfg *AqueductConfig) ResolveProvider(repoName string) (provider.ProviderPr
 	// Apply top-level overrides onto the base preset, but only when the
 	// top-level provider name matches the resolved name. If the top-level has
 	// no explicit name its overrides are treated as generic and always applied;
-	// if it names a specific provider (e.g. "gemini") but the repo has switched
-	// to a different one (e.g. "codex"), applying those overrides would silently
-	// contaminate the repo's preset with the wrong provider's settings.
+	// if it names a specific provider but the repo has switched to a different
+	// one, applying those overrides would silently contaminate the repo's preset
+	// with the wrong provider's settings.
 	if cfg.Provider != nil && (cfg.Provider.Name == "" || cfg.Provider.Name == name) {
 		applyProviderOverrides(&result, cfg.Provider)
 	}

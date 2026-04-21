@@ -26,7 +26,7 @@ type Session struct {
 	Model string
 
 	// Identity is the agent cataractae identity (e.g., "implementer", "reviewer").
-	// Used to locate cataractae/<identity>/CLAUDE.md in the working directory.
+	// Used to locate cataractae/<identity>/AGENTS.md in the working directory.
 	Identity string
 
 	// TimeoutMinutes is the maximum runtime hint passed to the agent via CONTEXT.md.
@@ -34,15 +34,13 @@ type Session struct {
 	TimeoutMinutes int
 
 	// Preset is the provider preset that controls how the agent is launched.
-	// When Name is empty, spawn falls back to the legacy claude hard-coded path.
 	Preset provider.ProviderPreset
 
-	// Skills is the list of skill names to inject into the prompt for providers
-	// that do not support AddDirFlag. Skills are read from ~/.cistern/skills/<name>/SKILL.md.
-	// Providers with SupportsAddDir=true receive skill files automatically via --add-dir.
+	// Skills is the list of skill names to inject into the prompt.
+	// Skills are read from ~/.cistern/skills/<name>/SKILL.md.
 	Skills []string
 
-	// TemplateCtx holds the step and droplet data used to render CLAUDE.md as a
+	// TemplateCtx holds the step and droplet data used to render AGENTS.md as a
 	// Go template at spawn time. When the zero value is passed, templates are
 	// rendered with empty data — static content (no markers) passes through unchanged.
 	TemplateCtx aqueduct.TemplateContext
@@ -83,21 +81,13 @@ func (s *Session) spawn() error {
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}
 
 	var agentCmd string
-	if s.Preset.Name != "" {
-		agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
-		if err != nil {
-			return fmt.Errorf("spawn: %w", err)
-		}
-	} else {
-		// Legacy fallback: no preset configured — use the hardcoded claude path.
-		agentCmd = s.buildClaudeCmd(skillsDir)
+	agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
+	if err != nil {
+		return fmt.Errorf("spawn: %w", err)
 	}
 
 	// Resolve the command path for the spawn log.
-	cmdPath := claudePathFn()
-	if s.Preset.Name != "" {
-		cmdPath = resolveCommandFn(s.Preset.Command)
-	}
+	cmdPath := resolveCommandFn(s.Preset.Command)
 
 	slog.Default().Info("session: spawning",
 		"session", s.ID,
@@ -216,22 +206,6 @@ func (s *Session) collectEnvArgs() []string {
 	return args
 }
 
-// buildClaudeCmd constructs the shell command string passed to tmux new-session.
-// skillsDir is shell-quoted so paths containing spaces are handled correctly.
-func (s *Session) buildClaudeCmd(skillsDir string) string {
-	// The prompt must be single-quoted so that tmux/sh doesn't word-split it —
-	// unquoted spaces would cause only the first word to be passed to -p.
-	// Single-quote the prompt and escape any literal single quotes inside it
-	// using the 'x'\''y' idiom.
-	prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
-	var flagsStr string
-	if s.Model != "" {
-		flagsStr = "--model " + shellQuote(s.Model) + " "
-	}
-	return fmt.Sprintf("exec %s --dangerously-skip-permissions --add-dir %s %s-p '%s'",
-		claudePathFn(), shellQuote(skillsDir), flagsStr, prompt)
-}
-
 // resolveCommandFn resolves a preset command name to an absolute path. It is a
 // variable so tests can substitute a deterministic resolver without requiring the
 // real agent binaries to be installed on the test machine.
@@ -300,8 +274,7 @@ func resolveCommand(command string) string {
 }
 
 // presetBaseParts builds the shared command parts for preset commands: the
-// resolved+quoted command, shell-quoted args, optional --add-dir, and optional
-// model flag.
+// resolved+quoted command, shell-quoted args, and optional model flag.
 func (s *Session) presetBaseParts(preset provider.ProviderPreset, skillsDir string) []string {
 	parts := []string{shellQuote(resolveCommandFn(preset.Command))}
 	if preset.Subcommand != "" {
@@ -309,9 +282,6 @@ func (s *Session) presetBaseParts(preset provider.ProviderPreset, skillsDir stri
 	}
 	for _, a := range preset.Args {
 		parts = append(parts, shellQuote(a))
-	}
-	if preset.AddDirFlag != "" {
-		parts = append(parts, preset.AddDirFlag, shellQuote(skillsDir))
 	}
 	if s.Model != "" && preset.ModelFlag != "" {
 		parts = append(parts, preset.ModelFlag, shellQuote(s.Model))
@@ -333,10 +303,10 @@ func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir strin
 	prompt := s.buildPrompt()
 
 	// Determine how the prompt is delivered to the agent:
-	//   1. PromptFlag set → use flag + value (e.g. claude uses -p)
-	//   2. PromptPositional + PromptFileTemplate → write AGENTS.md, append short prompt as positional arg
-	//   3. PromptFileTemplate only → write AGENTS.md, no prompt arg (agent reads it natively)
-	//   4. None → build the prompt flag from NonInteractive config as fallback
+	//   1. PromptFlag set -> use flag + value
+	//   2. PromptPositional + PromptFileTemplate -> write AGENTS.md, append short prompt as positional arg
+	//   3. PromptFileTemplate only -> write AGENTS.md, no prompt arg (agent reads it natively)
+	//   4. None -> build the prompt flag from NonInteractive config as fallback
 	promptFlag := preset.PromptFlag
 	if promptFlag == "" && preset.NonInteractive.PromptFlag != "" && !preset.PromptPositional {
 		promptFlag = preset.NonInteractive.PromptFlag
@@ -467,33 +437,18 @@ func (s *Session) buildPrompt() string {
 
 	// Layer 2: Persona (from instructions file / cataractae_definitions YAML)
 	if s.Identity != "" {
-		if !s.Preset.SupportsAddDir {
-			// Provider cannot inject context via filesystem (no AddDirFlag).
-			// Build context preamble by reading the instructions file directly.
-			identityDir := s.resolveIdentityDir()
-			preamble := buildContextPreamble(identityDir, s.Preset)
-			if preamble != "" {
-				prompt += "\n## Your Role\n\n" + aqueduct.RenderTemplate(preamble, s.TemplateCtx)
-			} else {
-				// Fallback: point agent to the file location.
-				prompt += "\nRead " + s.resolveIdentityPath() + " for your role instructions. "
-			}
+		identityDir := s.resolveIdentityDir()
+		preamble := buildContextPreamble(identityDir, s.Preset)
+		if preamble != "" {
+			prompt += "\n## Your Role\n\n" + aqueduct.RenderTemplate(preamble, s.TemplateCtx)
 		} else {
-			// Provider has AddDirFlag (e.g. claude): instructions file is available via
-			// filesystem injection (--add-dir). Also embed it in the prompt for reliability.
-			identityPath := s.resolveIdentityPath()
-			if content, err := os.ReadFile(identityPath); err == nil {
-				prompt += "\n## Your Role\n\n" + aqueduct.RenderTemplate(string(content), s.TemplateCtx)
-			} else {
-				// File missing/unreadable — fall back to pointer so agent can try to find it.
-				prompt += "\nRead " + identityPath + " for your role instructions. "
-			}
+			// Fallback: point agent to the file location.
+			prompt += "\nRead " + s.resolveIdentityPath() + " for your role instructions. "
 		}
 	}
 
-	// Layer 3: Skills — injected as text for providers without AddDirFlag support.
-	// Providers with SupportsAddDir receive skill files automatically via --add-dir.
-	if !s.Preset.SupportsAddDir && len(s.Skills) > 0 {
+	// Layer 3: Skills — injected as text in the prompt.
+	if len(s.Skills) > 0 {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			slog.Default().Warn("buildPrompt: cannot determine home directory — skills not injected", "error", err)
@@ -517,8 +472,7 @@ func (s *Session) buildPrompt() string {
 }
 
 // buildContextPreamble returns the combined role context text for the given identity
-// directory. It is called for providers that lack AddDirFlag support — they cannot
-// inject context via the filesystem, so the content is embedded directly in the prompt.
+// directory. The content is embedded directly in the prompt.
 //
 // Resolution order:
 //  1. Read <identityDir>/<preset.InstructionsFile> (the generated combined file).
@@ -568,11 +522,6 @@ func (s *Session) isAlive() bool {
 	return err == nil
 }
 
-// claudePathFn resolves the path to the claude executable.It is a variable so
-// tests can substitute it to inject a known absolute path without modifying the
-// process environment or requiring the binary to exist on the test machine.
-var claudePathFn = claudePath
-
 // tmuxRecoveryMu serializes dead-tmux-server recovery across concurrent spawn
 // goroutines (scheduler.go dispatches spawns in parallel). Without serialization,
 // two goroutines that both detect a dead server can interleave: A recovers and
@@ -580,14 +529,3 @@ var claudePathFn = claudePath
 // Holding this lock during the detect→kill→retry block ensures only one goroutine
 // restarts the tmux server at a time.
 var tmuxRecoveryMu sync.Mutex
-
-// claudePath returns the absolute path to the claude binary.
-func claudePath() string {
-	if p := os.Getenv("CLAUDE_PATH"); p != "" {
-		return p
-	}
-	if p, err := exec.LookPath("claude"); err == nil {
-		return p
-	}
-	return os.ExpandEnv("$HOME/.local/bin/claude")
-}

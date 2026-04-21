@@ -20,7 +20,6 @@ import (
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
-
 )
 
 const (
@@ -195,20 +194,20 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 	}
 
 	s := &Castellarius{
-		config:                 config,
-		workflows:              make(map[string]*aqueduct.Workflow),
-		clients:                make(map[string]CisternClient),
-		pools:                  make(map[string]*AqueductPool),
-		runner:                 runner,
-		logger:                 slog.Default(),
-		pollInterval:           10 * time.Second,
-		heartbeatInterval:      30 * time.Second,
-		drainTimeout:           5 * time.Minute,
-		dbPath:                 dbPath,
-		startupBinaryMtime:     startupBinaryMtime,
-		supervised:             isSupervisedProcess(),
-		reloadCh:               make(chan struct{}, 1),
-		outcomeCh:              make(chan struct{}, 1),
+		config:             config,
+		workflows:          make(map[string]*aqueduct.Workflow),
+		clients:            make(map[string]CisternClient),
+		pools:              make(map[string]*AqueductPool),
+		runner:             runner,
+		logger:             slog.Default(),
+		pollInterval:       10 * time.Second,
+		heartbeatInterval:  30 * time.Second,
+		drainTimeout:       5 * time.Minute,
+		dbPath:             dbPath,
+		startupBinaryMtime: startupBinaryMtime,
+		supervised:         isSupervisedProcess(),
+		reloadCh:           make(chan struct{}, 1),
+		outcomeCh:          make(chan struct{}, 1),
 	}
 	for _, o := range opts {
 		o(s)
@@ -287,15 +286,15 @@ func NewFromParts(
 	opts ...Option,
 ) *Castellarius {
 	s := &Castellarius{
-		config:                 config,
-		workflows:              workflows,
-		clients:                clients,
-		pools:                  make(map[string]*AqueductPool),
-		runner:                 runner,
-		logger:                 slog.Default(),
-		pollInterval:           10 * time.Second,
-		heartbeatInterval:      30 * time.Second,
-		drainTimeout:           5 * time.Minute,
+		config:            config,
+		workflows:         workflows,
+		clients:           clients,
+		pools:             make(map[string]*AqueductPool),
+		runner:            runner,
+		logger:            slog.Default(),
+		pollInterval:      10 * time.Second,
+		heartbeatInterval: 30 * time.Second,
+		drainTimeout:      5 * time.Minute,
 	}
 	for _, o := range opts {
 		o(s)
@@ -376,8 +375,8 @@ func (s *Castellarius) Run(ctx context.Context) error {
 	// and whether gh is authenticated. Helps diagnose auth failures without leaking secrets.
 	s.logStartupCredentials(ctx)
 
-	// Integrity check: regenerate any missing or corrupt CLAUDE.md files before
-	// accepting work. A corrupted CLAUDE.md (e.g. "test\n\nold instructions") means
+	// Integrity check: regenerate any missing or corrupt AGENTS.md files before
+	// accepting work. A corrupted AGENTS.md (e.g. "test\n\nold instructions") means
 	// the agent runs with no role instructions — silent and catastrophic.
 	s.ensureCataractaeIntegrity()
 
@@ -1736,7 +1735,7 @@ func WriteContext(dir string, notes []cistern.CataractaeNote) error {
 }
 
 // parkWorktree detaches HEAD in a worker's sandbox so the feature branch is
-// ensureCataractaeIntegrity checks each agent cataractae's CLAUDE.md for the
+// ensureCataractaeIntegrity checks each agent cataractae's AGENTS.md for the
 // sentinel string that proves it was generated from the YAML (not corrupted).
 // If any file is missing or lacks the sentinel, it is regenerated automatically.
 // This runs at Castellarius startup so corrupted prompts never silently persist.
@@ -1746,7 +1745,7 @@ func (s *Castellarius) ensureCataractaeIntegrity() {
 		return
 	}
 	cataractaeDir := filepath.Join(home, ".cistern", "cataractae")
-	sentinel := "ct droplet pass" // present in every correctly-generated CLAUDE.md
+	sentinel := "ct droplet pass" // present in every correctly-generated AGENTS.md
 
 	needsRegen := false
 	// Collect all unique identities across all repo workflows.
@@ -1757,22 +1756,22 @@ func (s *Castellarius) ensureCataractaeIntegrity() {
 				continue
 			}
 			seen[identity] = true
-			claudePath := filepath.Join(cataractaeDir, identity, "CLAUDE.md")
-			content, err := os.ReadFile(claudePath)
+			agentsPath := filepath.Join(cataractaeDir, identity, "AGENTS.md")
+			content, err := os.ReadFile(agentsPath)
 			if err != nil || !strings.Contains(string(content), sentinel) {
-				s.logger.Warn("CLAUDE.md missing or corrupt — will regenerate",
-					"identity", identity, "path", claudePath)
+				s.logger.Warn("AGENTS.md missing or corrupt — will regenerate",
+					"identity", identity, "path", agentsPath)
 				needsRegen = true
 			}
 		}
 	}
 
 	if needsRegen {
-		s.logger.Info("Regenerating cataractae CLAUDE.md files")
+		s.logger.Info("Regenerating cataractae AGENTS.md files")
 		if err := hookCataractaeGenerate(&s.config, s.logger); err != nil {
-			s.logger.Error("Failed to regenerate CLAUDE.md files", "error", err)
+			s.logger.Error("Failed to regenerate AGENTS.md files", "error", err)
 		} else {
-			s.logger.Info("Cataractae CLAUDE.md files regenerated successfully")
+			s.logger.Info("Cataractae AGENTS.md files regenerated successfully")
 		}
 	}
 }

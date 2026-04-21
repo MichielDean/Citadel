@@ -51,7 +51,7 @@ type ContextParams struct {
 	// If nil, slog.Default() is used.
 	Logger *slog.Logger
 	// InstructionsFile is the provider-specific filename written into the worktree
-	// (e.g. "AGENTS.md" for opencode/codex, "CLAUDE.md" for claude, "GEMINI.md" for gemini).
+	// (e.g. "AGENTS.md" for opencode).
 	// It is excluded from all git operations alongside CONTEXT.md and .current-stage
 	// to prevent the cataractae prompt from being committed back to the repo.
 	InstructionsFile string

@@ -10,9 +10,9 @@ import (
 
 // --- ResolveProvider tests ---
 
-// TestResolveProvider_DefaultsToClaudeWhenNoProvider verifies that an AqueductConfig
-// with no provider block resolves to the built-in claude preset unchanged.
-func TestResolveProvider_DefaultsToClaudeWhenNoProvider(t *testing.T) {
+// TestResolveProvider_DefaultsToOpencodeWhenNoProvider verifies that an AqueductConfig
+// with no provider block resolves to the built-in opencode preset unchanged.
+func TestResolveProvider_DefaultsToOpencodeWhenNoProvider(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos: []RepoConfig{{Name: "myrepo", Cataractae: 1}},
 	}
@@ -20,30 +20,30 @@ func TestResolveProvider_DefaultsToClaudeWhenNoProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Name != "claude" {
-		t.Errorf("Name = %q, want %q", preset.Name, "claude")
+	if preset.Name != "opencode" {
+		t.Errorf("Name = %q, want %q", preset.Name, "opencode")
 	}
-	if preset.Command != "claude" {
-		t.Errorf("Command = %q, want %q", preset.Command, "claude")
+	if preset.Command != "opencode" {
+		t.Errorf("Command = %q, want %q", preset.Command, "opencode")
 	}
 }
 
-// TestResolveProvider_UsesTopLevelProviderName verifies that the top-level provider
+// TestResolveProvider_TopLevelProviderName verifies that the top-level provider
 // name selects the corresponding built-in preset.
-func TestResolveProvider_UsesTopLevelProviderName(t *testing.T) {
+func TestResolveProvider_TopLevelProviderName(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos:    []RepoConfig{{Name: "r", Cataractae: 1}},
-		Provider: &ProviderConfig{Name: "gemini"},
+		Provider: &ProviderConfig{Name: "opencode"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Name != "gemini" {
-		t.Errorf("Name = %q, want %q", preset.Name, "gemini")
+	if preset.Name != "opencode" {
+		t.Errorf("Name = %q, want %q", preset.Name, "opencode")
 	}
-	if preset.Command != "gemini" {
-		t.Errorf("Command = %q, want %q", preset.Command, "gemini")
+	if preset.Command != "opencode" {
+		t.Errorf("Command = %q, want %q", preset.Command, "opencode")
 	}
 }
 
@@ -52,16 +52,16 @@ func TestResolveProvider_UsesTopLevelProviderName(t *testing.T) {
 func TestResolveProvider_RepoNameOverridesTopLevelName(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos: []RepoConfig{
-			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Name: "codex"}},
+			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Name: "opencode"}},
 		},
-		Provider: &ProviderConfig{Name: "gemini"},
+		Provider: &ProviderConfig{Name: "opencode"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Name != "codex" {
-		t.Errorf("Name = %q, want %q", preset.Name, "codex")
+	if preset.Name != "opencode" {
+		t.Errorf("Name = %q, want %q", preset.Name, "opencode")
 	}
 }
 
@@ -70,14 +70,14 @@ func TestResolveProvider_RepoNameOverridesTopLevelName(t *testing.T) {
 func TestResolveProvider_TopLevelCommandOverride(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos:    []RepoConfig{{Name: "r", Cataractae: 1}},
-		Provider: &ProviderConfig{Command: "my-claude"},
+		Provider: &ProviderConfig{Command: "my-opencode"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Command != "my-claude" {
-		t.Errorf("Command = %q, want %q", preset.Command, "my-claude")
+	if preset.Command != "my-opencode" {
+		t.Errorf("Command = %q, want %q", preset.Command, "my-opencode")
 	}
 }
 
@@ -86,16 +86,16 @@ func TestResolveProvider_TopLevelCommandOverride(t *testing.T) {
 func TestResolveProvider_RepoCommandOverridesTopLevel(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos: []RepoConfig{
-			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Command: "repo-claude"}},
+			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Command: "repo-opencode"}},
 		},
-		Provider: &ProviderConfig{Command: "top-claude"},
+		Provider: &ProviderConfig{Command: "top-opencode"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Command != "repo-claude" {
-		t.Errorf("Command = %q, want %q", preset.Command, "repo-claude")
+	if preset.Command != "repo-opencode" {
+		t.Errorf("Command = %q, want %q", preset.Command, "repo-opencode")
 	}
 }
 
@@ -170,14 +170,14 @@ func TestResolveProvider_UnknownProviderReturnsError(t *testing.T) {
 func TestResolveProvider_UnknownRepoFallsBackToTopLevel(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos:    []RepoConfig{{Name: "r", Cataractae: 1}},
-		Provider: &ProviderConfig{Name: "gemini"},
+		Provider: &ProviderConfig{Name: "opencode"},
 	}
 	preset, err := cfg.ResolveProvider("nonexistent-repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Name != "gemini" {
-		t.Errorf("Name = %q, want %q", preset.Name, "gemini")
+	if preset.Name != "opencode" {
+		t.Errorf("Name = %q, want %q", preset.Name, "opencode")
 	}
 }
 
@@ -201,7 +201,7 @@ func TestResolveProvider_CustomProviderStartsEmpty(t *testing.T) {
 	}
 	// No built-in args should be inherited.
 	if slices.Contains(preset.Args, "--dangerously-skip-permissions") {
-		t.Error("custom provider inherited built-in claude args; want clean slate")
+		t.Error("custom provider inherited built-in opencode args; want clean slate")
 	}
 }
 
@@ -231,7 +231,7 @@ func TestResolveProvider_NoProviderBlockUsesBuiltinFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// claude built-in has ModelFlag "--model"
+	// opencode built-in has ModelFlag "--model"
 	if preset.ModelFlag != "--model" {
 		t.Errorf("ModelFlag = %q, want %q", preset.ModelFlag, "--model")
 	}
@@ -242,14 +242,14 @@ func TestResolveProvider_NoProviderBlockUsesBuiltinFields(t *testing.T) {
 func TestResolveProvider_TopLevelModelAppliedToPreset(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos:    []RepoConfig{{Name: "r", Cataractae: 1}},
-		Provider: &ProviderConfig{Model: "claude-opus-4-6"},
+		Provider: &ProviderConfig{Model: "ollama/llama3"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.DefaultModel != "claude-opus-4-6" {
-		t.Errorf("DefaultModel = %q, want %q", preset.DefaultModel, "claude-opus-4-6")
+	if preset.DefaultModel != "ollama/llama3" {
+		t.Errorf("DefaultModel = %q, want %q", preset.DefaultModel, "ollama/llama3")
 	}
 }
 
@@ -258,40 +258,38 @@ func TestResolveProvider_TopLevelModelAppliedToPreset(t *testing.T) {
 func TestResolveProvider_RepoLevelModelOverridesTopLevelModel(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos: []RepoConfig{
-			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Model: "claude-sonnet-4-6"}},
+			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Model: "ollama/mistral"}},
 		},
-		Provider: &ProviderConfig{Model: "claude-opus-4-6"},
+		Provider: &ProviderConfig{Model: "ollama/llama3"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.DefaultModel != "claude-sonnet-4-6" {
-		t.Errorf("DefaultModel = %q, want %q (repo should override top-level)", preset.DefaultModel, "claude-sonnet-4-6")
+	if preset.DefaultModel != "ollama/mistral" {
+		t.Errorf("DefaultModel = %q, want %q (repo should override top-level)", preset.DefaultModel, "ollama/mistral")
 	}
 }
 
-// TestResolveProvider_TopLevelOverridesNotAppliedWhenRepoChangesProvider verifies
-// that top-level command/args/env/model overrides are NOT applied to the base preset
-// when the repo-level config selects a different provider name. A top-level
-// name:gemini + command:/opt/gemini must not bleed into a repo that uses name:codex.
-func TestResolveProvider_TopLevelOverridesNotAppliedWhenRepoChangesProvider(t *testing.T) {
+// TestResolveProvider_TopLevelCommandOverrideNotAppliedWhenRepoSpecifiesDifferentCommand
+// verifies that when a repo-level config provides its own command, the top-level
+// command override does not override it.
+func TestResolveProvider_TopLevelCommandOverrideNotAppliedWhenRepoSpecifiesDifferentCommand(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos: []RepoConfig{
-			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Name: "codex"}},
+			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Name: "opencode", Command: "/usr/local/bin/opencode"}},
 		},
-		Provider: &ProviderConfig{Name: "gemini", Command: "/opt/gemini"},
+		Provider: &ProviderConfig{Name: "opencode", Command: "/opt/opencode"},
 	}
 	preset, err := cfg.ResolveProvider("r")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if preset.Name != "codex" {
-		t.Errorf("Name = %q, want %q", preset.Name, "codex")
+	if preset.Name != "opencode" {
+		t.Errorf("Name = %q, want %q", preset.Name, "opencode")
 	}
-	// Codex's own command must be used, not /opt/gemini from top-level gemini config.
-	if preset.Command != "codex" {
-		t.Errorf("Command = %q, want %q (top-level gemini override must not contaminate codex)", preset.Command, "codex")
+	if preset.Command != "/usr/local/bin/opencode" {
+		t.Errorf("Command = %q, want %q (repo command override should win)", preset.Command, "/usr/local/bin/opencode")
 	}
 }
 
@@ -301,7 +299,7 @@ func TestResolveProvider_TopLevelOverridesNotAppliedWhenRepoChangesProvider(t *t
 func TestResolveProvider_TopLevelGenericOverridesApplyRegardlessOfRepoProvider(t *testing.T) {
 	cfg := &AqueductConfig{
 		Repos: []RepoConfig{
-			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Name: "gemini"}},
+			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Name: "opencode"}},
 		},
 		Provider: &ProviderConfig{Env: map[string]string{"GLOBAL_VAR": "val"}},
 	}
@@ -320,7 +318,7 @@ func TestResolveProvider_TopLevelGenericOverridesApplyRegardlessOfRepoProvider(t
 // with no model set produces no warning.
 func TestValidateModelForProvider_NoModelReturnsEmptyWarning(t *testing.T) {
 	step := WorkflowCataractae{Name: "s", Type: CataractaeTypeAgent}
-	preset := provider.ProviderPreset{Name: "claude", ModelFlag: "--model"}
+	preset := provider.ProviderPreset{Name: "opencode", ModelFlag: "--model"}
 	if warn := ValidateModelForProvider(step, preset); warn != "" {
 		t.Errorf("expected empty warning, got %q", warn)
 	}
@@ -329,9 +327,9 @@ func TestValidateModelForProvider_NoModelReturnsEmptyWarning(t *testing.T) {
 // TestValidateModelForProvider_ModelWithModelFlagReturnsEmptyWarning verifies
 // that a step with a model set against a preset that supports ModelFlag is fine.
 func TestValidateModelForProvider_ModelWithModelFlagReturnsEmptyWarning(t *testing.T) {
-	m := "claude-opus-4-6"
+	m := "ollama/llama3"
 	step := WorkflowCataractae{Name: "s", Type: CataractaeTypeAgent, Model: &m}
-	preset := provider.ProviderPreset{Name: "claude", ModelFlag: "--model"}
+	preset := provider.ProviderPreset{Name: "opencode", ModelFlag: "--model"}
 	if warn := ValidateModelForProvider(step, preset); warn != "" {
 		t.Errorf("expected empty warning, got %q", warn)
 	}
@@ -342,7 +340,7 @@ func TestValidateModelForProvider_ModelWithModelFlagReturnsEmptyWarning(t *testi
 func TestValidateModelForProvider_ModelWithoutModelFlagReturnsWarning(t *testing.T) {
 	m := "some-model"
 	step := WorkflowCataractae{Name: "my-step", Type: CataractaeTypeAgent, Model: &m}
-	preset := provider.ProviderPreset{Name: "copilot", ModelFlag: ""}
+	preset := provider.ProviderPreset{Name: "custom", ModelFlag: ""}
 	warn := ValidateModelForProvider(step, preset)
 	if warn == "" {
 		t.Fatal("expected warning, got empty string")
@@ -350,8 +348,8 @@ func TestValidateModelForProvider_ModelWithoutModelFlagReturnsWarning(t *testing
 	if !strings.Contains(warn, "my-step") {
 		t.Errorf("warning %q should mention step name %q", warn, "my-step")
 	}
-	if !strings.Contains(warn, "copilot") {
-		t.Errorf("warning %q should mention provider name %q", warn, "copilot")
+	if !strings.Contains(warn, "custom") {
+		t.Errorf("warning %q should mention provider name %q", warn, "custom")
 	}
 	if !strings.Contains(warn, "some-model") {
 		t.Errorf("warning %q should mention model value %q", warn, "some-model")

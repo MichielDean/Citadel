@@ -107,10 +107,8 @@ func invokeFilterResume(preset provider.ProviderPreset, sessionID, message strin
 	return callFilterAgent(preset, extraArgs, message)
 }
 
-// callFilterAgent invokes the preset command with --print --output-format json,
+// callFilterAgent invokes the preset command with --output-format json,
 // optional extraArgs (e.g. --resume <id>), and the given prompt.
-// When the preset defines NonInteractive.AllowedToolsFlag, read-only file tools
-// (Glob, Grep, Read) are enabled so the agent can discover context on demand.
 // It returns the raw text response and the session_id from the JSON envelope.
 // If the agent does not support --output-format json, the raw stdout becomes the text
 // (session_id will be empty in that case).
@@ -121,19 +119,13 @@ func callFilterAgent(preset provider.ProviderPreset, extraArgs []string, prompt 
 		}
 	}
 
-	// Build args: [Subcommand] [preset.Args...] [--allowedTools ...] [extraArgs...] [PrintFlag] [--output-format json] [PromptFlag prompt]
+	// Build args: [Subcommand] [preset.Args...] [extraArgs...] [PromptFlag|--output-format json prompt]
 	var args []string
 	if preset.NonInteractive.Subcommand != "" {
 		args = append(args, preset.NonInteractive.Subcommand)
 	}
 	args = append(args, preset.Args...)
-	if preset.NonInteractive.AllowedToolsFlag != "" {
-		args = append(args, preset.NonInteractive.AllowedToolsFlag, "Glob,Grep,Read")
-	}
 	args = append(args, extraArgs...)
-	if preset.NonInteractive.PrintFlag != "" {
-		args = append(args, preset.NonInteractive.PrintFlag)
-	}
 	args = append(args, "--output-format", "json")
 	if preset.NonInteractive.PromptFlag != "" {
 		args = append(args, preset.NonInteractive.PromptFlag)
