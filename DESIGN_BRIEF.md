@@ -1,204 +1,147 @@
-# Design Brief: Promote Scheduler Events from Notes to Structured Events
+# Design Brief: Fix Web SPA Crash on Empty Data — Null Array Regression
 
 ## Requirements Summary
 
-Replace six categories of scheduler-sourced `AddNote()` calls with structured `RecordEvent()` calls, giving each failure mode a distinct event type with a JSON payload. The `loop-recovery-pending` marker notes are retained as notes because `loopRecoveryPendingCount()` queries the notes table. The `ct droplet log` command must display the new event types meaningfully. The circuit breaker must stop scanning notes for exit-no-outcome markers and instead query events.
+Fix the complete SPA crash when the Go API returns JSON `null` for empty collection fields. The root cause is threefold: (1) Go nil slices serialize to JSON `null`, (2) React components call `.length` on potentially null arrays without null-coalescing, and (3) no integration test exercises the empty/null path. The fix must ensure the Go API always returns `[]` for array fields, the frontend null-coalesces as defense-in-depth, and both layers have regression tests.
 
 ## Existing Patterns to Follow
 
 ### ORM / Query
 
-The codebase uses raw `database/sql` with parameterized queries — no ORM. Queries use `?` placeholders for SQLite. See `internal/cistern/client.go:637-639` for the `RecordEvent` INSERT pattern:
-
-```go
-_, err := exec.Exec(
-    `INSERT INTO events (droplet_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)`,
-    id, eventType, payload, time.Now().UTC(),
-)
-```
-
-Event reads use `c.db.Query` with `rows.Scan` — see `GetDropletChanges` at `internal/cistern/client.go:1252-1277`.
-
-For the circuit breaker replacement, a new query method must follow the same raw-SQL pattern. The existing `ListRecentEvents` (`internal/cistern/client.go:1217-1238`) shows the query-and-scan pattern for events.
+The codebase uses raw `database/sql` with `?` placeholders for SQLite — no ORM. Queries use `c.db.Query` with `rows.Scan`. See `internal/cistern/client.go:982-1015` for the `List` method pattern. The `fetchDashboardData` function already initializes empty slices in its constructor (`cmd/ct/dashboard.go:81-90`) — this is the correct pattern that must be extended to all collection fields unconditionally.
 
 ### Naming Conventions
 
-Event type constants use `Event` prefix with PascalCase, mapped to lowercase snake_case string values — see `internal/cistern/client.go:21-32`:
+Dashboard data struct fields use PascalCase for exported struct fields with `json` tags using snake_case — see `DashboardData` at `cmd/ct/dashboard.go:59-73`:
 
 ```go
-EventCreate      = "create"
-EventDispatch    = "dispatch"
-EventPass        = "pass"
-EventRecirculate = "recirculate"
+Cataractae      []CataractaeInfo   `json:"cataractae"`
+UnassignedItems []*cistern.Droplet `json:"unassigned_items"`
 ```
 
-New constants **must** follow this exact pattern: `EventExitNoOutcome = "exit_no_outcome"`, etc. The string values use snake_case (underscores, not hyphens) consistent with the existing convention.
-
-The `validEventTypes` map (`internal/cistern/client.go:34-45`) must be updated to include all new types.
-
-Unexported structs use unexported fields. The `CataractaeNote` struct (`internal/cistern/client.go:102-109`) is exported because it crosses package boundaries. New structs should follow the same export rule: export if and only if the struct is consumed outside its defining package.
+Unexported structs use unexported fields. All structs here are exported because they cross package boundaries (serialized to JSON in the HTTP handler at `cmd/ct/dashboard_web.go:876`).
 
 ### Error Handling
 
-`RecordEvent` wraps errors with `fmt.Errorf("cistern: ...", ...)` — see `internal/cistern/client.go:642`. Scheduler code uses `s.logger.Warn` / `s.logger.Error` for logging — see `internal/castellarius/scheduler.go:586-587` for the `addNote` error pattern. The new `addEvent` helper must follow the same pattern: log errors via `s.logger.Warn` if `RecordEvent` fails, never silently swallow.
-
-The `addNote` helper currently swallows errors at the call site by logging only within the helper (`scheduler.go:584-588`). The new `addEvent` helper must follow the same approach: if `RecordEvent` returns an error, log at Warn level but do not propagate the error (these are diagnostic events, not control-flow-critical).
+Errors are wrapped with `fmt.Errorf("context: %w", err)` — see `cmd/ct/dashboard.go:94`. The SSE handler at `cmd/ct/dashboard_web.go:874` silently drops fetch errors (`data, _ := fetcher(...)`) which is acceptable since SSE is a best-effort stream. No change needed to error handling patterns.
 
 ### Collection Types
 
-The codebase uses `[]cistern.CataractaeNote` (slices, not maps) for note collections — see `GetNotes` return type at `internal/cistern/client.go:800`. The `validEventTypes` map uses `map[string]bool` for constant-time lookup (`internal/cistern/client.go:34`). New lookup patterns must use the same types.
+The codebase uses slices (`[]T`) for all collection fields, not maps, because JSON serialization of arrays is ordered and positional. See `DashboardData` at `cmd/ct/dashboard.go:59-73` — seven slice/map fields all use `[]T` or `map[string]string`. The existing pattern for empty-slice initialization is at `cmd/ct/dashboard.go:81-90`:
 
-### Migrations
+```go
+data := &DashboardData{
+    Cataractae:      []CataractaeInfo{},
+    UnassignedItems: []*cistern.Droplet{},
+    CisternItems:    []*cistern.Droplet{},
+    PooledItems:     []*cistern.Droplet{},
+    BlockedByMap:    map[string]string{},
+    FlowActivities:  []FlowActivity{},
+}
+```
 
-No migration is needed for this change. The events table already exists with the `event_type TEXT` column (`internal/cistern/schema.sql:30`) and the `validEventTypes` map is the enforcement mechanism, not a CHECK constraint. The new event types are simply new string values added to the Go constants and map — no DDL or DML changes required.
+This already covers UnassignedItems, CisternItems, PooledItems, BlockedByMap, FlowActivities, and Cataractae. The bug is that `RecentItems` is **not** initialized in this block — so when the `fetchDashboardData` code path at `cmd/ct/dashboard.go:240` assigns `data.RecentItems = recent` and `recent` is nil (no delivered/pooled droplets), it becomes nil and serializes to JSON `null`.
 
-If any future change did require a migration, it would follow: numbered files (`018_xxx.sql`), all identifiers double-quoted, DDL and DML in separate files, DML wrapped in transactions, embedded via `//go:embed migrations/*.sql` — see `internal/cistern/migrate.go:77-158`.
+Additionally, the `FlowActivity.RecentNotes` field at `cmd/ct/dashboard.go:55` has a partial nil guard at line 249 (`if err != nil || notes == nil { notes = []cistern.CataractaeNote{} }`), but the struct field itself is never pre-initialized, so when `FlowActivities` entries are constructed at line 256, `RecentNotes` depends on this runtime guard.
 
 ### Idiom Fit
 
-Use `encoding/json` for payload marshaling — already imported in `client.go`. Use `fmt.Sprintf` for constructing messages — already used throughout `scheduler.go`. Use `time.Now().UTC()` for timestamps — established pattern in `client.go:639`.
-
-The scheduler already has access to `client CisternClient` which includes `RecordEvent` in its interface (`scheduler.go:67`). No new imports or dependencies are needed.
+The standard library `encoding/json` marshals nil slices as `null` and empty slices as `[]` — this is documented Go behavior. The fix is to ensure all slice fields are initialized to empty slices (not nil). No custom JSON marshaler is needed. The existing `fetchDashboardData` constructor already demonstrates the correct pattern at `cmd/ct/dashboard.go:81-90`.
 
 ### Testing
 
-Existing test conventions: table-driven tests in `internal/cistern/client_test.go`, mock-based tests in `internal/castellarius/scheduler_test.go` using `mockClient`. The mock currently stubs `RecordEvent` as `return nil` (`scheduler_test.go:291-293`). Tests use `t.Errorf` and `t.Fatalf` for assertions.
+Go tests use table-driven patterns with `t.Run` subtests. See `cmd/ct/dashboard_test.go:119-210` for `TestFetchDashboardData_FeedsDataCorrectly` and `cmd/ct/dashboard_web_test.go:123-144` for `TestDashboardWebMux_APIReturnsJSON`. React tests use Vitest with `@testing-library/react` — see `web/src/__tests__/DashboardContext.test.ts` and `web/src/__tests__/useDashboardEvents.test.ts`.
 
-The `TestValidEventTypes_ContainsAllConstants` test (`client_test.go:3371-3385`) **must** be updated to include the new event type constants — it verifies that every `Event*` constant has a matching `validEventTypes` entry and that the map has no extras. This is a required test update, not optional.
+The existing Go API test at `cmd/ct/dashboard_web_test.go:123-144` (`TestDashboardWebMux_APIReturnsJSON`) tests with an empty database but does not verify that array fields are `[]` not `null`. This is the exact coverage gap that allowed the bug to ship.
 
 ## Reusability Requirements
 
-The seven new event types are **specific to the scheduler/heartbeat domain**. They have no meaning outside `internal/castellarius`. The `RecordEvent` API is already generic (accepts any string matching `validEventTypes`). No new generic utilities are needed.
-
-The new `CountEventsByType` method on `cistern.Client` is generic — it queries events by type within a time window. It could be reused by any future code that needs to count events (e.g., a dashboard metric). The method signature must accept parameters, not hardcode the `exit_no_outcome` type.
+- The Go-side fix (empty-slice initialization) is specific to `DashboardData` — no other struct in the codebase serializes dashboard data. Not reusable.
+- The React-side null-coalescing pattern (`items ?? []`) is a local defensive measure in `Dashboard.tsx` — it should remain inline, not extracted into a utility, since each component section directly consumes a specific prop.
+- Any integration test helper (e.g., `tempDB` and `tempCfg` at `cmd/ct/dashboard_test.go:21-115`) is already reused across test files and should continue to be reused.
 
 ## Coupling Requirements
 
-The `circuitBreaker` method (`scheduler.go:1440-1498`) currently calls `client.GetNotes()` to count exit-no-outcome markers by scanning `notes` for `n.CataractaeName == "scheduler" && strings.Contains(n.Content, "Session exited without outcome")`. After this change, exit-no-outcome is an event, not a note, so the circuit breaker must count events instead.
-
-**Solution**: Add a `CountEventsByType(id, eventType string, since time.Time) (int, error)` method to `cistern.Client` that counts events matching a type created after a cutoff. This method is generic (event type is a parameter) and avoids hardcoding `exit_no_outcome` in the method name.
-
-The `CisternClient` interface in `scheduler.go:33-68` must be extended with `CountEventsByType`. The `mockClient` in `scheduler_test.go` must implement the new interface method.
-
-The `addEvent` helper on `Castellarius` follows the same pattern as `addNote` — it is a method on the struct, not a standalone function, because it needs access to `s.logger`. No shared mutable state is introduced.
+No shared mutable package-level state is involved. `DashboardData` is constructed fresh per request in `fetchDashboardData`. The fix touches only struct initialization and JSX null-coalescing — no new shared state, no new packages, no package-level vars.
 
 ## DRY Requirements
 
-### addEvent helper
+### Repeated `items.length === 0` pattern in Dashboard.tsx
 
-Seven call sites currently use `s.addNote(client, item.ID, "scheduler", msg)`. Six of these will switch to `s.recordEvent(client, item.ID, eventType, payload)`. The `addNote` helper pattern (`scheduler.go:581-588`) must be mirrored as an `addEvent` helper. Both are one-liner wrappers that log on error, so extracting further is unnecessary — neither has 5+ lines repeated.
+The pattern `if (items.length === 0) return null;` appears 4 times in Dashboard.tsx:
 
-### JSON payload construction
+- `cmd/ct/dashboard.go` line 168 (QueueSection)
+- `cmd/ct/dashboard.go` line 188 (PooledSection)
+- `cmd/ct/dashboard.go` line 208 (UnassignedSection)
+- `cmd/ct/dashboard.go` line 228 (RecentSection)
 
-Each of the seven event sites constructs a unique JSON payload. There is no repeated 5+ line block across these sites. Each payload is:
+These are file-local component functions that each receive a typed `Droplet[]` prop. Extracting a shared wrapper would not reduce meaningful complexity — each section has different styling and header content. **Do not extract a helper.** The null-coalescing fix (`items ?? []`) at the call site in `SummarySection` is the correct DRY approach: apply the coalesce once at the point where `data.*_items` is passed as a prop, not inside each subcomponent.
 
-- `exit_no_outcome`: `{"session":"...","worker":"...","cataractae":"..."}`
-- `stall`: `{"cataractae":"...","elapsed":"...","heartbeat":"..."}`
-- `recovery`: `{"cataractae":"..."}`
-- `circuit_breaker`: `{"death_count":N,"window":"..."}`
-- `loop_recovery`: `{"from":"...","to":"...","issue":"..."}`
-- `auto_promote`: `{"cataractae":"...","routed_to":"..."}`
-- `no_route`: `{"cataractae":"..."}`
+### Go-side nil-slice pattern
 
-Each is a unique key-value set. No DRY extraction warranted.
-
-### remapPayload functions in droplet_log.go
-
-The `remapEvent` function (`droplet_log.go:146-171`) already has a switch with one `remapPayload*` function per event type. Each `remapPayload*` function unmarshals the JSON and formats a human-readable string. The seven new cases will need seven new `remapPayload*` functions. No repeated 5+ line block exists across these functions — each has unique field extraction logic.
+The pattern of initializing empty slices in the `DashboardData` constructor already exists at `cmd/ct/dashboard.go:81-90`. The fix is to add `RecentItems: []*cistern.Droplet{}` to this constructor. No new helper needed — the constructor pattern is the standard.
 
 ## Migration Requirements
 
-No database migration is needed. The events table schema (`internal/cistern/schema.sql:27-33`) already stores arbitrary `event_type TEXT` and `payload TEXT`. The `validEventTypes` map in Go code is the enforcement point, not a SQL constraint.
-
-The `TestValidEventTypes_ContainsAllConstants` test must be updated to include the new constants — this acts as the schema validation for event types.
+Not applicable — no database schema changes. This is a serialization and frontend fix only.
 
 ## Test Requirements
 
-### client_test.go — new method
+### Go Tests
 
-Test file: `internal/cistern/client_test.go`
+**Must use existing test patterns** (table-driven with `t.Run`, httptest.NewRecorder, tempDB/tempCfg helpers at `cmd/ct/dashboard_test.go:21-115`).
 
-- `TestCountEventsByType_CountsMatchingEvents`: insert 3 `exit_no_outcome` events and 1 `stall` event; assert `CountEventsByType(id, "exit_no_outcome", cutoff)` returns 3.
-- `TestCountEventsByType_RespectsCutoff`: insert 2 `exit_no_outcome` events, one before cutoff and one after; assert only the recent one is counted.
-- `TestCountEventsByType_ZeroWhenNone`: assert returns 0 when no events of the given type exist.
-- `TestCountEventsByType_ZeroWhenWrongType`: insert `stall` events; assert `CountEventsByType(id, "exit_no_outcome", cutoff)` returns 0.
+New Go test functions required:
 
-### client_test.go — validEventTypes
+1. **`TestAPI_Dashboard_EmptyDB_ReturnsEmptyArraysNotNull`** in `cmd/ct/dashboard_web_test.go`
+   - Creates a mux with `tempCfg(t)` and `tempDB(t)` (empty DB)
+   - GET /api/dashboard
+   - Decodes response into `map[string]interface{}` (not `DashboardData` struct, to verify raw JSON)
+   - Asserts every array field (`cataractae`, `unassigned_items`, `cistern_items`, `pooled_items`, `recent_items`, `flow_activities`) is `[]` not `null`
+   - Pattern: follows `TestDashboardWebMux_APIReturnsJSON` at `cmd/ct/dashboard_web_test.go:123-144`
 
-- Update `TestValidEventTypes_ContainsAllConstants` (`client_test.go:3371-3385`) to include all new `Event*` constants in the `expected` slice.
+2. **`TestFetchDashboardData_EmptyDB_AllSliceFieldsNonNil`** in `cmd/ct/dashboard_test.go`
+   - Calls `fetchDashboardData(cfgPath, dbPath)` with empty DB
+   - Asserts `data.RecentItems != nil`, `data.UnassignedItems != nil`, `data.CisternItems != nil`, `data.PooledItems != nil`, `data.Cataractae != nil`, `data.FlowActivities != nil`
+   - Pattern: follows `TestFetchDashboardData_PooledItems_EmptyWhenNonePooled` at `cmd/ct/dashboard_test.go:626-644`
 
-### scheduler_test.go — mock update
+3. **`TestFetchDashboardData_FlowActivity_RecentNotesNonNil`** in `cmd/ct/dashboard_test.go`
+   - Seeds an in-progress droplet assigned to an aqueduct with NO notes
+   - Calls `fetchDashboardData`
+   - Asserts `data.FlowActivities[0].RecentNotes != nil`
+   - Pattern: follows `TestDashboardWebMux_NoteFieldsRoundTrip` at `cmd/ct/dashboard_web_test.go:219-257`
 
-- The `mockClient.RecordEvent` stub (`scheduler_test.go:291-293`) currently returns `nil`. It must be updated to record calls so tests can assert on `RecordEvent` invocations — mirror the `mockClient.AddNote` pattern (`scheduler_test.go:155-168`) using an `attachedEvent` struct or `[]recordedEvent` slice.
-- The `mockClient` must also implement `CountEventsByType(id, eventType string, since time.Time) (int, error)` — return a pre-configured count from a map field.
+### React Tests
 
-### scheduler_test.go — heartbeat tests
+**Must use existing Vitest + @testing-library/react pattern** — see `web/src/__tests__/DashboardContext.test.ts` and `web/src/__tests__/useDashboardEvents.test.ts`.
 
-Existing test assertions check `client.attached` for notes with prefixes like `[scheduler:exit-no-outcome]`, `[scheduler:stall]`, `[scheduler:recovery]`. These must be updated to assert on `RecordEvent` calls with the correct event type and JSON payload instead.
+New React test required:
 
-Specific tests requiring update:
+1. **`Dashboard null fields render without crashing`** in `web/src/__tests__/Dashboard.test.tsx`
+   - Renders `<Dashboard>` with `DashboardProvider` providing data where all array fields are `null` (simulating the broken API)
+   - Asserts no JavaScript errors are thrown
+   - Asserts the component renders (not blank/crashed)
+   - Pattern: follows `DashboardContext.test.ts` mock data structure at lines 6-20, but with `null` for array fields instead of `[]`
 
-| Test | File:Line | Current Assertion | New Assertion |
-|------|-----------|-------------------|---------------|
-| `TestHeartbeatRepo_ExitNoOutcome_WritesNote` | `scheduler_test.go:~2547-2552` | `client.attached[0].notes` contains `[scheduler:exit-no-outcome]` | `client.events[0].eventType == "exit_no_outcome"` + payload has `session`, `worker`, `cataractae` keys |
-| `TestHeartbeatRepo_StallAndOrphan` | `scheduler_test.go:~2124-2132` | `client.attached[0].notes` starts with `stallNotePrefix` | `client.events[0].eventType == "stall"` + payload has `cataractae`, `elapsed`, `heartbeat` |
-| `TestHeartbeatRepo_StallAndOrphan` | `scheduler_test.go:~2130-2132` | `client.attached[1].notes` contains `[scheduler:recovery]` | `client.events[1].eventType == "recovery"` + payload has `cataractae` |
-| `TestHeartbeatRepo_OrphanRecovery_SecondTick` | `scheduler_test.go:~2331` | `client.attached[1].notes` contains `[scheduler:recovery]` | Check events instead |
-| `TestTick_ImplementRecirculate_ReviewerIssueFirstCycle_WritesPendingNote` | `scheduler_test.go:~916-924` | `client.attached` contains `loop-recovery-pending` note | Assert `RecordEvent` called with `"loop_recovery"` event type + keep the `AddNote` assertion for the pending marker |
-| `TestTick_ImplementRecirculate_ReviewerIssueSecondCycle_RoutesToReviewer` | `scheduler_test.go:~1006-1014` | `client.attached` contains `[scheduler:loop-recovery]` note | Assert `RecordEvent` called with `"loop_recovery"` event type |
-| Circuit breaker tests | `scheduler_test.go` (search for `circuit`) | Checks `client.attached` for `[circuit-breaker]` note | Assert `RecordEvent` called with `"circuit_breaker"` event type + `Pool` call |
+### Integration Test
 
-### scheduler_test.go — auto_promote and no_route tests
+Per the acceptance criteria, an integration test that starts the dashboard server and hits `/api/dashboard` with an empty database is already covered by `TestAPI_Dashboard_EmptyDB_ReturnsEmptyArraysNotNull` above, which uses `httptest.NewServer` / `newDashboardMux` to test the full HTTP stack against an empty DB.
 
-Tests for the routing logic (`TestTick_Recirculate*`) that currently assert on `client.attached` notes with `[scheduler:routing]` must assert `RecordEvent` calls with `"auto_promote"` or `"no_route"` event types.
-
-### droplet_log.go — remapEvent tests
-
-Test file: `cmd/ct/droplet_log_test.go` (if it exists) or new tests in `cmd/ct/`
-
-- `TestRemapEvent_ExitNoOutcome`: verify `remapEvent("exit_no_outcome", payload)` returns `"exit_no_outcome"`, human-readable detail.
-- `TestRemapEvent_Stall`: verify `remapEvent("stall", payload)` returns `"stall"`, human-readable detail with elapsed and heartbeat.
-- `TestRemapEvent_Recovery`: verify `remapEvent("recovery", payload)` returns `"recovery"`, human-readable detail.
-- `TestRemapEvent_CircuitBreaker`: verify `remapEvent("circuit_breaker", payload)` returns `"circuit_breaker"`, human-readable detail with death_count and window.
-- `TestRemapEvent_LoopRecovery`: verify `remapEvent("loop_recovery", payload)` returns `"loop_recovery"`, human-readable detail with from, to, issue.
-- `TestRemapEvent_AutoPromote`: verify `remapEvent("auto_promote", payload)` returns `"auto_promote"`, human-readable detail with cataractae and routed_to.
-- `TestRemapEvent_NoRoute`: verify `remapEvent("no_route", payload)` returns `"no_route"`, human-readable detail with cataractae.
-
-### coverage_gaps_test.go
-
-- `scheduler_test.go` line ~296 references `wantNotes` — update to also track `wantEvents` where applicable.
-- Any test that checks `attached` notes for scheduler-sourced content must be split: `loop-recovery-pending` markers stay as `AddNote` assertions; all other scheduler-sourced notes become `RecordEvent` assertions.
+A headless-browser test that loads `/app/` and verifies no JS errors is beyond the scope of a unit/integration fix and would require Playwright or similar. The React unit test above provides equivalent coverage for the null-coalescing defense-in-depth layer.
 
 ## Forbidden Patterns
 
-- **Inline migrations in Go code** — not applicable here (no DDL/DML changes needed), but if they were, use `embed.FS` with numbered `.sql` files per `internal/cistern/migrate.go:77-158`.
-- **Scanning notes for event-type data** — the circuit breaker (`scheduler.go:1460-1468`) currently scans `cataractae_notes` for `"Session exited without outcome"`. This pattern is fragile string matching on free-text notes. The replacement must use `CountEventsByType`, not replicate the note-scanning pattern on events.
-- **Adding event types without `validEventTypes` entry** — every `Event*` constant must appear in the `validEventTypes` map, enforced by `TestValidEventTypes_ContainsAllConstants` (`client_test.go:3371`).
-- **Adding `RecordEvent` calls with invalid JSON payloads** — `RecordEvent` validates JSON at runtime (`client.go:634`). Payloads must be constructed via `json.Marshal(map[string]any{...})`, not via `fmt.Sprintf` of JSON strings.
-- **Package-level mutable state** — new `CountEventsByType` method is on `*Client`, not a package-level function. New event type constants are in the `cistern` package's const block (`client.go:21`), not package-level vars.
-- **PascalCase fields on unexported structs** — not applicable (all new structs, if any, follow the `DropletChange`/`RecentEvent` exported-struct pattern).
-- **Silent error swallowing** — the `addEvent` helper must log errors with `s.logger.Warn`, matching `addNote` at `scheduler.go:586`.
-- **Shadowing Go builtins** — do not name any variable `min`, `max`, or `any`.
+- **Do not add a custom `MarshalJSON` method to `DashboardData`** — the fix is struct initialization, not custom serialization. A `MarshalJSON` override would hide future nil-slice bugs instead of preventing them at the source.
+- **Do not use `omitempty` on array JSON tags** — `omitempty` would omit the field entirely on empty, which breaks the API contract (callers expect the field to exist).
+- **Do not extract a shared React wrapper component for the 4 similar section components** — each has different styling and semantics; the DRY fix is null-coalescing at the call site, not component extraction.
+- **Do not use `SetXxx` mutation methods or package-level mutable state** — constructor initialization only.
+- **Do not introduce a new package or utility** — the fix is two lines in Go (constructor) and six null-coalescences in React (call sites).
 
 ## API Surface Checklist
 
-- [ ] **New event type constants** (`internal/cistern/client.go:21-32`): Add `EventExitNoOutcome = "exit_no_outcome"`, `EventStall = "stall"`, `EventRecovery = "recovery"`, `EventCircuitBreaker = "circuit_breaker"`, `EventLoopRecovery = "loop_recovery"`, `EventAutoPromote = "auto_promote"`, `EventNoRoute = "no_route"`. Each constant must appear in `validEventTypes` map. Contract: `RecordEvent(id, EventXxx, payload)` accepts the constant and inserts a row; `RecordEvent` rejects unknown types with `fmt.Errorf("cistern: unknown event type %q", eventType)`.
-- [ ] **`CountEventsByType(id, eventType string, since time.Time) (int, error)`** on `*Client`: Returns count of events with the given `eventType` for droplet `id` created after `since`. Contract: returns 0 (never an error) when no matching events exist. Returns error only on database failure. Uses parameterized SQL `SELECT COUNT(*) FROM "events" WHERE "droplet_id" = ? AND "event_type" = ? AND "created_at" > ?`.
-- [ ] **`CisternClient` interface update** (`scheduler.go:33-68`): Add `CountEventsByType(id, eventType string, since time.Time) (int, error)` method. All mock implementations must be updated.
-- [ ] **`addEvent` helper** (`scheduler.go` near `addNote` at line 581): `func (s *Castellarius) addEvent(client CisternClient, dropletID, eventType, payload string)` — calls `client.RecordEvent(dropletID, eventType, payload)` and logs errors at Warn level via `s.logger.Warn`. Contract: never panics, never returns error — errors are logged and swallowed, matching `addNote` behavior. Payload must be valid JSON (constructed via `json.Marshal`), matching `RecordEvent`'s validation contract.
-- [ ] **Replace 7 `addNote` call sites with `addEvent`** in `scheduler.go`:
-  - Line 825: `loop_recovery` event with payload `{"from":"<step>","to":"<step>","issue":"<id>"}`
-  - Line 852: `auto_promote` event with payload `{"cataractae":"<step>","routed_to":"<on_pass>"}`
-  - Line 862: `no_route` event with payload `{"cataractae":"<step>"}`
-  - Line ~1346: `exit_no_outcome` event with payload `{"session":"<id>","worker":"<assignee>","cataractae":"<step>"}`
-  - Line ~1370: `stall` event with payload `{"cataractae":"<step>","elapsed":"<dur>","heartbeat":"<ts>"}`
-  - Line ~1385: `recovery` event with payload `{"cataractae":"<step>"}`
-  - Line ~1476: `circuit_breaker` event with payload `{"death_count":<n>,"window":"<dur>"}`
-- [ ] **Keep line 835 as `addNote`**: The `loop-recovery-pending` marker at `scheduler.go:835` must remain as `addNote` — `loopRecoveryPendingCount` (`scheduler.go:1087-1098`) scans `cataractae_notes` for the `[scheduler:loop-recovery-pending]` prefix. This note must NOT be converted to an event.
-- [ ] **Circuit breaker update** (`scheduler.go:1440-1498`): Replace the `GetNotes` + string-scanning loop (lines 1455-1468) with `CountEventsByType(item.ID, EventExitNoOutcome, cutoff)`. Contract: `CountEventsByType` returns the count directly (integer), no string matching needed. The `circuit_breaker` addNote at line 1476 becomes an `addEvent` for `EventCircuitBreaker`.
-- [ ] **Remove `stallNotePrefix` constant** (`scheduler.go:28`): The `[scheduler:stall]` prefix constant is no longer needed once stall is an event type. Verify no other code references it before removing.
-- [ ] **`remapEvent` updates** (`cmd/ct/droplet_log.go:146-171`): Add 7 new cases to the switch: `"exit_no_outcome"`, `"stall"`, `"recovery"`, `"circuit_breaker"`, `"loop_recovery"`, `"auto_promote"`, `"no_route"`. Each case returns `(eventType, remapPayloadXxx(detail))` where `remapPayloadXxx` unmarshals JSON and formats a human-readable string, following the existing `remapPayloadReason` pattern (`droplet_log.go:173-184`).
-- [ ] **Mock `RecordEvent` must record invocations** (`scheduler_test.go:291-293`): Change from `return nil` to appending to a `[]recordedEvent` slice with `eventType` and `payload` fields, mirroring `mockClient.AddNote` recording pattern at `scheduler_test.go:155-168`.
-- [ ] **Mock `CountEventsByType`** (`scheduler_test.go`): Add method returning pre-configured count from a map field `eventCounts map[string]int` keyed by `"dropletID:eventType"`.
-- [ ] **All existing scheduler tests pass** with assertions updated from note-matching to event-matching. Specifically: every test that asserts `client.attached[i].notes` contains `[scheduler:stall]`, `[scheduler:recovery]`, `[scheduler:exit-no-outcome]`, `[scheduler:routing] Auto-promoted`, `[scheduler:routing] cataractae=...`, `[circuit-breaker]`, or `[scheduler:loop-recovery] detected` must be updated to assert `RecordEvent` calls instead. Tests asserting `[scheduler:loop-recovery-pending]` must continue asserting `AddNote` calls unchanged.
-- [ ] **`ct droplet log` displays structured scheduler events meaningfully**: Each new event type must produce a readable log line, not raw JSON. Verified by `remapEvent` test cases per the test requirements above.
+- [ ] `fetchDashboardData` constructor initializes `RecentItems: []*cistern.Droplet{}` — contract: every `DashboardData` returned by `fetchDashboardData` has non-nil slices for all seven collection fields, regardless of DB content. Verified by `TestFetchDashboardData_EmptyDB_AllSliceFieldsNonNil`.
+- [ ] `fetchDashboardData` FlowActivity constructor at `cmd/ct/dashboard.go:256` ensures `RecentNotes` is never nil — the existing guard at line 249 already does this, but the contract must be: when `FlowActivities` is non-empty, each entry's `RecentNotes` is `[]cistern.CataractaeNote{}` not nil. Verified by `TestFetchDashboardData_FlowActivity_RecentNotesNonNil`.
+- [ ] `SummarySection` in `Dashboard.tsx` passes null-coalesced arrays to child components — contract: `data.pooled_items ?? []`, `data.cistern_items ?? []`, `data.unassigned_items ?? []`, `data.recent_items ?? []` are passed to `PooledSection`, `QueueSection`, `UnassignedSection`, `RecentSection`. This is defense-in-depth; the Go fix ensures these are already `[]`, but the coalescing guarantees no crash even if a future code path or proxy introduces null.
+- [ ] `CisternCountCard` in `Dashboard.tsx:146` uses `(data.pooled_items ?? []).length` instead of `data.pooled_items.length` — contract: this expression never throws TypeError, even if `data.pooled_items` is null/undefined.
+- [ ] `AqueductSection` in `Dashboard.tsx:14` iterates `data.flow_activities` with null-coalesce — contract: `data.flow_activities ?? []` used in the `activityMap` construction, or the `.filter` calls on `cataractae` at lines 76-77 are safe because `data.cataractae` is already initialized by the Go constructor. But `data.flow_activities` at line 14 should be null-coalesced: `for (const act of data.flow_activities ?? [])`.
+- [ ] `/api/dashboard` never returns JSON `null` for any array field — contract: for an empty database, the response JSON contains `[]` for `cataractae`, `unassigned_items`, `cistern_items`, `pooled_items`, `recent_items`, `flow_activities`. Verified by `TestAPI_Dashboard_EmptyDB_ReturnsEmptyArraysNotNull`.

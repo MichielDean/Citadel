@@ -93,9 +93,9 @@ export function AqueductArch({ cataractae, activity, isFlowing, onPeek }: Aquedu
         </div>
       )}
 
-      {activity && activity.recent_notes.length > 0 && (
+      {activity && (activity.recent_notes ?? []).length > 0 && (
         <div className="mt-3 space-y-1">
-          {activity.recent_notes.slice(0, 3).map((note) => (
+          {(activity.recent_notes ?? []).slice(0, 3).map((note) => (
             <FlowNote key={note.id} note={note} />
           ))}
         </div>
