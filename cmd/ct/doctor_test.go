@@ -1248,7 +1248,7 @@ cataractae:
 }
 
 // TestRunDoctorExtendedChecks_ProviderInstructionsFile verifies that the doctor
-// checks the provider's InstructionsFile (AGENTS.md for opencode).
+// checks the provider's InstructionsFile (AGENTS.md).
 func TestRunDoctorExtendedChecks_ProviderInstructionsFile(t *testing.T) {
 	home := t.TempDir()
 

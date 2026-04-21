@@ -490,12 +490,11 @@ func TestInit_WritesCisternYAML_ContainsDashboardFontFamily(t *testing.T) {
 	}
 }
 
-func TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars(t *testing.T) {
+func TestInit_NextStepsMessage_DoesNotMentionRemovedProviders(t *testing.T) {
 	output := captureInitOutput(t)
-	removedEnvVars := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
-	for _, envVar := range removedEnvVars {
-		if strings.Contains(output, envVar) {
-			t.Errorf("ct init next-steps message must not mention %s; output:\n%s", envVar, output)
+	for _, provider := range []string{"claude", "codex", "gemini", "CLAUDE_PATH"} {
+		if strings.Contains(output, provider) {
+			t.Errorf("ct init next-steps message must not mention removed provider %q; output:\n%s", provider, output)
 		}
 	}
 }

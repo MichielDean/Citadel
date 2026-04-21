@@ -13,7 +13,7 @@ The Castellarius creates and cleans up worktrees. Agents never run `git worktree
 ## Staging — always exclude CONTEXT.md and InstructionsFile
 
 CONTEXT.md is written by the Castellarius on every dispatch. The provider's
-InstructionsFile (AGENTS.md for opencode) is also overwritten by the
+InstructionsFile (AGENTS.md) is also overwritten by the
 Castellarius with the cataractae prompt. Never commit either file.
 
 ```bash
@@ -38,8 +38,7 @@ if [ "$BEFORE" = "$AFTER" ]; then
 fi
 ```
 
-Replace `<InstructionsFile>` with the provider-specific filename (AGENTS.md for
-opencode).
+Replace `<InstructionsFile>` with the provider-specific filename (AGENTS.md).
 
 ## Diffing — always use merge-base
 
