@@ -52,7 +52,7 @@ export function Sidebar({ open, onToggle }: { open: boolean; onToggle: () => voi
               className={() => {
                 const isActive = location.pathname === item.to ||
                   (item.to === '/app/' && location.pathname === '/app');
-                return `flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md transition-colors text-sm whitespace-nowrap ${
+                return `flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md transition-colors text-sm whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-cistern-accent focus:ring-offset-1 focus:ring-offset-cistern-surface ${
                   isActive
                     ? 'bg-cistern-accent/10 text-cistern-accent'
                     : 'text-cistern-muted hover:text-cistern-fg hover:bg-cistern-border/30'

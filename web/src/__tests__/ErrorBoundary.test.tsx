@@ -34,21 +34,17 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Test error message')).toBeInTheDocument();
   });
 
-  it('shows Try Again button that resets error state', () => {
-    let shouldThrow = true;
-    function ConditionalThrower() {
-      if (shouldThrow) throw new Error('Test error message');
-      return <div>Normal content</div>;
-    }
+  it('shows Try Again button that reloads the page', () => {
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', { value: { reload: reloadMock }, writable: true });
     render(
       <ErrorBoundary>
-        <ConditionalThrower />
+        <ThrowingChild shouldThrow={true} />
       </ErrorBoundary>,
     );
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    shouldThrow = false;
     fireEvent.click(screen.getByText('Try Again'));
-    expect(screen.getByText('Normal content')).toBeInTheDocument();
+    expect(reloadMock).toHaveBeenCalledOnce();
   });
 
   it('renders custom fallback when provided', () => {
