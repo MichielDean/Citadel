@@ -1,114 +1,131 @@
-# Design Brief: Remove non-opencode providers from commands
+# Design Brief: Clean up tests, docs, and skills for opencode-only
 
 ## Requirements Summary
 
-The primary removal of non-opencode providers (claude, ollama-claude, codex, gemini, copilot) from the Go codebase was completed in commit 277b499. The remaining work is cleaning up residual references in non-Go files, test assertions about removed providers, and documentation that still mentions removed providers. These are: `.env.example` still lists `ANTHROPIC_API_KEY` and `CLAUDE_PATH`; test code in `cmd/ct/init_test.go` still asserts exclusion of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY` from init output; the AGENTS.md instructions file (injected by the Castellarius into cataractae worktrees) still mentions "CLAUDE.md for claude, GEMINI.md for gemini, AGENTS.md for opencode/codex"; the cistern-skill SKILL.md still mentions "CLAUDE.md for claude"; and the `agentJSONOutput` struct in filter.go is opencode's actual JSON output format (not claude-specific) and should be retained.
+Remove all remaining references to claude, codex, gemini, copilot, ANTHROPIC_API_KEY, CLAUDE.md, GEMINI.md, and `.claude/` from tests, docs, skills, and config files across the codebase. The Go core code has already been migrated to opencode-only (previous droplet). This brief covers the leftover references in test fixtures, documentation, config examples, and type comments. Goal: no references to non-opencode providers, non-opencode API keys, or non-AGENTS.md instruction filenames remain anywhere in the codebase.
 
 ## Existing Patterns to Follow
 
 ### Naming Conventions
 
-- Exported functions use PascalCase; unexported structs use lowercase field names. See `internal/provider/preset.go:26` (`ProviderPreset` exported, all fields PascalCase because the struct is exported).
-- Error wrapping uses `fmt.Errorf("pkg: context: %w", err)`. See `internal/provider/preset.go:171` (`fmt.Errorf("provider: read %s: %w", path, err)`).
+- Table-driven tests use `struct{name string; ...}` with `t.Run(tt.name, ...)`. See `internal/provider/preset_test.go:11-28` (`TestBuiltins_ReturnsExpectedPresetNames`), `internal/cataractae/smoke_test.go:18-61`.
+- YAML config uses snake_case keys. See `internal/aqueduct/types.go:190` (`llm:` key), `cmd/ct/assets/cistern.yaml`.
+- Environment variables use `UPPER_SNAKE_CASE`. See `cmd/ct/init_test.go:495` (`ANTHROPIC_API_KEY`).
 
 ### Error Handling
 
-- Errors wrapped with domain context using `fmt.Errorf("pkg: context: %w", err)`.
-- Operational errors use `slog.Error`/`slog.Warn`. See `internal/cataractae/session.go:321-322`.
+- Test assertions use `t.Errorf` / `t.Fatalf` with descriptive messages. See `cmd/ct/init_test.go:497-499` (`t.Errorf("ct init next-steps message must not mention %s; output:\n%s", envVar, output)`).
+- Operational errors use `fmt.Errorf("pkg: context: %w", err)`. See `internal/aqueduct/provider.go:50`.
 
 ### Testing
 
-- Table-driven tests using `t.Run(name, func(t *testing.T) {...})`. See `internal/provider/preset_test.go:43-55`.
-- Test helpers use `t.Helper()`. See `internal/provider/preset_test.go:348`.
-- `t.Setenv` for environment variable tests. See `cmd/ct/doctor_test.go:1460`.
+- `t.Setenv` for environment variable tests. See `internal/cataractae/smoke_test.go:22`.
+- `t.Helper()` for test helpers. See `internal/cataractae/smoke_test.go:141`.
+- Table-driven tests with `t.Run`. See `cmd/ct/doctor_test.go:1700-1713` (`TestInferLLMProviderFromPreset_KnownPresets`).
+- Mock HTTP server for LLM endpoint testing. See `internal/testutil/mockllm/mockllm.go`.
 
 ### Idiom Fit
 
-- Constructor-style initialization via `NewXxx` functions. See `internal/evaluate/evaluate.go:99` (`NewLLMCaller`).
-- Package-level function variables for test injectability. See `internal/cataractae/session.go:212` (`resolveCommandFn`).
+- Mock LLM server uses `httptest.NewServer`. See `internal/testutil/mockllm/mockllm.go:62-68`. This is idiomatic Go — no custom HTTP mocking needed.
+- Package-level function variables for test injectability. See `internal/cataractae/session.go:238`.
 
 ## Reusability Requirements
 
-- No new types or abstractions needed. All changes are removals or simplifications of existing code.
-- The `agentJSONOutput` struct in `cmd/ct/filter.go:19-25` is **opencode's actual output format** (opencode uses `--output-format json` with `type`, `subtype`, `is_error`, `result`, `session_id` fields). It is NOT claude-specific. Keep it.
+- `LLMConfig.Provider` at `internal/aqueduct/types.go:154-155` is the LLM API provider for filtration/refinement, separate from the agent CLI provider. It remains configurable (anthropic, openai, openrouter, ollama, custom) because the LLM API is orthogonal to the agent CLI — opencode-agent uses an LLM backend but can use different LLM APIs. **Do not remove the "anthropic" value from the LLM config** — it is a legitimate LLM API provider name, not an agent CLI provider. Only update the default comment and behavior.
+- `mockllm.go` endpoints (`/v1/messages` for Anthropic, `/v1/chat/completions` for OpenAI-compatible) are kept because the LLM refinement feature (`ct filter`) supports multiple LLM backends. **Keep both endpoints**. Only update the comments to use neutral language.
 
 ## Coupling Requirements
 
-No new shared mutable state is introduced. This change removes residual references only.
+- The `mockllm` test utility at `internal/testutil/mockllm/mockllm.go` is shared by `cmd/ct/refine_test.go` and `internal/evaluate/*_test.go`. Changes to its comments or test fixture variable names must be consistent across callers.
+- The `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` list in `cmd/ct/init_test.go:495` is a test-only constant — not shared with production code.
 
 ## DRY Requirements
 
-No new repeated patterns are introduced.
+No repeated patterns are introduced. The cleanup removes stale references — it does not add new code.
+
+The `removedEnvVars` list at `cmd/ct/init_test.go:495` contains three provider-specific env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). These are only referenced in one test function. **Keep the list but evaluate each entry**:
+- `ANTHROPIC_API_KEY` — not applicable for opencode-only. **Keep in the list** (the test checks that ct init output doesn't mention removed env vars).
+- `OPENAI_API_KEY` — not applicable for opencode-only default. **Keep in the list** (same reason).
+- `GEMINI_API_KEY` — not applicable for opencode-only default. **Keep in the list** (same reason).
+
+The test concept is sound: verify that ct init doesn't suggest setting removed provider env vars. The list itself is the reference data, not dead code.
 
 ## Migration Requirements
 
-No database migrations. No file system migration concerns — all code-level references have already been migrated to AGENTS.md by the prior commit.
+No database migrations. This is purely config, documentation, and test cleanup — removing stale references, not adding tables or columns.
+
+However, there is a **config semantics concern**: `LLMConfig.Provider` at `internal/aqueduct/types.go:152-156` currently documents `"anthropic"` as the default LLM provider. After this change, the comment at line 155 should say `"When omitted, defaults to 'anthropic'"` remains correct because the LLM API is independent of the agent CLI — but the comment at line 190 about "default anthropic preset" should be clarified to distinguish the LLM API from the agent provider.
 
 ## Test Requirements
 
-### Test files requiring updates
+### Test naming convention
+Tests use `TestXxx_YyyZzz` format. See `cmd/ct/init_test.go:493` (`TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars`).
+
+### Specific test updates required
 
 | File | Change |
 |------|--------|
-| `cmd/ct/init_test.go:495` | `TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars` — `removedEnvVars` list includes `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`. These are now provider-agnostic env vars (opencode may need ANTHROPIC_API_KEY via its own config). Rename the test to `TestInit_NextStepsMessage_DoesNotMentionRemovedProviders` and remove these three vars from the `removedEnvVars` list since they may still be relevant for opencode's LLM backend configuration. Alternatively, keep the test but change the assertion to verify that `ct init` output does not mention "claude", "codex", "gemini", or "copilot" as provider names — not specific env var names. |
+| `cmd/ct/init_test.go:493-501` | No change needed to the test function. The `removedEnvVars` list is correct — it tests that ct init output doesn't mention provider env vars that no longer apply to the default provider. Verify the test passes after other changes. |
+| `cmd/ct/doctor_test.go:1021` | Update comment from `provider=opencode but llm.provider=anthropic` to `provider=opencode but llm.provider=ollama` (or keep as-is since the test verifies a mismatch scenario — anthropic LLM is a valid mismatch). **Decision**: keep the test as-is. The test verifies that an opencode agent + anthropic LLM mismatch produces an advisory, not a hard failure. This is a valid test scenario since LLM API providers are separate from agent CLI providers. |
+| `cmd/ct/refine_test.go:50` | The `anthropic` entry is a valid LLM API provider name for the mock server test. **Keep** — this tests the `/v1/messages` endpoint which is the Anthropic Messages API format, not the claude CLI agent. |
 
 ## Forbidden Patterns
 
-- No new code patterns introduced. Only removals and comment simplifications.
-- Mixed `AGENTS.md`/`CLAUDE.md` references in the same code path — after this change, only `AGENTS.md` should appear in active code. `CHANGELOG.md` historical entries are exempt.
+- Removing LLM API provider names (anthropic, openai, openrouter, ollama, custom) from the `LLMConfig` — these are LLM backends for filtration, not agent CLI providers. The agent CLI is always opencode; the LLM API is independently configurable.
+- Removing the `/v1/messages` endpoint from mockllm — it is needed to test Anthropic-format LLM API calls which are a legitimate backend for `ct filter`.
+- Removing `GH_TOKEN` from env passthrough or test fixtures — GitHub token is still required for delivery regardless of agent provider.
 
 ## API Surface Checklist
 
-### Config Files
+### `.env.example`
 
-- [ ] `.env.example:12` — Remove `ANTHROPIC_API_KEY=your_anthropic_api_key_here` line. Opencode uses ollama or other LLM backends, not Anthropic API keys directly. Replace with a comment about opencode's model configuration if appropriate.
-- [ ] `.env.example:18` — Remove `# CLAUDE_PATH=/usr/local/bin/claude` line. The opencode binary is installed via `go install` (as documented in doctor's `providerInstallHint`).
+- [ ] Line 8-12: Remove the `ANTHROPIC_API_KEY=your_anthropic_api_key_here` line and the section comment "Required for headless / non-interactive deployments". Replace with a comment about opencode provider auth and `GH_TOKEN`.
+- [ ] Line 18: Remove `# CLAUDE_PATH=/usr/local/bin/claude` comment. Opencode doesn't use a `CLAUDE_PATH` env var.
 
-### AGENTS.md Instructions (Cataractae Instructions File)
+### `CHANGELOG.md`
 
-- [ ] `cataractae/architect/INSTRUCTIONS.md` (line 168 of injected AGENTS.md, but this is in the Castellarius's own source files) — The `cistern-git` skill at `skills/cistern-git/SKILL.md` lines 16-17 and 43 mentions "AGENTS.md for opencode/codex, CLAUDE.md for claude". Simplify to just `"AGENTS.md"`.
-- [ ] `skills/cistern/SKILL.md` — Search for any `~/.claude/.credentials.json` reference or CLAUDE.md mention and remove it.
+- [ ] Add a new top-level entry documenting the opencode-only migration. Entry should state: "Cistern now uses opencode as the only agent CLI provider. The claude, codex, gemini, and copilot provider presets have been removed. ANTHROPIC_API_KEY is no longer required. CLAUDE.md instruction files have been replaced by AGENTS.md across the codebase."
 
-### Test Code
+### `internal/aqueduct/types.go`
 
-- [x] `cmd/ct/init_test.go:493` — `TestInit_NextStepsMessage_DoesNotMentionRemovedProviders` now checks provider names (claude, codex, gemini, CLAUDE_PATH) instead of env var names (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) that may still be relevant for opencode's LLM backend.
+- [ ] Line 154-155: Update `LLMConfig.Provider` comment. The known values list (`"anthropic", "openai", "openrouter", "ollama", "custom"`) is correct — these are LLM API providers, not agent providers. The default comment `"When omitted, defaults to 'anthropic'"` should be updated to `"When omitted, defaults to 'anthropic'"` — this is the LLM backend default, not the agent default, so "anthropic" is still a reasonable default for the LLM API. **No change needed to the value**. However, update the phrase "default anthropic preset" at line 190 to "default LLM provider" to avoid confusion with agent provider presets.
+- [ ] Line 190: Change `"the default anthropic preset is used"` to `"the default LLM provider is used (anthropic)"`. This clarifies the distinction between LLM API provider and agent CLI provider.
 
-### No-Op Items (Already Implemented)
+### `cmd/ct/init_test.go`
 
-The following items from the prior brief were completed in commit 277b499. They are listed here to confirm verification, not to require new implementation:
+- [ ] Lines 493-501: Verify `TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars` still passes. The `removedEnvVars` list (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) is correct — these are removed provider env vars that ct init should not suggest setting. **No source change needed**, just verify the test passes.
 
-- [x] `builtins` var contains exactly one entry: opencode preset
-- [x] `InstrFile()` returns `"AGENTS.md"` when empty
-- [x] `ResolvePreset("")` falls back to opencode
-- [x] `NonInteractiveConfig.PrintFlag` removed
-- [x] `NonInteractiveConfig.AllowedToolsFlag` removed
-- [x] `ResumeStyle` type and constants removed
-- [x] `ContinueFlag` field removed
-- [x] `AddDirFlag` field removed
-- [x] `SupportsAddDir` field removed
-- [x] `buildClaudeCmd` deleted from session.go
-- [x] `claudePathFn` and `claudePath` deleted from session.go
-- [x] `AgentAliveUnderPIDIn` renamed (was `ClaudeAliveUnderPIDIn`)
-- [x] `IsAgentCmdline` only checks for `"opencode"`
-- [x] `IsClaudeCmdline` deleted
-- [x] `ensureCataractaeIntegrity` checks for AGENTS.md
-- [x] `drought_hooks.go` uses AGENTS.md
-- [x] `context.go` InstructionsFile comment simplified
-- [x] `provider.go` defaults to opencode
-- [x] `parse.go` defaults instructionsFile to AGENTS.md
-- [x] `providerInstallHint` only has opencode case
-- [x] `inferLLMProviderFromPreset` only has opencode→ollama case
-- [x] `checkInstructionsFileIntegrity` renamed (was `checkClaudeMdIntegrity`)
-- [x] `castellarius.go` `startupRequiredEnvVars` has no `usesClaude`
-- [x] `fakeclaude/` directory deleted
-- [x] `fakeagent/` comments cleaned up
-- [x] `.gitignore` no longer has `.claude/` entry
-- [x] `docker-entrypoint.sh` no longer has `~/.claude` symlink setup
-- [x] `LLMCaller` PrintFlag and AllowedToolsFlag removed
-- [x] `NewLLMCaller` PrintFlag and AllowedToolsFlag parameters removed
+### `internal/testutil/mockllm/mockllm.go`
 
-## What the Brief Is NOT
+- [ ] Lines 5-7: Update doc comment. Change `"Anthropic Messages API format"` to `"Anthropic Messages API format (for the LLM backend used by ct filter, not the agent CLI)"`. This clarifies that Anthropic here refers to the LLM API backend, not the claude CLI agent.
+- [ ] Line 19: Change `t.Setenv("ANTHROPIC_BASE_URL", mock.URL)` comment example to `t.Setenv("ANTHROPIC_BASE_URL", mock.URL) // or OPENAI_BASE_URL for OpenAI-compatible providers`. This shows both LLM backend options.
+- [ ] Line 87: Update the `handleMessages` comment from `"Anthropic"` to `"Anthropic Messages API"`. This is a technical API name, not a product reference.
 
-- It is NOT a full implementation. Do not write production code.
-- It is NOT a test file. Do not write test cases.
-- It IS a contract document that the implementer must satisfy and the reviewer must verify.
+### `cmd/ct/refine_test.go`
+
+- [ ] Line 50: The `{name: "anthropic", endpoint: "/v1/messages"}` test case is correct — it tests the Anthropic LLM API endpoint format. **Keep as-is**. Add a comment above line 45: `// These test the LLM API mock server endpoints (for ct filter), not the agent CLI provider.`
+
+### `cmd/ct/doctor_test.go`
+
+- [ ] Line 1021: Update comment from `agent provider=opencode but llm.provider=anthropic` to `agent provider=opencode but llm.provider=anthropic (LLM API mismatch, not agent CLI)`. Clarifies that "anthropic" is the LLM API provider, not the agent.
+- [ ] Line 1031: `provider: anthropic` in YAML is the LLM provider config, not the agent CLI. **Keep as-is** — this is a valid test scenario (opencode agent + anthropic LLM API).
+- [ ] Line 1654: Update comment from `opencode agent + anthropic LLM` to `opencode agent + anthropic LLM API`. Makes the LLM vs agent distinction clear.
+
+### `DESIGN_BRIEF.md`
+
+- [ ] Replace this entire file with the completed brief (i.e., this document supersedes the previous "Remove all non-opencode providers from core" brief which covered the Go source migration that has already been implemented).
+
+## Non-Go Files Already Clean (Verified)
+
+The following files were listed in the CONTEXT.md requirements but are already clean after the previous droplet's Go migration. No changes needed:
+
+- `README.md` — already documents opencode as the only provider. No CLAUDE.md, GEMINI.md, or multi-provider references found.
+- `.gitignore` — no `.claude/` entry found.
+- `docker-entrypoint.sh` — no `~/.claude` symlink or ANTHROPIC_API_KEY references.
+- `cataractae/delivery/INSTRUCTIONS.md` — no multi-provider InstructionsFile references; line 194 correctly says `AGENTS.md`.
+- `skills/cistern/SKILL.md` — no `~/.claude/.credentials.json` or ANTHROPIC_API_KEY references.
+- `skills/cistern/references/commands.md` — no CLAUDE.md or GEMINI.md references.
+- `skills/cistern/references/setup.md` — no multi-provider references; documents opencode-first setup.
+- `skills/cistern/references/troubleshooting.md` — no multi-provider references; mentions "provider credentials" generically.
+- `internal/skills/cistern-git/SKILL.md` — correctly says "AGENTS.md for opencode".
+- `ARCHITECTURE.md` — about web UI, no multi-provider references.
