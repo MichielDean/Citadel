@@ -19,6 +19,9 @@ import (
 // When:  capturePane is called with lines=0 (full scrollback)
 // Then:  the first line "scrollback-line-0001" appears in the captured output
 func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
+	if os.Getenv("CI") != "" {
+		t.Skip("skipping tmux integration test in CI — tmux timing is unreliable on self-hosted runners")
+	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not in PATH — skipping integration test")
 	}

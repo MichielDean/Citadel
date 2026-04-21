@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,7 +38,7 @@ func TestSPAHandler_ServesSubRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
-		defer resp.Body.Close()
+		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("GET %s: status = %d, want %d", path, resp.StatusCode, http.StatusOK)
@@ -98,10 +99,12 @@ func TestSPAHandler_InjectsAuthMetaTag(t *testing.T) {
 		t.Fatalf("GET /app/: status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	body := make([]byte, resp.ContentLength)
-	resp.Body.Read(body) //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 
-	if string(body) == "" {
+	if len(body) == 0 {
 		t.Fatal("response body is empty")
 	}
 
@@ -121,8 +124,10 @@ func TestSPAHandler_NoAuthMetaTagWithoutKey(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	body := make([]byte, resp.ContentLength)
-	resp.Body.Read(body) //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 
 	if contains(string(body), "cistern-auth") {
 		t.Error("index.html should NOT contain auth meta tag when no apiKey is configured")
@@ -149,6 +154,14 @@ func TestSPAHandler_SecurityHeadersOnIndexHTML(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("%s = %q, want %q", tc.header, got, tc.want)
 		}
+	}
+
+	csp := resp.Header.Get("Content-Security-Policy")
+	if !contains(csp, "connect-src 'self' ws://") {
+		t.Errorf("CSP connect-src should restrict WebSocket to same host, got: %s", csp)
+	}
+	if contains(csp, "connect-src 'self' ws:") && !contains(csp, "ws://") {
+		t.Errorf("CSP connect-src should not allow ws: wildcard, got: %s", csp)
 	}
 }
 
@@ -179,6 +192,61 @@ func stringContains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestSanitizeCSPHost(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"localhost:5737", "localhost:5737"},
+		{"127.0.0.1:8080", "127.0.0.1:8080"},
+		{"example.com", "example.com"},
+		{"host-with-hyphens.example.com", "host-with-hyphens.example.com"},
+		{"evil<script>", "evilscript"},
+		{"host;injection", "hostinjection"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		got := sanitizeCSPHost(tc.input)
+		if got != tc.want {
+			t.Errorf("sanitizeCSPHost(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestAuthMiddleware_WSPeekExempt(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := apiAuthMiddleware(okHandler, "test-key")
+
+	for _, path := range []string{"/ws/aqueducts/virgo/peek", "/ws/aqueducts/marcia/peek"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: status = %d, want %d (WS peek should be exempt from middleware auth)", path, w.Code, http.StatusOK)
+		}
+	}
+}
+
+func TestAuthMiddleware_WSNonPeekRequiresAuth(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := apiAuthMiddleware(okHandler, "test-key")
+
+	for _, path := range []string{"/ws/aqueducts/virgo", "/ws/aqueducts/virgo/stream", "/ws/aqueducts/"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("GET %s: status = %d, want %d (non-peek WS paths should require auth)", path, w.Code, http.StatusUnauthorized)
+		}
+	}
 }
 
 func TestAuthMiddleware_SPAExempt(t *testing.T) {
@@ -273,5 +341,61 @@ func TestAuthMiddleware_OptionsExempt(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("OPTIONS /api/droplets: status = %d, want %d (CORS preflight should be exempt)", w.Code, http.StatusOK)
+	}
+}
+
+func TestSPAHandler_ServesUnknownSubRoutesAsIndexHTML(t *testing.T) {
+	handler := newSPAHandler("")
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	for _, path := range []string{"/app/droplets/nonexistent-droplet-id", "/app/castellarious-typo"} {
+		resp, err := http.Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s: status = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		}
+
+		ct := resp.Header.Get("Content-Type")
+		if ct != "text/html; charset=utf-8" {
+			t.Errorf("GET %s: Content-Type = %q, want %q", path, ct, "text/html; charset=utf-8")
+		}
+	}
+}
+
+func TestSPAHandler_AssetsPathRequiresTrailingSlash(t *testing.T) {
+	handler := newSPAHandler("")
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/app/")
+	if err != nil {
+		t.Fatalf("GET /app/: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /app/: status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestSPAHandler_IndexHTMLHasNoCaching(t *testing.T) {
+	handler := newSPAHandler("")
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/app/")
+	if err != nil {
+		t.Fatalf("GET /app/: %v", err)
+	}
+	defer resp.Body.Close()
+
+	cc := resp.Header.Get("Cache-Control")
+	if cc != "no-cache" {
+		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
 	}
 }

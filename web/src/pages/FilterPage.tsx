@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { createFilterSession, resumeFilterSession, listFilterSessions, parseFilterMessages } from '../api/filter';
 import { ChatWindow } from '../components/ChatWindow';
 import { SpecPreview } from '../components/SpecPreview';
+import { useToast } from '../components/Toast';
 import type { FilterSession, FilterMessage } from '../api/types';
 
 export function FilterPage() {
+  const { addToast } = useToast();
   const [sessions, setSessions] = useState<FilterSession[]>([]);
   const [currentSession, setCurrentSession] = useState<FilterSession | null>(null);
   const [messages, setMessages] = useState<FilterMessage[]>([]);
@@ -18,8 +20,8 @@ export function FilterPage() {
   useEffect(() => {
     listFilterSessions()
       .then((s) => setSessions(s || []))
-      .catch(() => {});
-  }, []);
+      .catch((err) => { addToast(err instanceof Error ? err.message : 'Failed to load sessions', 'error'); });
+  }, [addToast]);
 
   const handleNewSession = useCallback(async () => {
     if (!newTitle.trim()) return;
@@ -36,13 +38,13 @@ export function FilterPage() {
       setShowNewSession(false);
       setNewTitle('');
       setNewDescription('');
-      listFilterSessions().then((s) => setSessions(s || [])).catch(() => {});
+      listFilterSessions().then((s) => setSessions(s || [])).catch((err) => { addToast(err instanceof Error ? err.message : 'Failed to refresh sessions', 'error'); });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
     } finally {
       setLoading(false);
     }
-  }, [newTitle, newDescription]);
+  }, [newTitle, newDescription, addToast]);
 
   const handleResumeSession = useCallback(async (session: FilterSession) => {
     setCurrentSession(session);
@@ -59,13 +61,13 @@ export function FilterPage() {
       const result = await resumeFilterSession(currentSession.id, message);
       setMessages((prev) => [...prev, { role: 'assistant', content: result.assistant_message }]);
       setCurrentSession((prev) => prev ? { ...prev, spec_snapshot: result.spec_snapshot, llm_session_id: result.llm_session_id } : prev);
-      listFilterSessions().then((s) => setSessions(s || [])).catch(() => {});
+      listFilterSessions().then((s) => setSessions(s || [])).catch((err) => { addToast(err instanceof Error ? err.message : 'Failed to refresh sessions', 'error'); });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
     } finally {
       setLoading(false);
     }
-  }, [currentSession]);
+  }, [currentSession, addToast]);
 
   const handleAccept = useCallback(() => {
     if (!currentSession) return;

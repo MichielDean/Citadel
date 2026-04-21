@@ -3,6 +3,7 @@ import type { DropletIssue } from '../api/types';
 import { IssueCard } from './IssueCard';
 import { IssueFilters } from './IssueFilters';
 import { ModalOverlay } from './ModalOverlay';
+import { SkeletonLine } from './LoadingSkeleton';
 
 interface IssuesListProps {
   issues: DropletIssue[];
@@ -44,7 +45,7 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
   }, [issues, statusFilter, roleFilter, sortOrder]);
 
   if (loading) {
-    return <div className="text-center py-4 text-cistern-muted font-mono text-sm">Loading issues…</div>;
+    return <div className="space-y-3 p-4"><SkeletonLine width="100%" /><SkeletonLine width="80%" /><SkeletonLine width="90%" /></div>;
   }
 
   const openActionModal = (issue: DropletIssue, mode: 'resolve' | 'reject') => {

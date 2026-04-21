@@ -877,6 +877,176 @@ func TestWsTui_WSReaderReadDeadlineExitsOnPartition(t *testing.T) {
 	runtime.KeepAlive(client)
 }
 
+// TestWsPeek_InBandAuth_RejectsNoAuth verifies that when an API key is
+// configured, a WS peek connection that does not send a valid auth message
+// is closed. The server waits up to 5 seconds for the auth frame, then
+// closes with 4001.
+func TestWsPeek_InBandAuth_RejectsNoAuth(t *testing.T) {
+	mux := newDashboardMux(tempCfgWithAPIKey(t, "test-secret"), tempDB(t))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	key := "dGhlIHNhbXBsZSBub25jZQ=="
+	fmt.Fprintf(conn, "GET /ws/aqueducts/virgo/peek HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", key)
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read handshake response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Send a binary frame (not text) — the server expects a text auth message.
+	binaryFrame := maskedTextFrame([]byte("garbage"))
+	binaryFrame[0] = 0x82 // change opcode from text (0x81) to binary (0x82)
+	if _, err := conn.Write(binaryFrame); err != nil {
+		t.Fatal(err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	header := make([]byte, 2)
+	_, err = io.ReadFull(br, header)
+	if err != nil {
+		t.Fatalf("expected close frame from server, got error: %v", err)
+	}
+	if header[0]&0x0F != wsOpcodeClose {
+		t.Errorf("expected close opcode 0x8, got 0x%x", header[0]&0x0F)
+	}
+}
+
+// TestWsPeek_InBandAuth_RejectsBadCredentials verifies that when an API key is
+// configured, a WS peek connection that sends a wrong token is closed with code 4001.
+func TestWsPeek_InBandAuth_RejectsBadCredentials(t *testing.T) {
+	mux := newDashboardMux(tempCfgWithAPIKey(t, "test-secret"), tempDB(t))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	key := "dGhlIHNhbXBsZSBub25jZQ=="
+	fmt.Fprintf(conn, "GET /ws/aqueducts/virgo/peek HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", key)
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read handshake response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Send auth message with wrong token.
+	authMsg := `{"type":"auth","token":"wrong-key"}`
+	maskedFrame := maskedTextFrame([]byte(authMsg))
+	if _, err := conn.Write(maskedFrame); err != nil {
+		t.Fatal(err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	header := make([]byte, 2)
+	_, err = io.ReadFull(br, header)
+	if err != nil {
+		t.Fatalf("expected close frame from server, got error: %v", err)
+	}
+	if header[0]&0x0F != wsOpcodeClose {
+		t.Errorf("expected close opcode 0x8, got 0x%x", header[0]&0x0F)
+	}
+}
+
+// TestWsPeek_InBandAuth_AcceptsValidToken verifies that when an API key is
+// configured, a WS peek connection that sends a correct auth token proceeds
+// to stream data.
+func TestWsPeek_InBandAuth_AcceptsValidToken(t *testing.T) {
+	mux := newDashboardMux(tempCfgWithAPIKey(t, "test-secret"), tempDB(t))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	key := "dGhlIHNhbXBsZSBub25jZQ=="
+	fmt.Fprintf(conn, "GET /ws/aqueducts/virgo/peek HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", key)
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read handshake response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Send auth message with correct token.
+	authMsg := `{"type":"auth","token":"test-secret"}`
+	maskedFrame := maskedTextFrame([]byte(authMsg))
+	if _, err := conn.Write(maskedFrame); err != nil {
+		t.Fatal(err)
+	}
+
+	// Server should now stream data (session not active message).
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	payload, err := readWSTextFrame(br)
+	if err != nil {
+		t.Fatalf("expected data frame after auth, got error: %v", err)
+	}
+	if payload != "session not active" {
+		t.Errorf("payload = %q, want %q", payload, "session not active")
+	}
+}
+
+// TestWsPeek_NoAuthRequired verifies that when no API key is configured, a WS
+// peek connection proceeds without sending an auth message.
+func TestWsPeek_NoAuthRequired(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	br, conn := wsDialPeek(t, srv, "virgo")
+	defer conn.Close()
+
+	payload, err := readWSTextFrame(br)
+	if err != nil {
+		t.Fatalf("read WS frame: %v", err)
+	}
+	if payload != "session not active" {
+		t.Errorf("payload = %q, want %q", payload, "session not active")
+	}
+}
+
+// maskedTextFrame constructs a masked WebSocket text frame with the given payload.
+func maskedTextFrame(payload []byte) []byte {
+	n := len(payload)
+	var frame []byte
+	frame = append(frame, 0x81) // FIN + text opcode
+	var maskKey [4]byte         // all zeros — no-op XOR, sufficient for testing
+	switch {
+	case n < 126:
+		frame = append(frame, 0x80|byte(n)) // masked + length
+	case n < 65536:
+		frame = append(frame, 0x80|0x7E) // masked + 126
+		var ext [2]byte
+		binary.BigEndian.PutUint16(ext[:], uint16(n))
+		frame = append(frame, ext[:]...)
+	default:
+		frame = append(frame, 0x80|0x7F) // masked + 127
+		var ext [8]byte
+		binary.BigEndian.PutUint64(ext[:], uint64(n))
+		frame = append(frame, ext[:]...)
+	}
+	frame = append(frame, maskKey[:]...)
+	frame = append(frame, payload...)
+	return frame
+}
+
 // TestWsPeek_ReaderGoroutine_ExitsOnConnClose verifies that the peek handler's
 // reader goroutine exits and calls cancel() when the underlying connection is
 // closed without a WebSocket close frame, mirroring the /ws/tui behaviour in
@@ -1149,6 +1319,24 @@ func TestDashboardHTML_EscHint(t *testing.T) {
 		{"preventDefault()", "preventDefault to suppress browser default Escape behavior"},
 		{"stopPropagation()", "stopPropagation to prevent double-send"},
 		{"capture", "capture:true to intercept before xterm.js"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(dashboardHTML, c.want) {
+			t.Errorf("dashboardHTML must contain %s (%q)", c.desc, c.want)
+		}
+	}
+}
+
+// TestDashboardHTML_NewUILink verifies that the "New UI" link to /app/ is
+// present in the xterm.js TUI dashboard HTML.
+func TestDashboardHTML_NewUILink(t *testing.T) {
+	checks := []struct {
+		want string
+		desc string
+	}{
+		{`id="new-ui-hint"`, "new-ui-hint element"},
+		{`href="/app/"`, "link target /app/"},
+		{"New UI", "link label"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(dashboardHTML, c.want) {

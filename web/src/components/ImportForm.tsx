@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useRepos } from '../hooks/useApi';
 import { importIssue, fetchImportPreview } from '../api/import';
+import { SkeletonLine } from './LoadingSkeleton';
 import type { Droplet, ImportRequest } from '../api/types';
 
 const COMPLEXITY_OPTIONS = [
@@ -115,7 +116,7 @@ export function ImportForm({ onSuccess }: ImportFormProps) {
       <div>
         <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Repo *</label>
         {reposLoading ? (
-          <div className="text-sm text-cistern-muted font-mono">Loading repos…</div>
+          <SkeletonLine width="100%" />
         ) : (
           <select
             value={repo}

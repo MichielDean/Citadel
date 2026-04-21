@@ -1,75 +1,54 @@
-# Design Brief: Web UI — Droplet creation, edit, and issues
+# Design Brief: Web UI — Integration, routing, and peek
 
 ## Requirements Summary
 
-Build the droplet creation form (`/app/droplets/new`), enhanced metadata editing with diff confirmation on the detail page, a rename quick-action with inline editing, full issue management (filing, resolving, rejecting, filtering, sorting), and close/reopen actions with confirmation dialogs. This completes the CRUD surface for droplets in the Cistern web UI.
+Wire the React SPA into the Go server (verify the existing integration is complete and add missing pieces), establish all routing with proper 404 and error boundaries, add the live session peek viewer with search and auto-scroll toggle, finalize navigation links between old and new UI, add polish components (ErrorBoundary, LoadingSkeleton, Toast system, network status indicator), add keyboard navigation (focus management, Escape to close, command palette stretch goal), make the layout responsive for mobile, and add missing test coverage. The Go server integration and SPA handler already exist — this brief covers completion, polish, and testing.
 
 ## Existing Patterns to Follow
 
-### React / Component Patterns
+### ORM / Query
 
-- **Functional components only.** Every component in `web/src/components/` and `web/src/pages/` is a named export from a functional component — see `StatusBadge.tsx:14`, `ActionDialog.tsx:16`, `AddNoteModal.tsx:11`, `RestartModal.tsx:12`, `EditMetadataModal.tsx:12`, `IssuesList.tsx:13`.
-- **Named exports**, not default exports. Every component uses `export function ComponentName` — see `DropletDetail.tsx:26`, `DropletsList.tsx:23`, `AddNoteModal.tsx:11`, `StatusBadge.tsx:14`.
-- **Barrel re-exports** from `web/src/components/index.ts` — every component is re-exported there. New components must be added to this file.
-- **Props as typed interface** defined immediately before the component function — see `ActionDialog.tsx:4-14`, `AddNoteModal.tsx:4-9`, `EditMetadataModal.tsx:6-10`, `IssuesList.tsx:6-11`.
-
-### API / Data Fetching
-
-- **`apiFetch<T>` helper** at `web/src/hooks/useApi.ts:18-29` wraps `fetch` with auth headers, error handling (`API error ${status}: ${body}`), and 204 handling. ALL API calls use this helper.
-- **`useXxx` hooks** return `{ data, loading, error }` for reads — see `useDroplets`, `useDroplet`, `useDropletIssues`, `useDropletDependencies`, `useRepos`, `useRepoSteps`.
-- **Mutation functions** are standalone async exports (not hooks) for one-shot operations — see `addNote`, `editDroplet`, `createDroplet`, `addIssue`, `resolveIssue`, `rejectIssue`, `addDependency`, `removeDependency` in `web/src/hooks/useApi.ts:300-354`.
-- **`useDropletMutation`** hook at `web/src/hooks/useApi.ts:250-263` wraps action POSTs (`pass`, `recirculate`, `pool`, etc.) with `mutate(id, action, body?)`.
-- **Type definitions** live in `web/src/api/types.ts`. Every API response and request body is typed as an `interface` with snake_case for JSON fields (matching Go backend JSON tags) and camelCase in TypeScript — see `DropletIssue.flagged_by`, `CreateDropletRequest.depends_on`.
-
-### Styling / UI
-
-- **Tailwind CSS** with custom `cistern-*` color tokens — `cistern-bg`, `cistern-surface`, `cistern-border`, `cistern-fg`, `cistern-muted`, `cistern-accent`, `cistern-green`, `cistern-red`, `cistern-yellow`. See `StatusBadge.tsx:7-12`, `IssuesList.tsx:68-71`, `ActionDialog.tsx:53-54`.
-- **Font:** `font-mono` used for IDs, labels, headings, and badges throughout — see `DropletDetail.tsx:113`, `IssuesList.tsx:73`.
-- **Modal overlay pattern:** `fixed inset-0 bg-black/60 flex items-center justify-center z-50` for backdrop, `bg-cistern-surface border border-cistern-border rounded-lg p-6 max-w-md w-full mx-4` for modal body, `onClick={onClose}` on backdrop, `onClick={(e) => e.stopPropagation()}` on modal body — see `ActionDialog.tsx:52-53`, `AddNoteModal.tsx:43-44`, `RestartModal.tsx:44-45`, `EditMetadataModal.tsx:53-54`, `IssuesList.tsx:99-100`, `DropletDetail.tsx:296-298`.
-- **Form input styling:** `bg-cistern-bg border border-cistern-border rounded px-2 py-1.5 text-sm text-cistern-fg` for inputs, `resize-y min-h-[80px]` for textareas — see `AddNoteModal.tsx:49-50`, `EditMetadataModal.tsx:86-89`, `IssuesList.tsx:104-107`.
-- **Button styles:** primary = `bg-cistern-accent text-cistern-bg font-medium disabled:opacity-50`, secondary/cancel = `border border-cistern-border text-cistern-muted hover:text-cistern-fg`, danger = `bg-cistern-red text-white` — see `ActionDialog.tsx:95-102`, `AddNoteModal.tsx:55-56`, `IssuesList.tsx:310`.
-- **Label styling:** `block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1` — see `EditMetadataModal.tsx:59`, `ActionDialog.tsx:61`, `RestartModal.tsx:52`.
-- **Section card pattern:** `bg-cistern-surface border border-cistern-border rounded-lg p-4` — see `DropletDetail.tsx:160`, `181`, `190`, `209`.
-- **Section heading:** `text-sm font-mono text-cistern-muted uppercase tracking-wider mb-3` or `mb-2` — see `DropletDetail.tsx:161`, `184`, `192`.
-
-### Routing
-
-- **React Router v6** with `createBrowserRouter` in `web/src/main.tsx:11-24`. New route: `{ path: 'droplets/new', element: <CreateDroplet /> }` as a child of the `/app` layout.
-- Routes are defined as a flat array of relative paths — see `main.tsx:16-23`.
-
-### Error Handling
-
-- **API errors:** `apiFetch` throws `Error('API error ${status}: ${body}')` — `useApi.ts:24`. Components catch and display as `text-sm text-cistern-red font-mono` — see `EditMetadataModal.tsx:94`, `AddNoteModal.tsx:54`, `IssuesList.tsx:109`, `DropletDetail.tsx:268-289`.
-- **Loading states:** `text-center py-4 text-cistern-muted font-mono text-sm` with ellipsis — see `IssuesList.tsx:29`, `DependenciesList.tsx:43-44`, `DropletDetail.tsx:91-94`.
-- **Empty states:** `text-center py-4 text-cistern-muted font-mono text-sm` — see `IssuesList.tsx:62`.
-
-### State Management in Components
-
-- **Modal pattern:** `const [showXxxModal, setShowXxxModal] = useState(false)` in the parent, passed as `open`/`onClose` props — see `DropletDetail.tsx:50-53`, `EditMetadataModal.tsx:8-9`.
-- **Form reset on open:** `useEffect` that resets form state when `open` flips to `true` — see `EditMetadataModal.tsx:20-29`, `AddNoteModal.tsx:16-22`, `RestartModal.tsx:17-24`, `ActionDialog.tsx:22-29`.
-- **Submitting guard:** `const [submitting, setSubmitting] = useState(false)` with `disabled={submitting}` on submit button — universal pattern.
+Not applicable — no database changes in this feature.
 
 ### Naming Conventions
 
-- **Files:** PascalCase component files matching component name — `EditMetadataModal.tsx`, `AddNoteModal.tsx`, `ActionDialog.tsx`, `RestartModal.tsx`, `IssuesList.tsx`, `StatusBadge.tsx`.
-- **Component names:** PascalCase matching filename — `EditMetadataModal`, `AddNoteModal`, `ActionDialog`.
-- **Hooks:** `useXxx` prefix — `useDroplets`, `useDroplet`, `useDropletIssues`, `useSearchDroplets`.
-- **API function names:** camelCase verbs — `addNote`, `editDroplet`, `createDroplet`, `addIssue`, `resolveIssue`.
+- **Go files:** `snake_case.go` matching the command or feature — `dashboard_web.go`, `dashboard_web_spa.go`, `dashboard_web_test.go`.
+- **Go test functions:** `TestXxx_YyyScenario` — see `TestDashboardWebMux_RootServesHTML` at `dashboard_web_test.go:24`, `TestSPAHandler_ServesIndexHTML` at `dashboard_web_spa_test.go:9`, `TestSPAHandler_InjectsAuthMetaTag` at `dashboard_web_spa_test.go:86`.
+- **Go test helpers:** `tempCfg(t)`, `tempDB(t)` at `dashboard_test.go:21-31`. Use `t.Helper()` — see `dashboard_test.go:22`.
+- **React component files:** `PascalCase.tsx` matching the component name — see `PeekPanel.tsx`, `Header.tsx`, `Sidebar.tsx`, `ModalOverlay.tsx`.
+- **React component names:** Named export `export function ComponentName` — see `DropletDetail.tsx:30`, `PeekPanel.tsx:10`, `Header.tsx:9`.
+- **React hooks:** `useXxx` prefix — see `useDashboardEvents.ts:11`, `useAuth.ts:34`, `useApi.ts:19`.
+- **Unexported Go structs:** Unexported fields only. See `aqueductSessionInfo` at `dashboard_web.go:113-118` (`sessionID`, `dropletID`, `title`, `elapsed` — all unexported). See `spaHandler` at `dashboard_web_spa.go:15-18` (`indexHTML`, `assetsFileServer` — unexported).
+- **Do not shadow Go builtins:** `min`, `max`, `any`.
+
+### Error Handling
+
+- **Go:** `fmt.Errorf("pkg: context: %w", err)` for wrapping. `slog.Error`/`slog.Warn` for operational errors. See `dashboard_web.go:388` (Origin validation wraps errors), `dashboard_web.go:823` (log.Println for missing API key). For 500 responses, sanitize to "internal error" — see `writeAPIError` at `dashboard_web.go:1196-1203`.
+- **React:** `apiFetch<T>` throws `Error('API error ${status}: ${body}')` — see `shared.ts:9`. Components catch and display as `text-sm text-cistern-red font-mono` — see `DropletDetail.tsx:96`.
 
 ### Collection Types
 
-- Arrays are used throughout — `Droplet[]`, `DropletIssue[]`, `DropletDependency[]`, `CataractaeNote[]`, `string[]` (for steps). No `Set` or `Map` usage in frontend code.
+- **Go:** Slices throughout — `[]CataractaeInfo`, `[]FlowActivity`, `[]*cistern.Droplet`. Maps for lookups — `map[string]string` for `blockedByMap` at `dashboard.go:69`.
+- **React:** Arrays — `Droplet[]`, `DropletIssue[]`, `string[]`. No `Set` or `Map` in frontend code — see `Dashboard.tsx:39` uses `new Set()` only for lookup purposes within a render.
+
+### Migrations
+
+Not applicable — no database schema changes.
+
+### Idiom Fit
+
+- **SPA handler:** The existing `spaHandler` at `dashboard_web_spa.go:15` uses constructor injection via `newSPAHandler(apiKey)` — no package-level mutable state. All new Go code must follow this pattern.
+- **Embedded FS:** `embed.FS` pattern already established — `//go:embed assets/static` at `dashboard_web.go:42` and `//go:embed assets/web` at `dashboard_web_spa.go:11`. Build output goes to `cmd/ct/assets/web/`.
+- **Vite config:** `base: '/app/'` at `vite.config.ts:6`, `outDir: '../cmd/ct/assets/web'` at `vite.config.ts:8`. No changes needed to these — the build pipeline is already correct.
+- **Tests:** Use `httptest.NewServer` and `httptest.NewRecorder` — see `dashboard_web_spa_test.go:11`, `dashboard_web_test.go:27`. `t.Helper()` in test helpers — see `dashboard_test.go:22`.
+- **React state:** All state lives in component `useState` or hooks. No shared mutable package-level state — see `DashboardContext.tsx:17` (provider wraps hook, no module-level state).
+- **Constructor pattern:** `newSPAHandler(apiKey string) *spaHandler` at `dashboard_web_spa.go:20` — eager initialization, fully usable after construction. All new Go structs must follow this. No `SetXxx` mutation methods, no `initClient()` pattern.
 
 ### Testing
 
-- **Vitest** with `@testing-library/react` and `@testing-library/jest-dom` — `web/vitest.config.ts`, `web/package.json:10,29-32`.
-- **Setup file:** `web/src/test/setup.ts:1` imports `@testing-library/jest-dom`.
-- **Test location:** `web/src/__tests__/` with `.tsx` or `.ts` extensions matching the component name — e.g., `EditMetadataModal.test.tsx`, `ActionDialog.test.tsx`, `RestartModal.test.tsx`, `useApi.test.ts`.
-- **Test pattern:** `describe('ComponentName', () => { ... })` with `it('description', ...)` — see `EditMetadataModal.test.tsx:29`, `ActionDialog.test.tsx:5`, `RestartModal.test.tsx:22`.
-- **Mock fetch pattern:** `mockFetch` helper returning `{ ok, status, json(), text() }` — see `EditMetadataModal.test.tsx:20-27`, `useApi.test.ts:24-31`.
-- **BeforeEach/afterEach:** `localStorage.clear()` + `vi.restoreAllMocks()` — universal pattern in test files.
-- **Last fetch body helper:** `getLastFetchBody()` in `RestartModal.test.tsx:14-20`.
-- **Imports:** `import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'` and `import { render, screen, fireEvent, act } from '@testing-library/react'`.
+- **Go tests:** `dashboard_web_spa_test.go` uses `httptest.NewServer(handler)` then `http.Get(server.URL + "/app/")` — see line 11-14. Table-driven tests — see `dashboard_web_test.go:565-587` (cross-origin test cases). Test helpers `tempCfg`, `tempDB` at `dashboard_test.go:21-31`.
+- **React tests:** Vitest with `@testing-library/react` and `jsdom` environment — `vitest.config.ts:10`. `describe('ComponentName', () => { it('description') })` — see `PeekPanel.test.ts:4`. Mock fetch pattern — see `useApi.test.ts`. `beforeEach/afterEach` with `localStorage.clear()` + `vi.restoreAllMocks()` — universal pattern.
+- **React test location:** `web/src/__tests__/ComponentName.test.tsx` — see existing 39 test files in `web/src/__tests__/`.
 
 ## Reusability Requirements
 
@@ -77,72 +56,76 @@ Build the droplet creation form (`/app/droplets/new`), enhanced metadata editing
 
 | Component | Reusable? | Reason |
 |-----------|-----------|--------|
-| `CreateDropletForm.tsx` | Yes — used by the page route | Form logic encapsulated; page just renders it |
-| `ComplexitySelector.tsx` | Yes — used by both `CreateDropletForm` and `EditMetadataModal` | Same radio group pattern for complexity in both create and edit contexts |
-| `RenameInput.tsx` | Specific to `DropletDetail` | Inline editable title is detail-page only |
-| `FileIssueModal.tsx` | Yes — replaces inline `FileIssueButton` in `DropletDetail.tsx:263-317` | Extract the existing inline modal into a proper component |
-| `IssueCard.tsx` | Yes — used by `IssuesList` | Card rendering for a single issue |
-| `IssueFilters.tsx` | Yes — used by `IssuesList` | Filter/sort controls extracted from `IssuesList` |
-| `CloseModal.tsx` | Specific to `DropletDetail` | Confirmation dialog for close action |
-| `ReopenModal.tsx` | Specific to `DropletDetail` | Confirmation dialog for reopen action |
+| `ErrorBoundary.tsx` | Yes — wraps the entire app | Catches render errors anywhere in the component tree |
+| `LoadingSkeleton.tsx` | Yes — used by every page on initial load | Multiple card/row variants reuse the same animation |
+| `Toast.tsx` | Yes — replaces inline `showToast` per page | Currently duplicated in `CastellariusPage.tsx:6-9` |
+| `NetworkStatusBar.tsx` | Yes — shows in `Header` | Already partially exists as the green/red dot in `Header.tsx:33-37` |
+| `TerminalView.tsx` | Specific to `PeekPanel` | Monospace renderer is peek-specific but could be reused if a log viewer needed it |
+| `NotFoundPage.tsx` | Yes — React Router catch-all | Generic 404 for all unknown `/app/*` routes |
+| `CommandPalette.tsx` | Yes — global keyboard shortcut | Stretch goal; would be invoked from `AppLayout` |
 
-### ComplexitySelector — must be shared
+### Toast — must be extracted
 
-The complexity radio group appears in both `CreateDropletForm` and `EditMetadataModal`. The current `EditMetadataModal` uses a raw number input for complexity (`EditMetadataModal.tsx:80-82`). The enhanced version must replace this with a shared `ComplexitySelector` component that includes stage visualization. Both `CreateDropletForm` and `EditMetadataModal` must import and render the same `ComplexitySelector`.
+The `showToast` pattern with timer-based auto-dismiss appears in `CastellariusPage.tsx:6-25` (inline `Toast` interface + `showToast` callback + `toastTimerRef`). The requirements specify toast notifications for all API errors, which means every page will need this. Extract to a shared component and context:
+
+```tsx
+// web/src/context/ToastContext.tsx
+// Wraps the app, provides useToast() hook
+```
+
+See the inline pattern at `CastellariusPage.tsx:6-24` for the exact behavior (3-second auto-dismiss, replaces previous toast, timer cleanup on unmount).
+
+### LoadingSkeleton — must be parameterized
+
+The requirements specify "skeleton screens for initial page loads (matching the dark theme)". The existing loading pattern is `text-center py-4 text-cistern-muted font-mono text-sm` with "Loading..." — see `DropletDetail.tsx:104-107`, `IssuesList.tsx:29`. The skeleton must accept a `variant` prop (`card`, `row`, `table`) to match different page sections.
 
 ## Coupling Requirements
 
-- No shared mutable package-level state. All state lives in React component state or hooks.
-- API hooks (`useApi.ts`) are the single source of truth for data fetching. New mutation functions (`renameDroplet`, `closeDroplet`, `reopenDroplet`) must follow the existing standalone async function pattern (like `editDroplet`, `addNote`) — not wrapped in a hook unless they need reactive state.
-- `ComplexitySelector` must accept its value and onChange as props, not fetch pipeline steps internally. The parent provides steps data (already available via `useRepoSteps` in `DropletDetail`).
+- No shared mutable package-level state in Go or React.
+- `ToastContext` must be a React context wrapping `AppLayout`, not a module-level singleton. Toast state lives in `useState` inside the provider — see `DashboardContext.tsx:17-25` for the established context pattern.
+- `ErrorBoundary` must be a class component (React requirement — `componentDidCatch`), wrapping `<RouterProvider>` in `main.tsx`. It does not depend on any context.
+- `LoadingSkeleton` accepts `variant` and optional `count` props — no dependency on data shapes.
+- `NetworkStatusBar` reads `connected` from `DashboardContext` — already available in `AppLayoutInner` at `App.tsx:26`.
+- `CommandPalette` (stretch goal) accepts `onSelect` callback — no dependency on specific routes or actions.
 
 ## DRY Requirements
 
-### Modal overlay pattern (5+ occurrences)
+### Toast pattern (1 explicit occurrence, N pending)
 
-The backdrop + centered card pattern appears in:
-1. `web/src/components/ActionDialog.tsx:52-53`
-2. `web/src/components/AddNoteModal.tsx:43-44`
-3. `web/src/components/RestartModal.tsx:44-45`
-4. `web/src/components/EditMetadataModal.tsx:53-54`
-5. `web/src/components/IssuesList.tsx:99-100`
+The `showToast` + auto-dismiss timer pattern appears in:
+1. `web/src/pages/CastellariusPage.tsx:6-25` (inline `Toast` interface, `showToast` callback, `toastTimerRef`)
 
-Extract a `ModalOverlay` component:
-```tsx
-interface ModalOverlayProps {
-  open: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-}
-```
-Replace the `fixed inset-0 bg-black/60 ...` pattern in all 5 locations plus all new modals (CloseModal, ReopenModal, FileIssueModal).
+With the requirement that "toast notifications for all API errors" appear everywhere, every page would duplicate this pattern without extraction. Extract:
+- `web/src/context/ToastContext.tsx` — provider + `useToast()` hook
+- `web/src/components/Toast.tsx` — render component (fixed at bottom-right, auto-dismiss)
+- Replace the inline pattern in `CastellariusPage.tsx:6-25`
 
-### Form state reset pattern (5+ occurrences)
+### Loading/empty state pattern (5+ occurrences)
 
-The `useEffect(() => { if (open) { reset state... } }, [open])` pattern appears in:
-1. `web/src/components/EditMetadataModal.tsx:20-29`
-2. `web/src/components/AddNoteModal.tsx:16-22`
-3. `web/src/components/RestartModal.tsx:17-24`
-4. `web/src/components/ActionDialog.tsx:22-29`
-5. `web/src/components/IssuesList.tsx:269-275` (inline in `FileIssueButton`)
+The "Loading..." text pattern appears in:
+1. `web/src/pages/DropletDetail.tsx:104-107`
+2. `web/src/components/IssuesList.tsx:29`
+3. `web/src/components/DependenciesList.tsx:43-44`
+4. `web/src/pages/Dashboard.tsx:33-35`
+5. `web/src/components/DropletTable.tsx` (spinner pattern)
 
-This pattern is acceptable as-is — each component has different state to reset. Do NOT extract a generic hook; the DRY violation is in the modal overlay JSX, not the reset logic.
+Each currently renders a plain "Loading..." string. The `LoadingSkeleton` component replaces these with animated placeholder rectangles matching the dark theme. The component does NOT replace the `useApi` hook loading states — it's purely a presentational component that receives `loading: boolean` and renders skeleton or children.
 
-### Error display pattern
+### PeekPanel auto-scroll + search (new feature, no existing duplication)
 
-The `text-sm text-cistern-red font-mono` error display appears in every modal. This is a minor pattern but not a named helper candidate — it's a single className string, not 5+ lines of repeated code.
+The current `PeekPanel.tsx:59-63` auto-scrolls unconditionally via `scrollTop = scrollHeight`. The requirements add:
+- Toggle auto-scroll (pin/unpin button)
+- Search within peek output
 
-### Flagged-by color mapping
+These are additions to the existing component, not a new component, because the peek viewer is entity-specific to aqueduct monitoring.
 
-The `flagged_by` badge in `IssuesList.tsx:73` currently renders `issue.flagged_by` as plain text with `text-cistern-accent`. The requirements specify color-coded badges by role. Extract a `flaggedByBadgeColor(flagged_by: string): string` utility if more than 2 locations need it (currently only `IssuesList.tsx` renders this). Since the enhanced `IssueCard` and `FileIssueModal` will also display flagged-by, extract it as a utility:
-```ts
-// web/src/utils/issueColors.ts
-export function flaggedByBadgeClasses(flaggedBy: string): string { ... }
-```
+### Header network status (partial duplication)
+
+The `Header.tsx:33-37` already shows a green/red connection dot with "Live"/"Disconnected" text. The requirements add "Network status indicator in the header" with auto-reconnect display. Enhance the existing `Header` component rather than creating a separate `NetworkStatusBar`. The current `connected` prop from `DashboardContext` already drives this.
 
 ## Migration Requirements
 
-Not applicable — this is a frontend-only change. No database migrations are involved.
+Not applicable — no database changes.
 
 ## Test Requirements
 
@@ -150,90 +133,146 @@ Not applicable — this is a frontend-only change. No database migrations are in
 
 | Test file | What it covers |
 |-----------|----------------|
-| `web/src/__tests__/CreateDropletForm.test.tsx` | Renders form with repo dropdown, validates title required + repo required, submits `createDroplet()` with correct payload, cancels navigation, shows loading state |
-| `web/src/__tests__/ComplexitySelector.test.tsx` | Renders three radio options, shows pipeline stages for each complexity level, calls onChange with selected value |
-| `web/src/__tests__/RenameInput.test.tsx` | Shows title as text, switches to input on click, saves on Enter, cancels on Escape, calls `renameDroplet()` API |
-| `web/src/__tests__/FileIssueModal.test.tsx` | Opens/closes, validates description required, submits `addIssue()` with flagged_by, shows error on failure |
-| `web/src/__tests__/IssueCard.test.tsx` | Renders issue with all fields, shows resolve/reject buttons for open issues, shows evidence for resolved/rejected, opens resolve modal, opens reject modal |
-| `web/src/__tests__/IssueFilters.test.tsx` | Toggles open/all filter, filters by flagged_by role dropdown, sorts newest/oldest |
-| `web/src/__tests__/CloseModal.test.tsx` | Opens/closes, shows confirmation warning, calls close API on confirm |
-| `web/src/__tests__/ReopenModal.test.tsx` | Opens/closes, shows confirmation, calls reopen API on confirm |
-| `web/src/__tests__/ModalOverlay.test.tsx` | Renders nothing when `open=false`, renders children when `open=true`, calls `onClose` on backdrop click, does not call `onClose` on content click |
+| `web/src/__tests__/ErrorBoundary.test.tsx` | Catches render errors, displays fallback UI, does not crash app |
+| `web/src/__tests__/LoadingSkeleton.test.tsx` | Renders card/row/table variants, applies pulse animation, hides when loading=false |
+| `web/src/__tests__/Toast.test.tsx` | Renders toast message, auto-dismisses after 3s, replaces previous toast |
+| `web/src/__tests__/NotFoundPage.test.tsx` | Renders 404 message, shows link back to dashboard |
+| `web/src/__tests__/TerminalView.test.tsx` | Renders monospace text lines, handles empty input, respects max buffer size |
+| `cmd/ct/dashboard_web_integration_test.go` | Verifies /app/ serves index.html, /app/assets/ serves assets, / redirects to xterm, /api/ endpoints still work, /app/unknown serves index.html for client routing |
 
 ### Updated test files
 
 | Test file | What changes |
 |-----------|-------------|
-| `web/src/__tests__/EditMetadataModal.test.tsx` | Add test for diff confirmation display before save, test that `ComplexitySelector` renders instead of raw number input |
-| `web/src/__tests__/useApi.test.ts` | Add tests for `renameDroplet`, `closeDroplet`, `reopenDroplet` mutation functions |
+| `web/src/__tests__/PeekPanel.test.ts` | Add tests for auto-scroll toggle, search within output |
+| `web/src/__tests__/DashboardContext.test.ts` | Add test for network status propagation to Header |
+| `web/src/__tests__/useAuth.test.ts` | Add test for 401 redirect interceptor pattern |
+| `cmd/ct/dashboard_web_spa_test.go` | Add test for CSP header on index.html (already partially tested), add test for /app/unknown falling back to index.html |
 
 ### Specific test cases
 
-- `CreateDropletForm.test.tsx`: `it('shows validation error when title is empty on submit')`, `it('shows validation error when repo is empty on submit')`, `it('submits createDroplet with correct payload and redirects')`, `it('cancels and navigates back to droplets list')`, `it('renders repo dropdown from useRepos')`, `it('renders complexity selector with pipeline stage descriptions')`, `it('shows dependencies multi-select with type-ahead search')`
-- `ComplexitySelector.test.tsx`: `it('renders three complexity options with stage descriptions')`, `it('calls onChange when selecting a complexity level')`, `it('shows standard pipeline stages for complexity 1')`, `it('shows full pipeline stages for complexity 2')`, `it('shows critical pipeline stages for complexity 3')`
-- `RenameInput.test.tsx`: `it('renders title as text by default')`, `it('switches to input mode on click')`, `it('saves on Enter key')`, `it('cancels on Escape key')`, `it('saves on blur')`, `it('calls renameDroplet API on save')`
-- `FileIssueModal.test.tsx`: `it('does not submit when description is empty')`, `it('submits addIssue with description and flagged_by')`, `it('shows default flagged_by as empty/all')`, `it('displays error on API failure')`
-- `CloseModal.test.tsx`: `it('calls useDropletMutation mutate with close action')`, `it('displays confirmation warning text')`
-- `ReopenModal.test.tsx`: `it('calls useDropletMutation mutate with reopen action')`, `it('displays confirmation text')`
+- `ErrorBoundary.test.tsx`: `it('catches render error and displays fallback')`, `it('does not crash sibling components')`, `it('provides retry button in fallback')`
+- `LoadingSkeleton.test.tsx`: `it('renders card skeleton with pulse animation')`, `it('renders row skeleton')`, `it('renders table skeleton with multiple rows')`, `it('renders nothing when loading is false')`
+- `Toast.test.tsx`: `it('displays toast message')`, `it('auto-dismisses after timeout')`, `it('replaces previous toast on new call')`, `it('cleans up timer on unmount')`
+- `NotFoundPage.test.tsx`: `it('renders 404 heading')`, `it('renders link back to /app/')`
+- `TerminalView.test.tsx`: `it('renders lines in monospace')`, `it('renders "Connecting" when no output')`, `it('handles empty lines array')`
+- `PeekPanel.test.ts` (enhanced): `it('defaults to auto-scroll on')`, `it('toggles auto-scroll off when user scrolls up')`, `it('resumes auto-scroll when toggled back on')`, `it('renders search input when search is toggled')`, `it('highlights matching text in search results')`, `it('clears search on Escape')`
+- Go integration tests:
+  - `TestWebMux_AppServesIndexHTML` — verify /app/ returns 200 with text/html and CSP headers (partially covered by existing `TestSPAHandler_ServesIndexHTML`)
+  - `TestWebMux_AppSubRouteServesIndexHTML` — verify /app/droplets, /app/castellarius return index.html (covered by `TestSPAHandler_ServesSubRoutes`)
+  - `TestWebMux_AppAssetsServedWithNosniff` — verify /app/assets/*.js has X-Content-Type-Options: nosniff (covered by `TestSPAHandler_SecurityHeadersOnAssets`)
+  - `TestWebMux_RootServesXtermDashboard` — verify / serves xterm.js HTML (covered by `TestDashboardWebMux_RootServesHTML`)
+  - `TestWebMux_AppRedirectRoot` — verify /app redirects 301 to /app/ (covered by `TestSPAHandler_RedirectsAppRoot`)
+  - `TestWebMux_APIEndpointsStillWork` — verify /api/droplets returns JSON (covered by existing API tests)
+  - `TestWebMux_ClassicDashboardLink` — NEW: verify the root HTML contains a link to /app/
+  - `TestWebMux_AppIndexHTMLContainsClassicLink` — NEW: verify /app/ HTML contains "Classic Dashboard" link to /
 
 ## Forbidden Patterns
 
-- **Inline modal JSX in parent components.** The `FileIssueButton` pattern in `DropletDetail.tsx:263-317` embeds a full modal inside a parent component. New modals MUST be separate component files with `open`/`onClose` props, matching `AddNoteModal.tsx`, `RestartModal.tsx`, and `EditMetadataModal.tsx`.
-- **Raw `<input type="number">` for complexity.** The current `EditMetadataModal.tsx:80-82` uses a number input for complexity. This must be replaced by the shared `ComplexitySelector` radio group in both create and edit contexts.
-- **Unprotected navigation on form submit.** When submitting `createDroplet`, the form must handle errors before navigating. Do not navigate on failure.
-- **State derived from props without reset.** If a component receives `droplet` props and initializes state from them, it MUST use the `useEffect(() => { if (open) { reset state } }, [open, ...deps])` pattern — see `EditMetadataModal.tsx:20-29`.
-- **`any` type usage.** Forbidden. All API responses and form state must use typed interfaces from `api/types.ts`.
+- **Package-level mutable vars for config.** The existing `currentDropletSSEConnections` and `currentLogSSEConnections` at `dashboard_web.go:95-98` are `int64` atomics used as global counters — this is acceptable for atomic counters but FORBIDDEN for new config-like mutable state. All new config must be struct fields with constructor injection.
+- **SetXxx mutation methods.** FORBIDDEN — use constructor injection. See `newSPAHandler(apiKey string)` at `dashboard_web_spa.go:20`.
+- **Lazy initialization (initClient pattern).** FORBIDDEN — eager constructor initialization. `newSPAHandler` reads all files and builds the handler in one call.
+- **Shared mutable package-level state (maps, vars).** FORBIDDEN — must be struct fields with defensive copies. The `outboundRateLimiter` at `dashboard_web.go:1266-1271` is a struct with constructor `newOutboundRateLimiter()` — correct pattern.
+- **PascalCase fields on unexported Go structs.** FORBIDDEN — see `aqueductSessionInfo` at `dashboard_web.go:113-118` for the correct pattern (all unexported fields).
+- **fmt.Fprintf(os.Stderr) for errors.** FORBIDDEN in new code — the existing `fmt.Fprintf(os.Stderr, "ct dashboard: spawn error: %v\n", err)` at `dashboard_web.go:517` is legacy; new code must use `slog.Error`.
+- **Silently swallowing errors.** FORBIDDEN — at minimum `slog.Debug`.
+- **Shadowing Go builtins** (`min`, `max`, `any`).** FORBIDDEN.
+- **Inline modal JSX in parent components.** FORBIDDEN — see previous brief. All modals must be separate component files.
+- **`any` type usage in TypeScript.** FORBIDDEN — all API responses and form state must use typed interfaces from `api/types.ts`.
+- **Third-party component libraries (xterm.js, ansi-to-html, etc.).** The peek viewer must NOT import xterm.js — it already exists for the classic dashboard and is 300KB+. The `TerminalView.tsx` must be a simple `<pre>`-based renderer. The server already strips ANSI on the peek endpoint (`dashboard_web.go:898,957`). See existing `PeekPanel.tsx:94-99` which already uses `<pre>` + `font-mono text-xs text-cistern-green`.
 
 ## API Surface Checklist
 
-- [ ] **`POST /api/droplets` via `createDroplet`** — Contract: accepts `CreateDropletRequest` (repo: string required, title: string required, description?: string, priority?: number, complexity?: number, depends_on?: string[]), returns `Droplet`. Already exists in `useApi.ts:314-319`. The `CreateDropletForm` must validate that `repo` and `title` are non-empty before calling this function.
+### Go server — existing endpoints (verify no regressions)
 
-- [ ] **`PATCH /api/droplets/{id}` via `editDroplet`** — Contract: accepts `EditDropletRequest` (title?, description?, complexity?, priority?), returns `Droplet`. Already exists in `useApi.ts:307-312`. The enhanced `EditMetadataModal` must show a diff of changed fields before calling this function. The `ComplexitySelector` replaces the raw number input.
+- [ ] **`GET /app/` serves index.html** — Contract: returns 200 with `Content-Type: text/html; charset=utf-8`, CSP header `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self'; font-src 'self'`, X-Content-Type-Options: nosniff, X-Frame-Options: DENY, Referrer-Policy: strict-origin-when-cross-origin. Already implemented at `dashboard_web_spa.go:68-74`. Already tested at `dashboard_web_spa_test.go:9-28`.
 
-- [ ] **`POST /api/droplets/{id}/rename` via `renameDroplet`** — Contract: accepts `{ title: string }`, returns `Droplet`. New mutation function needed in `useApi.ts`. The `RenameInput` component must call this on blur or Enter, and revert on Escape.
+- [ ] **`GET /app` redirects to /app/** — Contract: returns 301 Moved Permanently with Location: /app/. Already implemented at `dashboard_web.go:848-850`. Already tested at `dashboard_web_spa_test.go:53-84`.
 
-- [ ] **`POST /api/droplets/{id}/close` via `useDropletMutation`** — Contract: accepts `{ notes?: string }`, returns void (204). Already handled via `useDropletMutation.mutate(id, 'close', body)`. The `CloseModal` must show confirmation warning before calling.
+- [ ] **`GET /app/assets/*` serves static assets** — Contract: serves embedded JS/CSS with X-Content-Type-Options: nosniff, correct MIME types via `http.FileServer`. Already implemented at `dashboard_web_spa.go:61-64`. Already tested at `dashboard_web_spa_test.go:155-169`.
 
-- [ ] **`POST /api/droplets/{id}/reopen` via `useDropletMutation`** — Contract: accepts `{ notes?: string }`, returns void (204). Already handled via `useDropletMutation.mutate(id, 'reopen', body)`. The `ReopenModal` must show confirmation before calling.
+- [ ] **`GET /app/*` (non-asset) serves index.html** — Contract: all non-asset routes under /app/ return index.html for client-side routing. Already implemented at `dashboard_web_spa.go:67-74`. Already tested at `dashboard_web_spa_test.go:30-51`.
 
-- [ ] **`POST /api/droplets/{id}/issues` via `addIssue`** — Contract: accepts `AddIssueRequest` (description: string required, flagged_by?: string), returns `DropletIssue`. Already exists in `useApi.ts:321-326`. The `FileIssueModal` must validate `description` is non-empty before calling.
+- [ ] **`GET /` serves xterm.js classic dashboard** — Contract: returns 200 with text/html containing xterm.js references, backward compatible. Already implemented at `dashboard_web.go:852-859`. Already tested at `dashboard_web_test.go:24-45`.
 
-- [ ] **`POST /api/issues/{id}/resolve` via `resolveIssue`** — Contract: accepts `ResolveIssueRequest` (evidence: string required), returns void (204). Already exists in `useApi.ts:328-333`. The `IssueCard` resolve dialog must validate evidence is non-empty.
+### Go server — new additions
 
-- [ ] **`POST /api/issues/{id}/reject` via `rejectIssue`** — Contract: accepts `ResolveIssueRequest` (evidence: string required), returns void (204). Already exists in `useApi.ts:335-340`. The `IssueCard` reject dialog must validate evidence is non-empty.
+- [ ] **Classic Dashboard link in /app/ index.html** — Contract: the SPA's `Header` component renders a "Classic Dashboard" link pointing to `/`. The link is visible in the header bar next to the connection status. Implementation goes in the React `Header.tsx` component, NOT in Go. The Go server does not inject links into the SPA HTML — it only injects the auth meta tag.
 
-- [ ] **`GET /api/repos` via `useRepos`** — Contract: returns `RepoInfo[]`. Already exists in `useApi.ts:270-286`. Must populate the repo dropdown in `CreateDropletForm`.
+- [ ] **New UI link in / xterm.js dashboard** — Contract: the root HTML (the xterm.js page at `/`) contains a link or badge "New UI →" that navigates to `/app/`. This is implemented in Go by adding an HTML element to `dashboardHTML` (the template string). The link must be unobtrusive — a small fixed-position badge in the top-right corner, not in the terminal viewport.
 
-- [ ] **`GET /api/repos/{name}/steps` via `useRepoSteps`** — Contract: returns `string[]`. Already exists in `useApi.ts:355-372`. Must drive the pipeline stage visualization in `ComplexitySelector`.
+- [ ] **`/app/unknown-route` still serves index.html** — Contract: client-side routing means any `/app/*` route that isn't an asset request serves index.html. The React Router handles 404 display. Already implemented at `dashboard_web_spa.go:67-74`. Add a React-side 404 catch-all route.
 
-- [ ] **`GET /api/droplets/search?query=...` via `useSearchDroplets`** — Contract: accepts `query`, optional `status` and `priority`, returns `DropletSearchResponse`. Already exists in `useApi.ts:288-298`. Must power the type-ahead dependency search in `CreateDropletForm`.
+### React — routing additions
 
-- [ ] **`GET /api/droplets/{id}/issues?open=&flagged_by=` via `useDropletIssues`** — Contract: accepts optional `open` boolean and `flagged_by` string filter, returns `DropletIssue[]`. Already exists in `useApi.ts:175-216`. Enhanced `IssueFilters` must accept `sort` (newest/oldest) via client-side sorting since the API does not support a sort param (see `useDropletIssues` filter params).
+- [ ] **404 catch-all route in `main.tsx`** — Contract: a `path: '*'` route as the last child of the `/app` layout renders `<NotFoundPage />`. The `NotFoundPage` displays "404 — Page Not Found" heading in `font-mono text-cistern-muted`, and a link back to `/app/` styled as `text-cistern-accent hover:underline`. Route must come after all other children in the `createBrowserRouter` array — see `main.tsx:21-32` for the existing route structure.
 
-- [ ] **Route `/app/droplets/new`** — Must be added to `web/src/main.tsx` as `{ path: 'droplets/new', element: <CreateDroplet /> }` before the `droplets/:id` route to avoid route collision (React Router v6 matches first matching pattern).
+- [ ] **React Router `ErrorBoundary` class component** — Contract: wraps `<RouterProvider>` in `main.tsx:36-39`. Catches render errors from any route component. Renders a fallback UI: `flex items-center justify-center h-screen bg-cistern-bg` with `text-cistern-red font-mono text-lg` heading "Something went wrong" and a "Reload" button that calls `window.location.reload()`. Must be a class component (React's `componentDidCatch` API requirement). Does NOT replace per-page error states (like `DropletDetail.tsx:92-99`) — those handle data-loading errors, not render crashes.
 
-- [ ] **`CreateDroplet` page component** — Contract: renders `CreateDropletForm`, wraps in the standard page layout (`flex-1 overflow-y-auto p-4 md:p-6 space-y-4`), uses `useNavigate` for redirect to `/app/droplets/{id}` on success and `/app/droplets` on cancel.
+### React — PeekPanel enhancements
 
-- [ ] **`ComplexitySelector` component** — Contract: renders three radio options (standard/1, full/2, critical/3) with pipeline stage descriptions. When a repo is selected, uses `useRepoSteps` to show actual pipeline stages. Falls back to hardcoded stage names (Standard: implement → delivery; Full: implement → review → qa → docs → delivery; Critical: implement → review → qa → security-review → docs → delivery) when no repo is selected or steps haven't loaded. Accepts `value: number`, `onChange: (v: number) => void`, `repoName?: string`.
+- [ ] **`PeekPanel` auto-scroll toggle** — Contract: adds a `autoScroll` boolean state defaulting to `true`. When `autoScroll` is true, the existing `useEffect` at `PeekPanel.tsx:59-63` scrolls to bottom on every output change. When `autoScroll` is false, the panel does NOT auto-scroll. A toggle button in the header bar (next to "Peek" label) shows "↓ Auto" when on and "↓ Manual" when off. The button uses `text-xs px-2 py-0.5 rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg` — matching the existing button style at `PeekPanel.tsx:84`.
 
-- [ ] **`RenameInput` component** — Contract: displays the droplet title as inline text. On click, switches to an `<input>`. On Enter or blur, calls `renameDroplet(id, { title })` API. On Escape, reverts to original text. Shows a brief loading indicator during save. Accepts `dropletId: string`, `title: string`, `onRenamed: () => void`.
+- [ ] **`PeekPanel` auto-scroll pause on manual scroll** — Contract: detects when the user manually scrolls the `<pre>` element. If the user scrolls more than 30px from the bottom, `autoScroll` is set to `false`. If the user scrolls to the bottom (within 30px), `autoScroll` is set to `true`. Uses `onScroll` handler on the `<pre>` element at `PeekPanel.tsx:94`.
 
-- [ ] **`FileIssueModal` component** — Contract: modal with description textarea (required) and flagged-by dropdown. Options for flagged-by: `implement`, `review`, `qa`, `security-review`, `docs`, `delivery`. On submit, calls `addIssue(dropletId, { description, flagged_by })`. Accepts `open: boolean`, `onClose: () => void`, `dropletId: string`, `onFiled: () => void`. Replaces the inline `FileIssueButton` in `DropletDetail.tsx:263-317`.
+- [ ] **`PeekPanel` search within output** — Contract: adds a search toggle button (magnifying glass icon) in the header bar. When active, shows a search input field below the header. Input uses existing `bg-cistern-bg border border-cistern-border rounded px-2 py-1.5 text-sm text-cistern-fg` style (see `AddNoteModal.tsx:49-50`). As the user types, matching lines are highlighted with `bg-cistern-yellow/30`. Pressing Enter jumps to the next match. Pressing Escape clears the search and hides the input. The search operates on the existing `output` state string (not a separate data structure) — filter lines containing the query text and render matches. When no search is active, all lines render as before.
 
-- [ ] **`IssueCard` component** — Contract: renders a single issue card with ID (clickable to expand), flagged-by badge with color, description (multi-line), status badge (open=yellow, resolved=green, rejected=red), evidence (if resolved/rejected), timestamps. Shows resolve/reject buttons for open issues. Accepts `issue: DropletIssue`, `onResolve: (id: string) => void`, `onReject: (id: string) => void`.
+### React — polish components
 
-- [ ] **`IssueFilters` component** — Contract: renders a toggle for open/all, a dropdown for flagged_by role, and a sort select (newest/oldest). Accepts `filters: { openOnly: boolean, flaggedBy: string, sort: 'newest' | 'oldest' }`, `onFilterChange: (filters) => void`.
+- [ ] **`ErrorBoundary` component** — Contract: class component `ErrorBoundary` in `web/src/components/ErrorBoundary.tsx`. Implements `componentDidCatch(error, errorInfo)`. State: `{ hasError: boolean, error: Error | null }`. When `hasError` is true, renders fallback UI instead of children. Fallback: centered card `bg-cistern-surface border border-cistern-border rounded-lg p-6 max-w-md w-full mx-4` containing error message and "Reload" button. When `hasError` is false, renders `children` unchanged. Props: `{ children: React.ReactNode, fallback?: React.ReactNode }`. If `fallback` is provided, render it instead of the default error UI.
 
-- [ ] **`CloseModal` component** — Contract: modal showing confirmation warning "This will mark the droplet as delivered". Calls `useDropletMutation.mutate(id, 'close')` on confirm. Accepts `open: boolean`, `onClose: () => void`, `dropletId: string`, `onConfirmed: () => void`.
+- [ ] **`LoadingSkeleton` component** — Contract: functional component in `web/src/components/LoadingSkeleton.tsx`. Props: `{ variant: 'card' | 'row' | 'table', count?: number, loading: boolean, children: React.ReactNode }`. When `loading` is true, renders animated skeleton placeholders. When `loading` is false, renders `children`. Animation: Tailwind `animate-pulse` on each skeleton element. Card variant: `bg-cistern-surface border border-cistern-border rounded-lg p-4` with 3 horizontal bars inside (heading: `h-4 w-24 bg-cistern-border rounded`, body: `h-3 w-full bg-cistern-border rounded`, body2: `h-3 w-3/4 bg-cistern-border rounded`). Row variant: single row `h-6 w-full bg-cistern-border rounded`. Table variant: `count` rows of `h-8 w-full bg-cistern-border rounded` with header row. Must be added to barrel `web/src/components/index.ts`.
 
-- [ ] **`ReopenModal` component** — Contract: modal showing confirmation. Calls `useDropletMutation.mutate(id, 'reopen')` on confirm. Accepts `open: boolean`, `onClose: () => void`, `dropletId: string`, `onConfirmed: () => void`.
+- [ ] **`Toast` component and `ToastContext`** — Contract: `web/src/components/Toast.tsx` renders a single toast notification at `fixed bottom-4 right-4 z-50`. Props: `{ message: string, type: 'success' | 'error', visible: boolean }`. Success: `bg-cistern-green/20 border border-cistern-green/40 text-cistern-green`. Error: `bg-cistern-red/20 border border-cistern-red/40 text-cistern-red`. Uses `font-mono text-sm`. Auto-dismisses after 3000ms (matches existing pattern at `CastellariusPage.tsx:21-24`). `web/src/context/ToastContext.tsx` provides `useToast()` hook returning `{ showToast: (message: string, type: 'success' | 'error') => void }`. Must wrap `AppLayout` children in `App.tsx:16-20`. Replace inline pattern in `CastellariusPage.tsx:6-25`. Must be added to barrel `web/src/components/index.ts`.
 
-- [ ] **`ModalOverlay` component** — Contract: renders `fixed inset-0 bg-black/60 flex items-center justify-center z-50` backdrop with `onClick={onClose}`, inner `bg-cistern-surface border border-cistern-border rounded-lg p-6 max-w-md w-full mx-4` card with `onClick={(e) => e.stopPropagation()}`. Returns null when `open` is false. Accepts `open: boolean`, `onClose: () => void`, `children: React.ReactNode`. All modals (existing and new) should be migrated to use this.
+- [ ] **Network status indicator in `Header`** — Contract: enhances the existing connection dot at `Header.tsx:33-37`. When `connected` is false, shows "Reconnecting..." text in addition to the red dot. When `connected` transitions from false to true, briefly shows "Connected" in `text-cistern-green` for 2 seconds before reverting to "Live". No new component — modify `Header.tsx` directly. Uses `useEffect` with a timer to handle the "Connected" flash.
 
-- [ ] **Diff display in `EditMetadataModal`** — Before calling `editDroplet`, compare current form values against original `droplet` props and show a summary of changed fields. Contract: the modal must show which fields changed and their old/new values, requiring user confirmation before submitting the PATCH request.
+- [ ] **API 401 interceptor** — Contract: in `web/src/api/shared.ts`, after `apiFetch` receives a 401 response, check if the app requires auth (via `isAuthRequired()` at `useAuth.ts:5-8`). If auth is required and the key is present, the 401 means the key is invalid — clear the stored key and update auth state. If auth is required and there's no key, this should not happen (SPA routes are auth-exempt). Implementation: in `apiFetch` at `shared.ts:3-13`, add a check after `!resp.ok`: if `resp.status === 401` and auth is required, call `clearStoredKey()` from `useAuth.ts:26-32` and dispatch a custom event `'cistern:auth-expired'`. The `AppLayout` component listens for this event and triggers `logout()` from `useAuth`.
 
-- [ ] **`renameDroplet` function in `useApi.ts`** — New standalone async function following the pattern of `editDroplet`. Contract: `renameDroplet(id: string, body: { title: string }): Promise<Droplet>` calls `POST /api/droplets/{id}/rename` with JSON body `{ title }`.
+### React — mobile responsive
 
-- [ ] **`closeDroplet` function in `useApi.ts`** — Optional convenience wrapper. The existing `useDropletMutation.mutate(id, 'close')` already works, but a standalone function `closeDroplet(id: string): Promise<void>` following the pattern of `addNote` is acceptable for clarity.
+- [ ] **Sidebar collapses on mobile** — Already implemented at `Sidebar.tsx:20-21` (overlay + `md:hidden`). Verify the hamburger menu button at `Header.tsx:13-19` works correctly on small screens. No changes needed — this pattern is already in place.
 
-- [ ] **`reopenDroplet` function in `useApi.ts`** — Same as above. Optional convenience wrapper for `useDropletMutation.mutate(id, 'reopen')`.
+- [ ] **Table-to-card switch on mobile** — Contract: `DropletTable.tsx` (if it exists) or the droplets list page must use responsive breakpoints. On screens `< md` (640px), render droplets as vertical cards instead of table rows. Card pattern: `bg-cistern-surface border border-cistern-border rounded-lg p-3 space-y-1`. Table pattern (existing): standard `<table>`. Implementation: use Tailwind `hidden md:table` / `md:hidden` pattern for switching between card and table views.
+
+- [ ] **Touch-friendly tap targets** — Contract: all interactive elements (buttons, links, inputs) must have minimum 44px tap target area. Use `min-h-[44px] min-w-[44px]` on icon-only buttons. Existing button styles at `PeekPanel.tsx:74` and `Header.tsx:14` may fail this bar on mobile — add `min-h-[44px]` or `p-2` to ensure adequate tap area.
+
+### React — keyboard navigation
+
+- [ ] **Focus management for modals** — Contract: when a `ModalOverlay` opens (see `ModalOverlay.tsx`), focus moves to the first focusable element inside the modal. When the modal closes, focus returns to the element that triggered it. Implementation: in `ModalOverlay.tsx`, add `useEffect` that focuses the first `[tabindex], button, input, select, textarea, a[href]` inside the modal when `open` becomes true. Use `autoFocus` or `ref.current.focus()`. Store the previously focused element via `document.activeElement` and restore it in the cleanup. Existing modal components (`AddNoteModal`, `EditMetadataModal`, etc.) inherit this behavior automatically since they use `ModalOverlay`.
+
+- [ ] **Escape closes modals** — Contract: pressing Escape when a modal is open calls `onClose`. Implementation: in `ModalOverlay.tsx`, add a `keydown` event listener on `document` that calls `onClose` when `e.key === 'Escape'`. Use `useEffect` with `open` dependency — add listener when modal opens, remove when it closes. Must check that the event target is not an `<input>` or `<textarea>` where Escape might have a different meaning (e.g., clearing search in PeekPanel). For modals, Escape always closes.
+
+- [ ] **Tab navigation through sidebar** — Contract: sidebar links are focusable and navigable via Tab. Already implemented — `NavLink` at `Sidebar.tsx:49` renders `<a>` tags which are natively focusable. Add `focus:ring-2 focus:ring-cistern-accent focus:outline-none` to the NavLink className to show focus indicator.
+
+- [ ] **Command palette (stretch goal — nice-to-have)** — Contract: `Ctrl+K` opens a command palette overlay. The palette shows a search input and a list of navigable actions (Go to Dashboard, Go to Droplets, etc.). Uses `useNavigate` from React Router. Component: `web/src/components/CommandPalette.tsx`. Accepts `{ open: boolean, onClose: () => void }`. Uses `ModalOverlay` for the backdrop. If not implemented, the `Ctrl+K` key binding should not be registered (no empty stub).
+
+### React — loading states and optimistic updates
+
+- [ ] **`LoadingSkeleton` replaces "Loading..." text** — Contract: every page component that currently renders a "Loading..." message (see DRY Requirements) must be updated to render `<LoadingSkeleton variant="..." loading={loading}>...</LoadingSkeleton>` instead. The `children` prop receives the loaded content.
+
+- [ ] **Spinner for async actions** — Contract: buttons that trigger API mutations (Pass, Recirculate, Pool, Create, Signal, Restart) must show a spinner during the request. Use the existing `submitting` state pattern — see `EditMetadataModal.tsx` (disables button during submit). Add `disabled:opacity-50` and a small inline spinner `<span className="animate-spin">⟳</span>` replacing the button text. Matches existing `disabled:opacity-50` pattern at `AddNoteModal.tsx:55`.
+
+- [ ] **Optimistic UI updates for status changes** — Contract: when a user signals a droplet (pass, recirculate, pool, close, reopen), update the droplet status in the UI immediately before the API response arrives. If the API call fails, revert to the original status and show an error toast. Implementation: in `DropletDetail.tsx`, wrap `handleAction` to set `sseDroplet` with the expected status optimistically, then revert on error. Uses the existing `useDropletMutation.mutate()` at `useApi.ts:238-251`.
+
+### React — cross-UI links
+
+- [ ] **Header "Classic Dashboard" link** — Contract: the React `Header.tsx` component renders a small link "Classic Dashboard" pointing to `/`. Position: after the connection indicator at `Header.tsx:33-37`. Style: `text-xs text-cistern-muted hover:text-cistern-fg font-mono border border-cistern-border rounded px-2 py-0.5`. This link allows users on the SPA to reach the xterm.js TUI dashboard.
+
+- [ ] **Root HTML "New UI" link** — Contract: the Go `dashboardHTML` string (serving the xterm.js classic dashboard at `/`) contains a small fixed-position badge in the top-right corner with text "New UI →" linking to `/app/`. Style: `position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.7);color:#60a5fa;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;z-index:100;text-decoration:none;`. Must be added AFTER the opening `<body>` tag in `dashboardHTML` so it does not interfere with xterm.js terminal layout. The link opens `/app/` in the same tab (no `target="_blank"`).
+
+### Build integration
+
+- [ ] **`make web-build` Makefile target** — Contract: a Makefile target `web-build` runs `cd web && npm install && npm run build`. The Vite config (`vite.config.ts:8`) already outputs to `../cmd/ct/assets/web/`. The Go `//go:embed assets/web` directive (`dashboard_web_spa.go:11`) automatically picks up the built assets. No other build changes needed. The existing `go:build` pipeline does not need modification — embedding happens at compile time.
+
+- [ ] **Build process documentation** — Contract: add a "Web UI Development" section to `CONTRIBUTING.md` explaining: 1) `make web-build` to build the SPA, 2) `cd web && npm run dev` for development with Vite proxy, 3) the SPA is always available at `/app/` when running `ct dashboard --web`, 4) the classic xterm.js dashboard remains at `/`. Keep the section under 15 lines.
+
+### Go server — dashboard command flag
+
+- [ ] **`ct dashboard --web` works as before** — Contract: the `--web` flag starts the HTTP server. Already implemented at `dashboard.go:814-815`. No changes needed.
+
+- [ ] **`ct dashboard --web --addr 0.0.0.0:5737`** — Contract: the `--addr` flag sets the listen address. Already implemented at `dashboard.go:824`. No changes needed.
+
+- [ ] **SPA available at /app/ in --web mode** — Contract: already true. The `newDashboardMuxInternalWith` function at `dashboard_web.go:846-847` mounts the SPA handler at `/app/`. No changes needed.
+
+- [ ] **`ct dashboard --web --new-ui` flag** — Contract: OPTIONAL. If implemented, this flag makes `/` redirect to `/app/` instead of serving the xterm.js dashboard. When NOT set, `/` continues to serve xterm.js (backward compatible). If NOT implemented, add a comment in `dashboard.go` noting this as a future option.

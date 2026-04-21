@@ -65,7 +65,7 @@ export function DropletsList() {
       setDebouncedSearch(value.trim());
       try {
         const res = await searchMutate(value.trim(), status || undefined);
-        setSearchResults(res as never);
+        setSearchResults(res);
       } catch {
         setSearchResults(null);
       }

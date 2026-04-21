@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CataractaeNote } from '../api/types';
 import { formatAge } from '../utils/formatAge';
+import { SkeletonLine } from './LoadingSkeleton';
 
 interface NotesTimelineProps {
   notes: CataractaeNote[];
@@ -9,7 +10,7 @@ interface NotesTimelineProps {
 
 export function NotesTimeline({ notes, loading }: NotesTimelineProps) {
   if (loading) {
-    return <div className="text-center py-4 text-cistern-muted font-mono text-sm">Loading notes…</div>;
+    return <div className="space-y-3"><SkeletonLine width="100%" /><SkeletonLine width="75%" /><SkeletonLine width="85%" /></div>;
   }
 
   if (notes.length === 0) {

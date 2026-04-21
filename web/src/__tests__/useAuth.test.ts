@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useAuth, getAuthHeaders, getAuthParams } from '../hooks/useAuth';
+import { useAuth, getAuthHeaders, getAuthParams, isAuthRequired } from '../hooks/useAuth';
 
 describe('useAuth', () => {
   beforeEach(() => {
@@ -93,6 +93,25 @@ describe('useAuth', () => {
     expect(localStorage.getItem('cistern_api_key')).toBeNull();
   });
 
+  it('handles verifyKey rejection gracefully', async () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+
+    vi.spyOn(window, 'fetch').mockRejectedValue(new TypeError('Network error'));
+
+    localStorage.setItem('cistern_api_key', 'test-key');
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.authenticated).toBe(false);
+    expect(result.current.authError).toBe(true);
+  });
+
   it('sets authError=true when verification fails', async () => {
     const meta = document.createElement('meta');
     meta.setAttribute('name', 'cistern-auth');
@@ -180,5 +199,23 @@ describe('getAuthParams', () => {
   it('encodes special characters in key', () => {
     localStorage.setItem('cistern_api_key', 'key with spaces&special=chars');
     expect(getAuthParams()).toBe('token=key%20with%20spaces%26special%3Dchars');
+  });
+});
+
+describe('isAuthRequired', () => {
+  afterEach(() => {
+    document.head.innerHTML = '';
+  });
+
+  it('returns false when no auth meta tag', () => {
+    expect(isAuthRequired()).toBe(false);
+  });
+
+  it('returns true when auth meta tag is present', () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+    expect(isAuthRequired()).toBe(true);
   });
 });

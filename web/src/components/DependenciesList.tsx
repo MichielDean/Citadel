@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DropletDependency } from '../api/types';
 import { addDependency, removeDependency } from '../hooks/useApi';
+import { SkeletonLine } from './LoadingSkeleton';
 
 interface DependenciesListProps {
   dropletId: string;
@@ -40,7 +41,13 @@ export function DependenciesList({ dropletId, dependencies, loading, onChange }:
   };
 
   if (loading) {
-    return <div className="text-center py-4 text-cistern-muted font-mono text-sm">Loading dependencies…</div>;
+    return (
+      <div className="space-y-2">
+        <SkeletonLine width="60%" />
+        <SkeletonLine width="80%" />
+        <SkeletonLine width="45%" />
+      </div>
+    );
   }
 
   const blockedBy = dependencies.filter((d) => d.type === 'blocked_by');

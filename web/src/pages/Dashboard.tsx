@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useDashboard } from '../context/DashboardContext';
 import { AqueductArch, DropletRow, PeekPanel } from '../components';
+import { SkeletonCard, SkeletonLine } from '../components/LoadingSkeleton';
 import type { DashboardData, CataractaeInfo, FlowActivity, Droplet } from '../api/types';
 
 export function Dashboard() {
@@ -30,8 +31,13 @@ export function Dashboard() {
 
   if (!data) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-cistern-muted font-mono">Loading dashboard…</div>
+      <div className="flex-1 p-4 md:p-6 space-y-6">
+        <SkeletonLine width="40%" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
       </div>
     );
   }

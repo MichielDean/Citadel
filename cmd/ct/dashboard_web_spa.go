@@ -10,6 +10,19 @@ import (
 //go:embed assets/web
 var webAssets embed.FS
 
+// sanitizeCSPHost strips any characters from host that are not valid in
+// a CSP directive value (alphanumeric, dots, hyphens, colons for port).
+// This prevents CSP injection via a crafted Host header.
+func sanitizeCSPHost(host string) string {
+	var b strings.Builder
+	for _, r := range host {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == ':' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // spaHandler serves the React SPA. It serves static assets from /app/assets/
 // and returns index.html for all other /app/ routes (client-side routing).
 type spaHandler struct {
@@ -70,6 +83,11 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self'; font-src 'self'")
+	// Restrict connect-src to same-origin WebSocket only (no ws:/wss: wildcards).
+	// Build the ws/wss hosts dynamically from the request Host header.
+	// Sanitize: only allow alphanumeric, dots, hyphens, colons (port).
+	wsHost := sanitizeCSPHost(r.Host)
+	connectSrc := "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://" + wsHost + " wss://" + wsHost + "; img-src 'self'; font-src 'self'"
+	w.Header().Set("Content-Security-Policy", connectSrc)
 	w.Write(h.indexHTML) //nolint:errcheck
 }

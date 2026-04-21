@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { LogViewer } from '../components/LogViewer';
+import { SkeletonLine } from '../components/LoadingSkeleton';
 import { fetchLogHistory, createLogEventSource, fetchLogSources } from '../api/logs';
 import type { LogEntry, LogSourceInfo } from '../api/types';
 
@@ -20,7 +21,9 @@ export function LogsPage() {
   }, [activeSource]);
 
   useEffect(() => {
-    fetchLogSources().then(setSources).catch(() => {});
+    fetchLogSources().then(setSources).catch((err) => {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    });
   }, []);
 
   const loadHistory = useCallback(async (source: string) => {
@@ -137,9 +140,13 @@ export function LogsPage() {
       </div>
       <div className="flex-1 overflow-hidden">
         {loading && entries.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-cistern-muted font-mono">Loading logs…</div>
-          </div>
+          <>
+            <SkeletonLine width="100%" />
+            <SkeletonLine width="75%" />
+            <SkeletonLine width="83%" />
+            <SkeletonLine width="66%" />
+            <SkeletonLine width="100%" />
+          </>
         ) : (
           <LogViewer
             entries={entries}

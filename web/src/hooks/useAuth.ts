@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 
 const STORAGE_KEY = 'cistern_api_key';
 
-function isAuthRequired(): boolean {
+export function isAuthRequired(): boolean {
   const meta = document.querySelector('meta[name="cistern-auth"]');
   return meta?.getAttribute('content') === 'required';
 }
 
-function getStoredKey(): string | null {
+export function getStoredKey(): string | null {
   try {
     return localStorage.getItem(STORAGE_KEY);
   } catch {
@@ -23,7 +23,7 @@ function storeKey(key: string): void {
   }
 }
 
-function clearStoredKey(): void {
+export function clearStoredKey(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -59,6 +59,10 @@ export function useAuth() {
         setAuthenticated(false);
         setAuthError(true);
       }
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setAuthenticated(false);
+      setAuthError(true);
     });
 
     return () => { controller.abort(); };

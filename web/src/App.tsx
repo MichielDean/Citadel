@@ -1,13 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { ToastProvider, ToastOutlet } from './components/Toast';
 import { DashboardProvider, useDashboard } from './context/DashboardContext';
+import { CommandPalette } from './components/CommandPalette';
 import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './components/LoginPage';
 
 export function AppLayout() {
-  const { required, authenticated, authError, login } = useAuth();
+  const { required, authenticated, authError, login, logout } = useAuth();
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      logout();
+    };
+    window.addEventListener('cistern:auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('cistern:auth-expired', handleAuthExpired);
+  }, [logout]);
 
   if (required && !authenticated) {
     return <LoginPage onLogin={login} error={authError} />;
@@ -15,14 +25,31 @@ export function AppLayout() {
 
   return (
     <DashboardProvider>
-      <AppLayoutInner />
+      <ToastProvider>
+        <AppLayoutInner />
+        <ToastOutlet />
+      </ToastProvider>
     </DashboardProvider>
   );
 }
 
 function AppLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const { data, connected } = useDashboard();
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'k') {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   return (
     <div className="h-screen flex overflow-hidden bg-cistern-bg">
@@ -33,6 +60,7 @@ function AppLayoutInner() {
           <Outlet />
         </main>
       </div>
+      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
     </div>
   );
 }

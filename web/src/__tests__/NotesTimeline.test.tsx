@@ -21,9 +21,10 @@ const mockNotes: CataractaeNote[] = [
 ];
 
 describe('NotesTimeline', () => {
-  it('shows loading state', () => {
+  it('shows loading state with skeleton', () => {
     render(<NotesTimeline notes={[]} loading={true} />);
-    expect(screen.getByText('Loading notes…')).toBeInTheDocument();
+    expect(screen.queryByText('No notes yet')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('shows empty state when no notes', () => {

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import type { DashboardData } from '../api/types';
 
 interface HeaderProps {
@@ -7,8 +8,21 @@ interface HeaderProps {
 }
 
 export function Header({ data, connected, onMenuClick }: HeaderProps) {
+  const [justConnected, setJustConnected] = useState(false);
+  const [prevConnected, setPrevConnected] = useState(connected);
+
+  useEffect(() => {
+    if (connected && !prevConnected) {
+      setJustConnected(true);
+      const timer = setTimeout(() => setJustConnected(false), 2000);
+      setPrevConnected(connected);
+      return () => clearTimeout(timer);
+    }
+    setPrevConnected(connected);
+  }, [connected, prevConnected]);
+
   return (
-    <header className="h-[60px] bg-cistern-surface border-b border-cistern-border flex items-center px-4 gap-4 shrink-0">
+    <header className="h-[60px] bg-cistern-surface border-b border-cistern-border flex items-center px-4 gap-4 shrink-0" role="banner">
       <button
         onClick={onMenuClick}
         className="md:hidden text-cistern-muted hover:text-cistern-fg transition-colors"
@@ -32,9 +46,16 @@ export function Header({ data, connected, onMenuClick }: HeaderProps) {
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${connected ? 'bg-cistern-green' : 'bg-cistern-red'}`} />
         <span className="text-xs text-cistern-muted hidden sm:inline">
-          {connected ? 'Live' : 'Disconnected'}
+          {justConnected ? 'Connected' : connected ? 'Live' : 'Reconnecting...'}
         </span>
       </div>
+      <a
+        href="/"
+        className="hidden sm:inline text-xs text-cistern-muted hover:text-cistern-accent transition-colors border border-cistern-border rounded px-2 py-1"
+        title="Switch to terminal dashboard"
+      >
+        Classic Dashboard
+      </a>
     </header>
   );
 }

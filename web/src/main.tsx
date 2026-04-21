@@ -12,6 +12,8 @@ import { ReposSkillsPage } from './pages/ReposSkillsPage';
 import { CreateDroplet } from './pages/CreateDroplet';
 import { FilterPage } from './pages/FilterPage';
 import { ImportPage } from './pages/ImportPage';
+import { NotFound } from './pages/NotFound';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -29,12 +31,15 @@ const router = createBrowserRouter([
       { path: 'repos', element: <ReposSkillsPage /> },
       { path: 'filter', element: <FilterPage /> },
       { path: 'import', element: <ImportPage /> },
+      { path: '*', element: <NotFound /> },
     ],
   },
 ]);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

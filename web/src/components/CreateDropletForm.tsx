@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useRepos, useSearchDroplets, createDroplet } from '../hooks/useApi';
 import { ComplexitySelector } from './ComplexitySelector';
+import { SkeletonLine } from './LoadingSkeleton';
 import type { Droplet } from '../api/types';
 
 interface CreateDropletFormProps {
@@ -116,7 +117,7 @@ export function CreateDropletForm({ onSuccess, onCancel }: CreateDropletFormProp
       <div>
         <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Repo *</label>
         {reposLoading ? (
-          <div className="text-sm text-cistern-muted font-mono">Loading repos…</div>
+          <SkeletonLine width="100%" />
         ) : (
           <select
             value={repo}

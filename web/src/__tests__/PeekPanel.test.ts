@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { truncateBuffer, MAX_BUFFER_SIZE, isAuthCloseCode } from '../utils/buffer';
+import { MAX_HIGHLIGHTS } from '../components/PeekPanel';
 
 describe('truncateBuffer', () => {
   it('appends small chunks without truncation', () => {
@@ -40,5 +41,12 @@ describe('isAuthCloseCode', () => {
   it('does not classify other close codes as auth failure', () => {
     expect(isAuthCloseCode(1006)).toBe(false);
     expect(isAuthCloseCode(1011)).toBe(false);
+  });
+});
+
+describe('MAX_HIGHLIGHTS', () => {
+  it('limits search highlights to prevent client-side DoS', () => {
+    expect(MAX_HIGHLIGHTS).toBeLessThanOrEqual(500);
+    expect(MAX_HIGHLIGHTS).toBeGreaterThan(0);
   });
 });

@@ -24,6 +24,8 @@ import { RenameInput } from '../components/RenameInput';
 import { FileIssueModal } from '../components/FileIssueModal';
 import { CloseModal } from '../components/CloseModal';
 import { ReopenModal } from '../components/ReopenModal';
+import { SkeletonCard, SkeletonLine } from '../components/LoadingSkeleton';
+import { useToast } from '../components/Toast';
 import { formatAge } from '../utils/formatAge';
 import type { ActionRequest, Droplet, DropletIssue } from '../api/types';
 
@@ -37,6 +39,7 @@ export function DropletDetail() {
   const { issues, loading: issuesLoading, refetch: refetchIssues } = useDropletIssues(id ?? null);
   const { dependencies, loading: depsLoading, refetch: refetchDeps } = useDropletDependencies(id ?? null);
   const { mutate } = useDropletMutation();
+  const { addToast } = useToast();
 
   const [sseDroplet, setSseDroplet] = useState<Droplet | null>(null);
   const currentDroplet = sseDroplet ?? droplet;
@@ -58,6 +61,7 @@ export function DropletDetail() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
 
   const refetchAll = useCallback(() => {
     refetchDroplet();
@@ -71,22 +75,36 @@ export function DropletDetail() {
     action: string,
     body?: ActionRequest
   ) => {
-    await mutate(dropletId, action, body);
-    refetchAll();
-  }, [mutate, refetchAll]);
+    setSubmitting(action);
+    try {
+      await mutate(dropletId, action, body);
+      refetchAll();
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : `${action} failed`, 'error');
+    } finally {
+      setSubmitting(null);
+    }
+  }, [mutate, refetchAll, addToast]);
 
   const handleRename = useCallback(async (newTitle: string) => {
-    await renameDroplet(id!, newTitle);
-    refetchAll();
-  }, [id, refetchAll]);
+    try {
+      await renameDroplet(id!, newTitle);
+      refetchAll();
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Rename failed', 'error');
+    }
+  }, [id, refetchAll, addToast]);
 
   const handleCopyId = useCallback(() => {
     if (currentDroplet?.id) {
-      navigator.clipboard.writeText(currentDroplet.id);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      navigator.clipboard.writeText(currentDroplet.id).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {
+        addToast('Failed to copy ID', 'error');
+      });
     }
-  }, [currentDroplet?.id]);
+  }, [currentDroplet?.id, addToast]);
 
   if (error) {
     return (
@@ -101,8 +119,13 @@ export function DropletDetail() {
 
   if (loading || !currentDroplet) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-cistern-muted font-mono">Loading droplet…</div>
+      <div className="flex-1 p-4 md:p-6 space-y-6">
+        <SkeletonLine width="48%" />
+        <SkeletonLine width="64%" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          <SkeletonCard lines={5} />
+          <SkeletonCard lines={5} />
+        </div>
       </div>
     );
   }
@@ -147,22 +170,22 @@ export function DropletDetail() {
         <div className="flex items-center gap-2 flex-wrap">
           {isInProgress && (
             <>
-              <button type="button" onClick={() => setActionDialog({ open: true, title: 'Pass Droplet', action: 'pass' })} className="px-3 py-1.5 text-sm rounded bg-cistern-green/20 text-cistern-green border border-cistern-green/40 hover:bg-cistern-green/30 transition-colors">Pass</button>
-              <button type="button" onClick={() => setActionDialog({ open: true, title: 'Recirculate Droplet', action: 'recirculate' })} className="px-3 py-1.5 text-sm rounded bg-cistern-yellow/20 text-cistern-yellow border border-cistern-yellow/40 hover:bg-cistern-yellow/30 transition-colors">Recirculate</button>
-              <button type="button" onClick={() => setActionDialog({ open: true, title: 'Pool Droplet', action: 'pool' })} className="px-3 py-1.5 text-sm rounded bg-cistern-red/20 text-cistern-red border border-cistern-red/40 hover:bg-cistern-red/30 transition-colors">Pool</button>
+              <button type="button" disabled={!!submitting} onClick={() => setActionDialog({ open: true, title: 'Pass Droplet', action: 'pass' })} className="px-3 py-1.5 text-sm rounded bg-cistern-green/20 text-cistern-green border border-cistern-green/40 hover:bg-cistern-green/30 transition-colors disabled:opacity-50">Pass</button>
+              <button type="button" disabled={!!submitting} onClick={() => setActionDialog({ open: true, title: 'Recirculate Droplet', action: 'recirculate' })} className="px-3 py-1.5 text-sm rounded bg-cistern-yellow/20 text-cistern-yellow border border-cistern-yellow/40 hover:bg-cistern-yellow/30 transition-colors disabled:opacity-50">Recirculate</button>
+              <button type="button" disabled={!!submitting} onClick={() => setActionDialog({ open: true, title: 'Pool Droplet', action: 'pool' })} className="px-3 py-1.5 text-sm rounded bg-cistern-red/20 text-cistern-red border border-cistern-red/40 hover:bg-cistern-red/30 transition-colors disabled:opacity-50">Pool</button>
             </>
           )}
           {isOpen && (
             <>
-              <button type="button" onClick={() => setActionDialog({ open: true, title: 'Cancel Droplet', action: 'cancel' })} className="px-3 py-1.5 text-sm rounded bg-cistern-red/20 text-cistern-red border border-cistern-red/40 hover:bg-cistern-red/30 transition-colors">Cancel</button>
-              <button type="button" onClick={() => setActionDialog({ open: true, title: 'Approve Droplet', action: 'approve' })} className="px-3 py-1.5 text-sm rounded bg-cistern-green/20 text-cistern-green border border-cistern-green/40 hover:bg-cistern-green/30 transition-colors">Approve</button>
+              <button type="button" disabled={!!submitting} onClick={() => setActionDialog({ open: true, title: 'Cancel Droplet', action: 'cancel' })} className="px-3 py-1.5 text-sm rounded bg-cistern-red/20 text-cistern-red border border-cistern-red/40 hover:bg-cistern-red/30 transition-colors disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={!!submitting} onClick={() => setActionDialog({ open: true, title: 'Approve Droplet', action: 'approve' })} className="px-3 py-1.5 text-sm rounded bg-cistern-green/20 text-cistern-green border border-cistern-green/40 hover:bg-cistern-green/30 transition-colors disabled:opacity-50">Approve</button>
             </>
           )}
           {(isPooled || isDelivered || isCancelled) && (
-            <button type="button" onClick={() => setShowReopenModal(true)} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Reopen</button>
+            <button type="button" disabled={!!submitting} onClick={() => setShowReopenModal(true)} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors disabled:opacity-50">{submitting === 'reopen' ? '⟳' : 'Reopen'}</button>
           )}
           {isInProgress && (
-            <button type="button" onClick={() => setShowCloseModal(true)} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors">Deliver</button>
+            <button type="button" disabled={!!submitting} onClick={() => setShowCloseModal(true)} className="px-3 py-1.5 text-sm rounded bg-cistern-accent/20 text-cistern-accent border border-cistern-accent/40 hover:bg-cistern-accent/30 transition-colors disabled:opacity-50">{submitting === 'close' ? '⟳' : 'Deliver'}</button>
           )}
           <button type="button" onClick={() => navigate('/app/droplets')} className="px-3 py-1.5 text-sm rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg transition-colors">Back</button>
         </div>
@@ -207,12 +230,20 @@ export function DropletDetail() {
             issues={issues}
             loading={issuesLoading}
             onResolve={async (issueId, ev) => {
-              await resolveIssue(issueId, { evidence: ev });
-              refetchAll();
+              try {
+                await resolveIssue(issueId, { evidence: ev });
+                refetchAll();
+              } catch (err) {
+                addToast(err instanceof Error ? err.message : 'Resolve issue failed', 'error');
+              }
             }}
             onReject={async (issueId, ev) => {
-              await rejectIssue(issueId, { evidence: ev });
-              refetchAll();
+              try {
+                await rejectIssue(issueId, { evidence: ev });
+                refetchAll();
+              } catch (err) {
+                addToast(err instanceof Error ? err.message : 'Reject issue failed', 'error');
+              }
             }}
           />
         </section>
@@ -281,8 +312,12 @@ export function DropletDetail() {
         onClose={() => setShowCloseModal(false)}
         dropletId={d.id}
         onConfirm={async (dropletId: string) => {
-          await mutate(dropletId, 'close');
-          refetchAll();
+          try {
+            await mutate(dropletId, 'close');
+            refetchAll();
+          } catch (err) {
+            addToast(err instanceof Error ? err.message : 'Close failed', 'error');
+          }
         }}
       />
 
@@ -291,8 +326,12 @@ export function DropletDetail() {
         onClose={() => setShowReopenModal(false)}
         dropletId={d.id}
         onConfirm={async (dropletId: string) => {
-          await mutate(dropletId, 'reopen');
-          refetchAll();
+          try {
+            await mutate(dropletId, 'reopen');
+            refetchAll();
+          } catch (err) {
+            addToast(err instanceof Error ? err.message : 'Reopen failed', 'error');
+          }
         }}
       />
     </div>
