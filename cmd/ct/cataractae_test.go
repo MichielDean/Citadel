@@ -101,7 +101,7 @@ func replaceStdin(t *testing.T, input string) {
 
 // --- resolveInstructionsFile ---
 
-func TestResolveInstructionsFile_DefaultsToClaudeWhenNoConfig(t *testing.T) {
+func TestResolveInstructionsFile_DefaultsToAgentsMdWhenNoConfig(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	got := resolveInstructionsFile()
 	if got != "AGENTS.md" {
@@ -148,7 +148,7 @@ func TestCataractaeCmd_WorkflowFlagRegistered(t *testing.T) {
 
 // --- runCataractaeGenerate ---
 
-func TestRunCataractaeGenerate_GeneratesClaudeMd(t *testing.T) {
+func TestRunCataractaeGenerate_GeneratesAgentsMd(t *testing.T) {
 	tmpDir, wfPath := makeWorkflowDir(t, testWorkflowYAML)
 	setWorkflow(t, wfPath)
 	makeCataractaeDir(t, tmpDir, "tester")
@@ -324,7 +324,7 @@ func TestRunCataractaeEdit_InvalidSelectionOutOfRange(t *testing.T) {
 	}
 }
 
-func TestRunCataractaeEdit_UpdatesClaudeMdAfterEdit(t *testing.T) {
+func TestRunCataractaeEdit_UpdatesAgentsMdAfterEdit(t *testing.T) {
 	tmpDir, wfPath := makeWorkflowDir(t, testWorkflowYAML)
 	setWorkflow(t, wfPath)
 	makeCataractaeDir(t, tmpDir, "tester")
@@ -474,4 +474,3 @@ func TestRunCataractaeRender_HappyPath_RendersTemplate(t *testing.T) {
 		t.Error("output still contains unreplaced template marker")
 	}
 }
-

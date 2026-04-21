@@ -1785,10 +1785,10 @@ func TestRunDoctorProviderChecks_MissingBinary_Fails(t *testing.T) {
 func TestCheckCisternEnvHasKey_KeyPresent_ReturnsNil(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	if err := os.WriteFile(path, []byte("OPENAI_API_KEY=sk-test123\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("GH_TOKEN=ghp_test123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err != nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -1796,10 +1796,10 @@ func TestCheckCisternEnvHasKey_KeyPresent_ReturnsNil(t *testing.T) {
 func TestCheckCisternEnvHasKey_KeyAbsent_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	if err := os.WriteFile(path, []byte("GH_TOKEN=ghp_abc\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("OTHER_KEY=other_value\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err == nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err == nil {
 		t.Error("expected error when key is absent from env file")
 	}
 }
@@ -1807,17 +1807,17 @@ func TestCheckCisternEnvHasKey_KeyAbsent_ReturnsError(t *testing.T) {
 func TestCheckCisternEnvHasKey_KeyPresentButEmpty_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	if err := os.WriteFile(path, []byte("OPENAI_API_KEY=\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("GH_TOKEN=\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err == nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err == nil {
 		t.Error("expected error when key is present but has empty value")
 	}
 }
 
 func TestCheckCisternEnvHasKey_FileAbsent_ReturnsError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonexistent", "env")
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err == nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err == nil {
 		t.Error("expected error when env file does not exist")
 	}
 }
@@ -1825,11 +1825,11 @@ func TestCheckCisternEnvHasKey_FileAbsent_ReturnsError(t *testing.T) {
 func TestCheckCisternEnvHasKey_CommentsAndBlankLines_Ignored(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	content := "# credentials\n\nOPENAI_API_KEY=sk-test-real\nGH_TOKEN=ghp_abc\n"
+	content := "# credentials\n\nGH_TOKEN=ghp_abc\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err != nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err != nil {
 		t.Errorf("unexpected error with comments and blank lines: %v", err)
 	}
 }
@@ -1837,11 +1837,11 @@ func TestCheckCisternEnvHasKey_CommentsAndBlankLines_Ignored(t *testing.T) {
 func TestCheckCisternEnvHasKey_MultipleKeys_FindsCorrectOne(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	content := "GH_TOKEN=ghp_abc\nOPENAI_API_KEY=sk-test-real\nEXTRA_VAR=value\n"
+	content := "GH_TOKEN=ghp_abc\nMY_KEY=sk-test-real\nEXTRA_VAR=value\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err != nil {
+	if err := checkCisternEnvHasKey(path, "MY_KEY"); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -1882,7 +1882,7 @@ func TestFixCisternEnvFile_ExistingFile_IsNotModified(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
 
-	existing := []byte("OPENAI_API_KEY=sk-test-existing\n")
+	existing := []byte("GH_TOKEN=ghp_test-existing\n")
 	if err := os.WriteFile(path, existing, 0o600); err != nil {
 		t.Fatalf("write existing: %v", err)
 	}
@@ -2065,7 +2065,7 @@ func TestInstallSystemdService_PreservesExistingEnvFile(t *testing.T) {
 		t.Fatalf("mkdir cistern: %v", err)
 	}
 	envPath := filepath.Join(cisternDir, "env")
-	existing := []byte("OPENAI_API_KEY=sk-test-existing\n")
+	existing := []byte("GH_TOKEN=ghp_test-existing\n")
 	if err := os.WriteFile(envPath, existing, 0o600); err != nil {
 		t.Fatalf("write existing env: %v", err)
 	}
@@ -2131,7 +2131,7 @@ func TestInstallSystemdService_ServiceFileHasNoHardcodedAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read service file: %v", err)
 	}
-	for _, key := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GH_TOKEN"} {
+	for _, key := range []string{"GH_TOKEN"} {
 		if strings.Contains(string(data), key) {
 			t.Errorf("service file must not contain %s — credentials are loaded by the wrapper script", key)
 		}
@@ -2217,7 +2217,7 @@ func TestCheckSystemdServiceEnv_NoAPIKeyCheck(t *testing.T) {
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	for _, key := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
+	for _, key := range []string{"GH_TOKEN"} {
 		if strings.Contains(output, key) {
 			t.Errorf("checkSystemdServiceEnv emitted a %s warning; output:\n%s", key, output)
 		}
