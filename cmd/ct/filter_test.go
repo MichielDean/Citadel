@@ -27,7 +27,6 @@ func TestCallFilterAgent_ReturnsTextAndSessionID(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -56,7 +55,6 @@ func TestCallFilterAgent_Resume_PassesExtraArgs(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -85,7 +83,6 @@ func TestCallFilterAgent_AgentExecFailure(t *testing.T) {
 		Name:    "test-fail",
 		Command: failagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -110,7 +107,6 @@ func TestCallFilterAgent_JSONFallback_RawOutput(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -140,7 +136,6 @@ func TestCallFilterAgent_IsErrorEnvelope_ReturnsError(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -191,7 +186,6 @@ func TestInvokeFilterNew_ReturnsTextAndSessionID(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -217,7 +211,6 @@ func TestInvokeFilterNew_TitleOnly(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -246,7 +239,6 @@ func TestInvokeFilterResume_WithFeedback(t *testing.T) {
 		Command:    fakeagentBin,
 		ResumeFlag: "--resume",
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -273,7 +265,6 @@ func TestInvokeFilterResume_DefaultsToResumeFlag(t *testing.T) {
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -508,7 +499,6 @@ func TestInvokeFilterNew_WithContextBlock_IncludesContextInResult(t *testing.T) 
 		Name:    "test",
 		Command: fakeagentBin,
 		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:  "--print",
 			PromptFlag: "-p",
 		},
 	}
@@ -523,45 +513,5 @@ func TestInvokeFilterNew_WithContextBlock_IncludesContextInResult(t *testing.T) 
 	}
 	if result.Text == "" {
 		t.Error("expected non-empty text response")
-	}
-}
-
-// TestCallFilterAgent_WithAllowedTools_PassesToolFlag verifies that when the
-// preset's NonInteractive.AllowedToolsFlag is set, callFilterAgent appends
-// the flag with "Glob,Grep,Read" to the agent command args.
-// Given a preset with AllowedToolsFlag: "--allowedTools" pointing at fakeagent,
-// When callFilterAgent is called,
-// Then fakeagent receives --allowedTools and Glob,Grep,Read in its args.
-func TestCallFilterAgent_WithAllowedTools_PassesToolFlag(t *testing.T) {
-	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
-	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "args.txt")
-	t.Setenv("FAKEAGENT_ARGS_FILE", argsFile)
-
-	preset := provider.ProviderPreset{
-		Name:    "test",
-		Command: fakeagentBin,
-		NonInteractive: provider.NonInteractiveConfig{
-			PrintFlag:        "--print",
-			PromptFlag:       "-p",
-			AllowedToolsFlag: "--allowedTools",
-		},
-	}
-
-	_, err := callFilterAgent(preset, nil, "Title: fix auth bug")
-	if err != nil {
-		t.Fatalf("callFilterAgent: unexpected error: %v", err)
-	}
-
-	captured, err := os.ReadFile(argsFile)
-	if err != nil {
-		t.Fatalf("reading args file: %v", err)
-	}
-	args := string(captured)
-	if !strings.Contains(args, "--allowedTools") {
-		t.Errorf("expected --allowedTools in agent args, got:\n%s", args)
-	}
-	if !strings.Contains(args, "Glob,Grep,Read") {
-		t.Errorf("expected Glob,Grep,Read in agent args, got:\n%s", args)
 	}
 }

@@ -47,7 +47,7 @@ type DropletTemplateContext struct {
 	Complexity  int
 }
 
-// TemplateContext is the top-level data passed to CLAUDE.md template rendering.
+// TemplateContext is the top-level data passed to AGENTS.md template rendering.
 // It maps to the three top-level template namespaces: .Step, .Droplet, .Pipeline.
 type TemplateContext struct {
 	Step    StepTemplateContext

@@ -714,35 +714,35 @@ func TestDoctor_NoFix_FailsWhenConfigMissing(t *testing.T) {
 	}
 }
 
-// --- TestCheckClaudeMdIntegrity ---
+// --- TestCheckInstructionsFileIntegrity ---
 
-func TestCheckClaudeMdIntegrity_MissingFile_ReturnsError(t *testing.T) {
-	err := checkClaudeMdIntegrity(filepath.Join(t.TempDir(), "nonexistent", "CLAUDE.md"))
+func TestCheckInstructionsFileIntegrity_MissingFile_ReturnsError(t *testing.T) {
+	err := checkInstructionsFileIntegrity(filepath.Join(t.TempDir(), "nonexistent", "AGENTS.md"))
 	if err == nil {
-		t.Error("expected error for missing CLAUDE.md")
+		t.Error("expected error for missing AGENTS.md")
 	}
 }
 
-func TestCheckClaudeMdIntegrity_FileMissingSentinel_ReturnsError(t *testing.T) {
+func TestCheckInstructionsFileIntegrity_FileMissingSentinel_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "CLAUDE.md")
+	path := filepath.Join(dir, "AGENTS.md")
 	if err := os.WriteFile(path, []byte("# Role: Implementer\n\nSome instructions without the sentinel."), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	err := checkClaudeMdIntegrity(path)
+	err := checkInstructionsFileIntegrity(path)
 	if err == nil {
-		t.Error("expected error for CLAUDE.md missing sentinel")
+		t.Error("expected error for AGENTS.md missing sentinel")
 	}
 }
 
-func TestCheckClaudeMdIntegrity_FileWithSentinel_ReturnsNil(t *testing.T) {
+func TestCheckInstructionsFileIntegrity_FileWithSentinel_ReturnsNil(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "CLAUDE.md")
+	path := filepath.Join(dir, "AGENTS.md")
 	content := "# Role: Implementer\n\nct droplet pass <id> --notes \"...\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	if err := checkClaudeMdIntegrity(path); err != nil {
+	if err := checkInstructionsFileIntegrity(path); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -981,15 +981,15 @@ const minimalCisternConfigYAML = `repos:
 max_cataractae: 1
 `
 
-// minimalCisternConfigWithCodexYAML is a valid config using the codex provider (InstructionsFile=AGENTS.md).
-const minimalCisternConfigWithCodexYAML = `repos:
+// minimalCisternConfigWithOpencodeYAML is a valid config using the opencode provider (InstructionsFile=AGENTS.md).
+const minimalCisternConfigWithOpencodeYAML = `repos:
   - name: testrepo
     url: https://github.com/example/testrepo
     workflow_path: aqueduct/workflow.yaml
     cataractae: 1
     prefix: ct
 provider:
-  name: codex
+  name: opencode
 max_cataractae: 1
 `
 
@@ -1018,7 +1018,7 @@ llm:
   base_url: https://llm.example.com
 `
 
-// minimalCisternConfigWithMismatchYAML has agent provider=codex but llm.provider=anthropic.
+// minimalCisternConfigWithMismatchYAML has agent provider=opencode but llm.provider=anthropic.
 const minimalCisternConfigWithMismatchYAML = `repos:
   - name: testrepo
     url: https://github.com/example/testrepo
@@ -1026,7 +1026,7 @@ const minimalCisternConfigWithMismatchYAML = `repos:
     cataractae: 1
     prefix: ct
 provider:
-  name: codex
+  name: opencode
 llm:
   provider: anthropic
 max_cataractae: 1
@@ -1062,8 +1062,8 @@ func TestRunDoctorExtendedChecks_PassesWithValidSetup(t *testing.T) {
 		}
 	}
 
-	// Provide a fake 'claude' binary and API key so binary+env checks pass.
-	setupFakeBinAndAPIKey(t, "claude", "ANTHROPIC_API_KEY")
+	// Provide a fake 'opencode' binary so binary checks pass.
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	// Write workflow.yaml.
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
@@ -1077,14 +1077,14 @@ func TestRunDoctorExtendedChecks_PassesWithValidSetup(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	// Write CLAUDE.md for the "tester" identity.
+	// Write AGENTS.md for the "tester" identity.
 	testerDir := filepath.Join(cataractaeDir, "tester")
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
 	}
-	claudeContent := "# Role: Tester\n\nct droplet pass <id> --notes \"...\"\n"
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte(claudeContent), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
+	agentsContent := "# Role: Tester\n\nct droplet pass <id> --notes \"...\"\n"
+	if err := os.WriteFile(filepath.Join(testerDir, "AGENTS.md"), []byte(agentsContent), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
 	}
 
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -1099,7 +1099,7 @@ func TestRunDoctorExtendedChecks_PassesWithValidSetup(t *testing.T) {
 	}
 }
 
-func TestRunDoctorExtendedChecks_FailsWhenClaudeMdMissing(t *testing.T) {
+func TestRunDoctorExtendedChecks_FailsWhenInstructionsFileMissing(t *testing.T) {
 	home := t.TempDir()
 
 	cisternDir := filepath.Join(home, ".cistern")
@@ -1125,15 +1125,15 @@ func TestRunDoctorExtendedChecks_FailsWhenClaudeMdMissing(t *testing.T) {
 		t.Fatalf("parse config: %v", err)
 	}
 
-	// CLAUDE.md is NOT written — check should fail.
+	// AGENTS.md is NOT written — check should fail.
 	dbPath := filepath.Join(cisternDir, "cistern.db")
 	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
 	if result {
-		t.Error("expected extended checks to fail when CLAUDE.md is missing")
+		t.Error("expected extended checks to fail when AGENTS.md is missing")
 	}
 }
 
-func TestRunDoctorExtendedChecks_FixRegeneratesClaudeMd(t *testing.T) {
+func TestRunDoctorExtendedChecks_FixRegeneratesInstructionsFile(t *testing.T) {
 	home := t.TempDir()
 
 	cisternDir := filepath.Join(home, ".cistern")
@@ -1145,8 +1145,8 @@ func TestRunDoctorExtendedChecks_FixRegeneratesClaudeMd(t *testing.T) {
 		}
 	}
 
-	// Provide a fake 'claude' binary and API key so binary+env checks pass.
-	setupFakeBinAndAPIKey(t, "claude", "ANTHROPIC_API_KEY")
+	// Provide a fake 'opencode' binary so binary checks pass.
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
@@ -1159,7 +1159,7 @@ func TestRunDoctorExtendedChecks_FixRegeneratesClaudeMd(t *testing.T) {
 	}
 
 	// Provide PERSONA.md and INSTRUCTIONS.md in the cataractae dir so the fix
-	// can regenerate CLAUDE.md from them.
+	// can regenerate AGENTS.md from them.
 	testerDir := filepath.Join(cataractaeDir, "tester")
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
@@ -1179,17 +1179,17 @@ func TestRunDoctorExtendedChecks_FixRegeneratesClaudeMd(t *testing.T) {
 	doctorFix = true
 	defer func() { doctorFix = false }()
 
-	// CLAUDE.md is absent — fix should regenerate it from PERSONA.md + INSTRUCTIONS.md.
+	// AGENTS.md is absent — fix should regenerate it from PERSONA.md + INSTRUCTIONS.md.
 	dbPath := filepath.Join(cisternDir, "cistern.db")
 	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
 	if !result {
-		t.Error("expected extended checks to pass after fix regenerates CLAUDE.md")
+		t.Error("expected extended checks to pass after fix regenerates AGENTS.md")
 	}
 
 	// Verify the file was created.
-	generatedPath := filepath.Join(cataractaeDir, "tester", "CLAUDE.md")
+	generatedPath := filepath.Join(cataractaeDir, "tester", "AGENTS.md")
 	if _, err := os.Stat(generatedPath); os.IsNotExist(err) {
-		t.Error("CLAUDE.md was not created by fix")
+		t.Error("AGENTS.md was not created by fix")
 	}
 }
 
@@ -1225,13 +1225,13 @@ cataractae:
 		t.Fatalf("write config: %v", err)
 	}
 
-	// Write CLAUDE.md for tester so that check passes.
+	// Write AGENTS.md for tester so that check passes.
 	testerDir := filepath.Join(cataractaeDir, "tester")
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte("ct droplet pass"), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
+	if err := os.WriteFile(filepath.Join(testerDir, "AGENTS.md"), []byte("ct droplet pass"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
 	}
 
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -1248,8 +1248,7 @@ cataractae:
 }
 
 // TestRunDoctorExtendedChecks_ProviderInstructionsFile verifies that the doctor
-// checks the provider's InstructionsFile (e.g., AGENTS.md for codex) rather than
-// always CLAUDE.md.
+// checks the provider's InstructionsFile (AGENTS.md for opencode).
 func TestRunDoctorExtendedChecks_ProviderInstructionsFile(t *testing.T) {
 	home := t.TempDir()
 
@@ -1262,30 +1261,30 @@ func TestRunDoctorExtendedChecks_ProviderInstructionsFile(t *testing.T) {
 		}
 	}
 
-	setupFakeBinAndAPIKey(t, "codex", "OPENAI_API_KEY")
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
 
-	// Config specifying codex provider (InstructionsFile = AGENTS.md).
-	codexConfigYAML := `repos:
+	// Config specifying opencode provider (InstructionsFile = AGENTS.md).
+	opencodeConfigYAML := `repos:
   - name: testrepo
     url: https://github.com/example/testrepo
     workflow_path: aqueduct/workflow.yaml
     cataractae: 1
     prefix: ct
 provider:
-  name: codex
+  name: opencode
 max_cataractae: 1
 `
 	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(codexConfigYAML), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(opencodeConfigYAML), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
-	// Write AGENTS.md (codex InstructionsFile) for tester.
+	// Write AGENTS.md (opencode InstructionsFile) for tester.
 	testerDir := filepath.Join(cataractaeDir, "tester")
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
@@ -1303,13 +1302,12 @@ max_cataractae: 1
 	dbPath := filepath.Join(cisternDir, "cistern.db")
 	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
 	if !result {
-		t.Error("expected extended checks to pass when AGENTS.md is present for codex provider")
+		t.Error("expected extended checks to pass when AGENTS.md is present for opencode provider")
 	}
 }
 
 // TestRunDoctorExtendedChecks_ProviderInstructionsFile_MissingFails verifies that the
-// doctor fails when the provider's InstructionsFile (e.g., AGENTS.md) is missing,
-// even when CLAUDE.md exists.
+// doctor fails when the provider's InstructionsFile (AGENTS.md) is missing.
 func TestRunDoctorExtendedChecks_ProviderInstructionsFile_MissingFails(t *testing.T) {
 	home := t.TempDir()
 
@@ -1322,33 +1320,32 @@ func TestRunDoctorExtendedChecks_ProviderInstructionsFile_MissingFails(t *testin
 		}
 	}
 
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
+
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
 
-	codexConfigYAML := `repos:
+	opencodeConfigYAML := `repos:
   - name: testrepo
     url: https://github.com/example/testrepo
     workflow_path: aqueduct/workflow.yaml
     cataractae: 1
     prefix: ct
 provider:
-  name: codex
+  name: opencode
 max_cataractae: 1
 `
 	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(codexConfigYAML), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(opencodeConfigYAML), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
-	// Write CLAUDE.md but NOT AGENTS.md — provider is codex so AGENTS.md is checked.
+	// AGENTS.md is NOT written for the tester identity.
 	testerDir := filepath.Join(cataractaeDir, "tester")
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte("ct droplet pass"), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
 	}
 
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -1359,13 +1356,13 @@ max_cataractae: 1
 	dbPath := filepath.Join(cisternDir, "cistern.db")
 	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
 	if result {
-		t.Error("expected extended checks to fail when AGENTS.md is missing for codex provider")
+		t.Error("expected extended checks to fail when AGENTS.md is missing for opencode provider")
 	}
 }
 
 // TestRunDoctorExtendedChecks_UnknownProvider_FailsProviderCheck verifies that
 // when the configured provider name is unknown, the doctor reports a check
-// failure instead of silently defaulting to CLAUDE.md.
+// failure instead of silently defaulting to AGENTS.md.
 func TestRunDoctorExtendedChecks_UnknownProvider_FailsProviderCheck(t *testing.T) {
 	home := t.TempDir()
 
@@ -1457,7 +1454,7 @@ func TestRunDoctorExtendedChecks_ProviderBinaryMissing_Fails(t *testing.T) {
 		}
 	}
 
-	// Redirect PATH so 'claude' won't be found.
+	// Redirect PATH so no provider binary will be found.
 	emptyBinDir := t.TempDir()
 	t.Setenv("PATH", emptyBinDir)
 	t.Setenv("GH_TOKEN", "test-key")
@@ -1469,81 +1466,6 @@ func TestRunDoctorExtendedChecks_ProviderBinaryMissing_Fails(t *testing.T) {
 
 	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
 	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigYAML), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	testerDir := filepath.Join(cataractaeDir, "tester")
-	if err := os.MkdirAll(testerDir, 0o755); err != nil {
-		t.Fatalf("mkdir tester: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte("ct droplet pass"), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-
-	dbPath := filepath.Join(cisternDir, "cistern.db")
-	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
-	if result {
-		t.Error("expected extended checks to fail when provider binary is not in PATH")
-	}
-}
-
-func TestProviderInstallHint_KnownPreset_ReturnsHint(t *testing.T) {
-	tests := []struct {
-		name     string
-		wantHint bool
-	}{
-		{"claude", true},
-		{"codex", true},
-		{"gemini", true},
-		{"opencode", true},
-		{"copilot", false},
-		{"unknown", false},
-	}
-	for _, tc := range tests {
-		got := providerInstallHint(tc.name)
-		if tc.wantHint && got == "" {
-			t.Errorf("providerInstallHint(%q) = empty, want non-empty hint", tc.name)
-		}
-		if !tc.wantHint && got != "" {
-			t.Errorf("providerInstallHint(%q) = %q, want empty", tc.name, got)
-		}
-	}
-}
-
-// --- Env var checks (check 2) ---
-
-func TestRunDoctorExtendedChecks_EnvVarMissing_Fails(t *testing.T) {
-	// Claude authenticates via its own OAuth file — no env var required.
-	// Use codex (requires OPENAI_API_KEY) to test the env-var-missing path.
-	home := t.TempDir()
-
-	cisternDir := filepath.Join(home, ".cistern")
-	aqueductDir := filepath.Join(cisternDir, "aqueduct")
-	cataractaeDir := filepath.Join(cisternDir, "cataractae")
-	for _, d := range []string{aqueductDir, cataractaeDir, filepath.Join(cisternDir, "skills")} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", d, err)
-		}
-	}
-
-	// Fake codex binary present, but OPENAI_API_KEY explicitly unset.
-	setupFakeBinAndAPIKey(t, "codex", "")
-	t.Setenv("OPENAI_API_KEY", "")
-
-	codexWorkflow := strings.ReplaceAll(minimalWorkflowYAML, "provider: claude", "provider: codex")
-	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
-	if err := os.WriteFile(wfPath, []byte(codexWorkflow), 0o644); err != nil {
-		t.Fatalf("write workflow: %v", err)
-	}
-
-	codexConfig := strings.ReplaceAll(minimalCisternConfigYAML, "provider: claude", "provider: codex")
-	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(codexConfig), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -1563,60 +1485,33 @@ func TestRunDoctorExtendedChecks_EnvVarMissing_Fails(t *testing.T) {
 	dbPath := filepath.Join(cisternDir, "cistern.db")
 	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
 	if result {
-		t.Error("expected extended checks to fail when required env var is not set")
+		t.Error("expected extended checks to fail when provider binary is not in PATH")
 	}
 }
 
-// --- Agent file mismatch checks (check 3) ---
-
-func TestRunDoctorExtendedChecks_AgentFileMismatch_OnlyClaudeMd_Fails(t *testing.T) {
-	// Codex provider wants AGENTS.md, but only CLAUDE.md is present.
-	home := t.TempDir()
-
-	cisternDir := filepath.Join(home, ".cistern")
-	aqueductDir := filepath.Join(cisternDir, "aqueduct")
-	cataractaeDir := filepath.Join(cisternDir, "cataractae")
-	for _, d := range []string{aqueductDir, cataractaeDir, filepath.Join(cisternDir, "skills")} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", d, err)
+func TestProviderInstallHint_KnownPreset_ReturnsHint(t *testing.T) {
+	tests := []struct {
+		name     string
+		wantHint bool
+	}{
+		{"opencode", true},
+		{"unknown", false},
+	}
+	for _, tc := range tests {
+		got := providerInstallHint(tc.name)
+		if tc.wantHint && got == "" {
+			t.Errorf("providerInstallHint(%q) = empty, want non-empty hint", tc.name)
+		}
+		if !tc.wantHint && got != "" {
+			t.Errorf("providerInstallHint(%q) = %q, want empty", tc.name, got)
 		}
 	}
-
-	setupFakeBinAndAPIKey(t, "codex", "OPENAI_API_KEY")
-
-	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
-	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
-		t.Fatalf("write workflow: %v", err)
-	}
-
-	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigWithCodexYAML), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	testerDir := filepath.Join(cataractaeDir, "tester")
-	if err := os.MkdirAll(testerDir, 0o755); err != nil {
-		t.Fatalf("mkdir tester: %v", err)
-	}
-	// Only CLAUDE.md — codex needs AGENTS.md.
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte("ct droplet pass"), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-
-	dbPath := filepath.Join(cisternDir, "cistern.db")
-	result := runDoctorExtendedChecks(cfg, cfgPath, home, dbPath)
-	if result {
-		t.Error("expected extended checks to fail when provider needs AGENTS.md but only CLAUDE.md exists")
-	}
 }
+
+// --- Agent file checks (check 3) ---
 
 func TestRunDoctorExtendedChecks_AgentFileCorrect_Passes(t *testing.T) {
-	// Codex provider with AGENTS.md correctly present.
+	// opencode provider with AGENTS.md correctly present.
 	home := t.TempDir()
 
 	cisternDir := filepath.Join(home, ".cistern")
@@ -1628,7 +1523,7 @@ func TestRunDoctorExtendedChecks_AgentFileCorrect_Passes(t *testing.T) {
 		}
 	}
 
-	setupFakeBinAndAPIKey(t, "codex", "OPENAI_API_KEY")
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
@@ -1636,7 +1531,7 @@ func TestRunDoctorExtendedChecks_AgentFileCorrect_Passes(t *testing.T) {
 	}
 
 	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigWithCodexYAML), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigWithOpencodeYAML), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -1644,7 +1539,7 @@ func TestRunDoctorExtendedChecks_AgentFileCorrect_Passes(t *testing.T) {
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
 	}
-	// AGENTS.md — correct for codex.
+	// AGENTS.md — correct for opencode.
 	if err := os.WriteFile(filepath.Join(testerDir, "AGENTS.md"), []byte("ct droplet pass"), 0o644); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
@@ -1675,7 +1570,7 @@ func TestRunDoctorExtendedChecks_LLMCustomWithoutBaseURL_Fails(t *testing.T) {
 		}
 	}
 
-	setupFakeBinAndAPIKey(t, "claude", "ANTHROPIC_API_KEY")
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
@@ -1692,8 +1587,8 @@ func TestRunDoctorExtendedChecks_LLMCustomWithoutBaseURL_Fails(t *testing.T) {
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte("ct droplet pass"), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
+	if err := os.WriteFile(filepath.Join(testerDir, "AGENTS.md"), []byte("ct droplet pass"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
 	}
 
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -1720,7 +1615,7 @@ func TestRunDoctorExtendedChecks_LLMCustomWithBaseURL_Passes(t *testing.T) {
 		}
 	}
 
-	setupFakeBinAndAPIKey(t, "claude", "ANTHROPIC_API_KEY")
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
@@ -1737,8 +1632,8 @@ func TestRunDoctorExtendedChecks_LLMCustomWithBaseURL_Passes(t *testing.T) {
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testerDir, "CLAUDE.md"), []byte("ct droplet pass"), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
+	if err := os.WriteFile(filepath.Join(testerDir, "AGENTS.md"), []byte("ct droplet pass"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
 	}
 
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
@@ -1756,7 +1651,7 @@ func TestRunDoctorExtendedChecks_LLMCustomWithBaseURL_Passes(t *testing.T) {
 // --- Provider + LLM mismatch advisory (check 5) ---
 
 func TestRunDoctorExtendedChecks_ProviderLLMMismatch_Advisory_NoCrash(t *testing.T) {
-	// codex agent + anthropic LLM — advisory note, does not fail the check.
+	// opencode agent + anthropic LLM — advisory note, does not fail the check.
 	home := t.TempDir()
 
 	cisternDir := filepath.Join(home, ".cistern")
@@ -1768,7 +1663,7 @@ func TestRunDoctorExtendedChecks_ProviderLLMMismatch_Advisory_NoCrash(t *testing
 		}
 	}
 
-	setupFakeBinAndAPIKey(t, "codex", "OPENAI_API_KEY")
+	setupFakeBinAndAPIKey(t, "opencode", "OLLAMA_HOST")
 
 	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
 	if err := os.WriteFile(wfPath, []byte(minimalWorkflowYAML), 0o644); err != nil {
@@ -1784,7 +1679,7 @@ func TestRunDoctorExtendedChecks_ProviderLLMMismatch_Advisory_NoCrash(t *testing
 	if err := os.MkdirAll(testerDir, 0o755); err != nil {
 		t.Fatalf("mkdir tester: %v", err)
 	}
-	// codex provider needs AGENTS.md.
+	// opencode provider needs AGENTS.md.
 	if err := os.WriteFile(filepath.Join(testerDir, "AGENTS.md"), []byte("ct droplet pass"), 0o644); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
@@ -1807,10 +1702,6 @@ func TestInferLLMProviderFromPreset_KnownPresets(t *testing.T) {
 		presetName string
 		want       string
 	}{
-		{"claude", "anthropic"},
-		{"codex", "openai"},
-		{"gemini", "gemini"},
-		{"copilot", "openai"},
 		{"opencode", "ollama"},
 		{"unknown", ""},
 	}
@@ -1824,36 +1715,6 @@ func TestInferLLMProviderFromPreset_KnownPresets(t *testing.T) {
 
 // --- runDoctorProviderChecks tests ---
 
-func TestRunDoctorProviderChecks_ClaudeProvider_ChecksClaudeBinaryAndAuth(t *testing.T) {
-	home := t.TempDir()
-	cisternDir := filepath.Join(home, ".cistern")
-	aqueductDir := filepath.Join(cisternDir, "aqueduct")
-	if err := os.MkdirAll(aqueductDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	setupFakeBinAndAPIKey(t, "claude", "")
-
-	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(minimalCisternConfigYAML), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	orig := providerAuthStatusFn
-	t.Cleanup(func() { providerAuthStatusFn = orig })
-	providerAuthStatusFn = func() error { return nil }
-
-	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-
-	result := runDoctorProviderChecks(cfg)
-	if !result {
-		t.Error("expected provider checks to pass for claude provider with binary and auth")
-	}
-}
-
 func TestRunDoctorProviderChecks_OpencodeProvider_ChecksOpencodeOnly(t *testing.T) {
 	home := t.TempDir()
 	cisternDir := filepath.Join(home, ".cistern")
@@ -1862,7 +1723,7 @@ func TestRunDoctorProviderChecks_OpencodeProvider_ChecksOpencodeOnly(t *testing.
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	// Set up fake opencode binary, but NOT claude.
+	// Set up fake opencode binary.
 	setupFakeBinAndAPIKey(t, "opencode", "")
 
 	opencodeConfigYAML := `repos:
@@ -1887,49 +1748,7 @@ max_cataractae: 1
 
 	result := runDoctorProviderChecks(cfg)
 	if !result {
-		t.Error("expected provider checks to pass for opencode provider without claude")
-	}
-}
-
-func TestRunDoctorProviderChecks_OpencodeProvider_ClaudeMissingNoFailure(t *testing.T) {
-	home := t.TempDir()
-	cisternDir := filepath.Join(home, ".cistern")
-	aqueductDir := filepath.Join(cisternDir, "aqueduct")
-	if err := os.MkdirAll(aqueductDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	// PATH with opencode but no claude.
-	binDir := t.TempDir()
-	fakeBin := filepath.Join(binDir, "opencode")
-	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatalf("create fake opencode: %v", err)
-	}
-	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
-
-	opencodeConfigYAML := `repos:
-  - name: testrepo
-    url: https://github.com/example/testrepo
-    workflow_path: aqueduct/workflow.yaml
-    cataractae: 1
-    prefix: ct
-provider:
-  name: opencode
-max_cataractae: 1
-`
-	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
-	if err := os.WriteFile(cfgPath, []byte(opencodeConfigYAML), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-
-	result := runDoctorProviderChecks(cfg)
-	if !result {
-		t.Error("expected provider checks to pass for opencode provider even when claude is missing")
+		t.Error("expected provider checks to pass for opencode provider")
 	}
 }
 
@@ -1961,41 +1780,15 @@ func TestRunDoctorProviderChecks_MissingBinary_Fails(t *testing.T) {
 	}
 }
 
-// --- providerAuthStatusFn (claude CLI authenticated) tests ---
-
-func TestClaudeAuthenticated_ExitZero_PassesCheck(t *testing.T) {
-	orig := providerAuthStatusFn
-	t.Cleanup(func() { providerAuthStatusFn = orig })
-	providerAuthStatusFn = func() error { return nil }
-
-	got := checkWithFix("claude CLI authenticated", providerAuthStatusFn, nil)
-	if !got {
-		t.Error("expected checkWithFix to return true when claude auth status exits 0")
-	}
-}
-
-func TestClaudeAuthenticated_NonZeroExit_FailsCheck(t *testing.T) {
-	orig := providerAuthStatusFn
-	t.Cleanup(func() { providerAuthStatusFn = orig })
-	providerAuthStatusFn = func() error {
-		return fmt.Errorf("Not logged in")
-	}
-
-	got := checkWithFix("claude CLI authenticated", providerAuthStatusFn, nil)
-	if got {
-		t.Error("expected checkWithFix to return false when claude auth status exits non-zero")
-	}
-}
-
 // --- checkCisternEnvHasKey unit tests ---
 
 func TestCheckCisternEnvHasKey_KeyPresent_ReturnsNil(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	if err := os.WriteFile(path, []byte("OPENAI_API_KEY=sk-test123\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("GH_TOKEN=ghp_test123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err != nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -2003,10 +1796,10 @@ func TestCheckCisternEnvHasKey_KeyPresent_ReturnsNil(t *testing.T) {
 func TestCheckCisternEnvHasKey_KeyAbsent_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	if err := os.WriteFile(path, []byte("GH_TOKEN=ghp_abc\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("OTHER_KEY=other_value\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err == nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err == nil {
 		t.Error("expected error when key is absent from env file")
 	}
 }
@@ -2014,17 +1807,17 @@ func TestCheckCisternEnvHasKey_KeyAbsent_ReturnsError(t *testing.T) {
 func TestCheckCisternEnvHasKey_KeyPresentButEmpty_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	if err := os.WriteFile(path, []byte("OPENAI_API_KEY=\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("GH_TOKEN=\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err == nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err == nil {
 		t.Error("expected error when key is present but has empty value")
 	}
 }
 
 func TestCheckCisternEnvHasKey_FileAbsent_ReturnsError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nonexistent", "env")
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err == nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err == nil {
 		t.Error("expected error when env file does not exist")
 	}
 }
@@ -2032,11 +1825,11 @@ func TestCheckCisternEnvHasKey_FileAbsent_ReturnsError(t *testing.T) {
 func TestCheckCisternEnvHasKey_CommentsAndBlankLines_Ignored(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	content := "# credentials\n\nOPENAI_API_KEY=sk-test-real\nGH_TOKEN=ghp_abc\n"
+	content := "# credentials\n\nGH_TOKEN=ghp_abc\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err != nil {
+	if err := checkCisternEnvHasKey(path, "GH_TOKEN"); err != nil {
 		t.Errorf("unexpected error with comments and blank lines: %v", err)
 	}
 }
@@ -2044,11 +1837,11 @@ func TestCheckCisternEnvHasKey_CommentsAndBlankLines_Ignored(t *testing.T) {
 func TestCheckCisternEnvHasKey_MultipleKeys_FindsCorrectOne(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
-	content := "GH_TOKEN=ghp_abc\nOPENAI_API_KEY=sk-test-real\nEXTRA_VAR=value\n"
+	content := "GH_TOKEN=ghp_abc\nMY_KEY=sk-test-real\nEXTRA_VAR=value\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := checkCisternEnvHasKey(path, "OPENAI_API_KEY"); err != nil {
+	if err := checkCisternEnvHasKey(path, "MY_KEY"); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -2089,7 +1882,7 @@ func TestFixCisternEnvFile_ExistingFile_IsNotModified(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")
 
-	existing := []byte("OPENAI_API_KEY=sk-test-existing\n")
+	existing := []byte("GH_TOKEN=ghp_test-existing\n")
 	if err := os.WriteFile(path, existing, 0o600); err != nil {
 		t.Fatalf("write existing: %v", err)
 	}
@@ -2134,8 +1927,8 @@ func TestFixCisternEnvFile_NewFile_ContainsCommentStub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read env: %v", err)
 	}
-	if !strings.Contains(string(data), "OPENAI_API_KEY") {
-		t.Error("new env file does not contain OPENAI_API_KEY comment stub")
+	if !strings.Contains(string(data), "GH_TOKEN") {
+		t.Error("new env file does not contain GH_TOKEN comment stub")
 	}
 	if !strings.Contains(string(data), "#") {
 		t.Error("new env file does not contain comment lines")
@@ -2272,7 +2065,7 @@ func TestInstallSystemdService_PreservesExistingEnvFile(t *testing.T) {
 		t.Fatalf("mkdir cistern: %v", err)
 	}
 	envPath := filepath.Join(cisternDir, "env")
-	existing := []byte("OPENAI_API_KEY=sk-test-existing\n")
+	existing := []byte("GH_TOKEN=ghp_test-existing\n")
 	if err := os.WriteFile(envPath, existing, 0o600); err != nil {
 		t.Fatalf("write existing env: %v", err)
 	}
@@ -2338,7 +2131,7 @@ func TestInstallSystemdService_ServiceFileHasNoHardcodedAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read service file: %v", err)
 	}
-	for _, key := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GH_TOKEN"} {
+	for _, key := range []string{"GH_TOKEN"} {
 		if strings.Contains(string(data), key) {
 			t.Errorf("service file must not contain %s — credentials are loaded by the wrapper script", key)
 		}
@@ -2424,30 +2217,9 @@ func TestCheckSystemdServiceEnv_NoAPIKeyCheck(t *testing.T) {
 	buf.ReadFrom(r)
 	output := buf.String()
 
-	for _, key := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
+	for _, key := range []string{"GH_TOKEN"} {
 		if strings.Contains(output, key) {
 			t.Errorf("checkSystemdServiceEnv emitted a %s warning; output:\n%s", key, output)
-		}
-	}
-}
-
-// --- Provider-aware env file checks ---
-
-// TestDoctorEnvCheck_GeminiProvider_GeminiKeySet_Passes verifies that the doctor
-// env file check passes for a gemini-configured setup when GEMINI_API_KEY is
-// present in ~/.cistern/env and no other provider keys are set.
-func TestDoctorEnvCheck_GeminiProvider_GeminiKeySet_Passes(t *testing.T) {
-	home := t.TempDir()
-	cfgPath := writeMinimalConfig(t, home, "gemini")
-	envPath := filepath.Join(filepath.Dir(cfgPath), "env")
-	if err := os.WriteFile(envPath, []byte("GEMINI_API_KEY=gemini-test-key\n"), 0o600); err != nil {
-		t.Fatalf("write env: %v", err)
-	}
-
-	requiredVars, _ := startupRequiredEnvVars(cfgPath)
-	for _, key := range requiredVars {
-		if err := checkCisternEnvHasKey(envPath, key); err != nil {
-			t.Errorf("env check for %s failed: %v", key, err)
 		}
 	}
 }
@@ -2475,8 +2247,8 @@ func TestRunDoctorExtendedChecks_DefaultWorkflow_InstallerStubs_Passes(t *testin
 		}
 	}
 
-	// Fake claude binary (default provider — no API key required).
-	setupFakeBinAndAPIKey(t, "claude", "")
+	// Fake opencode binary (default provider — no env vars required).
+	setupFakeBinAndAPIKey(t, "opencode", "")
 
 	// Write the default embedded workflow.
 	wfPath := filepath.Join(aqueductDir, "aqueduct.yaml")
@@ -2498,7 +2270,7 @@ max_cataractae: 1
 		t.Fatalf("write config: %v", err)
 	}
 
-	// Generate CLAUDE.md files for all identities, mirroring what ct init does.
+	// Generate AGENTS.md files for all identities, mirroring what ct init does.
 	w, err := aqueduct.ParseWorkflowBytes(defaultAqueductWorkflow)
 	if err != nil {
 		t.Fatalf("parse default workflow: %v", err)
@@ -2507,7 +2279,7 @@ max_cataractae: 1
 		t.Fatalf("init cataractae dir: %v", err)
 	}
 	if _, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir, ""); err != nil {
-		t.Fatalf("generate CLAUDE.md files: %v", err)
+		t.Fatalf("generate AGENTS.md files: %v", err)
 	}
 
 	// installerStubs mirrors _install_skill_stubs in tests/installer/run-tests.sh.
@@ -2543,24 +2315,5 @@ max_cataractae: 1
 			"if the default workflow changed its required skills, update installerStubs above, " +
 			"_install_skill_stubs in tests/installer/run-tests.sh, " +
 			"and the skill lists in run-installer-tests.sh (3 occurrences)")
-	}
-}
-
-// TestDoctorEnvCheck_GeminiProvider_GeminiKeyMissing_Fails verifies that the
-// doctor env file check fails for a gemini setup when GEMINI_API_KEY is absent.
-func TestDoctorEnvCheck_GeminiProvider_GeminiKeyMissing_Fails(t *testing.T) {
-	home := t.TempDir()
-	cfgPath := writeMinimalConfig(t, home, "gemini")
-	envPath := filepath.Join(filepath.Dir(cfgPath), "env")
-	// Env file with only OPENAI_API_KEY — not what gemini needs.
-	if err := os.WriteFile(envPath, []byte("OPENAI_API_KEY=sk-test123\n"), 0o600); err != nil {
-		t.Fatalf("write env: %v", err)
-	}
-
-	requiredVars, _ := startupRequiredEnvVars(cfgPath)
-	for _, key := range requiredVars {
-		if err := checkCisternEnvHasKey(envPath, key); err == nil {
-			t.Errorf("expected env check for %s to fail when key is absent from env file", key)
-		}
 	}
 }

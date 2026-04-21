@@ -9,11 +9,10 @@ import (
 	"strings"
 )
 
-// ClaudeAliveUnderPIDIn returns true when any descendant of panePIDStr (read
-// from procRoot) has a cmdline whose argv[0] base name is "claude" or starts
-// with "claude-". procRoot is the proc filesystem root; tests may pass a fake
-// directory.
-func ClaudeAliveUnderPIDIn(panePIDStr, procRoot string) bool {
+// AgentAliveUnderPIDIn returns true when any descendant of panePIDStr (read
+// from procRoot) has a cmdline whose argv[0] base name is "opencode".
+// procRoot is the proc filesystem root; tests may pass a fake directory.
+func AgentAliveUnderPIDIn(panePIDStr, procRoot string) bool {
 	if panePIDStr == "" {
 		return false
 	}
@@ -89,8 +88,7 @@ func ParsePPid(status string) string {
 }
 
 // IsAgentCmdline returns true when the null-separated cmdline identifies a
-// known agent process — the base name of argv[0] is "claude" (or "claude-*"),
-// "opencode", or "codex". These are the known agent binaries.
+// known agent process — the base name of argv[0] is "opencode".
 func IsAgentCmdline(cmdline string) bool {
 	if cmdline == "" {
 		return false
@@ -100,16 +98,5 @@ func IsAgentCmdline(cmdline string) bool {
 		return false
 	}
 	base := filepath.Base(argv0)
-	switch base {
-	case "claude", "opencode", "codex":
-		return true
-	default:
-		return strings.HasPrefix(base, "claude-")
-	}
-}
-
-// IsClaudeCmdline returns true when the cmdline identifies a claude process.
-// Kept for backward compatibility; delegates to IsAgentCmdline.
-func IsClaudeCmdline(cmdline string) bool {
-	return IsAgentCmdline(cmdline)
+	return base == "opencode"
 }

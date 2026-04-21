@@ -11,7 +11,7 @@ import (
 func TestInit_CreatesDirectoryStructure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
@@ -33,7 +33,7 @@ t.Setenv("USERPROFILE", home)
 func TestInit_WritesCisternYAML(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
@@ -57,7 +57,7 @@ t.Setenv("USERPROFILE", home)
 func TestInit_CopiesWorkflowFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
@@ -83,7 +83,7 @@ t.Setenv("USERPROFILE", home)
 func TestInit_GeneratesRoles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	if err := initCmd.RunE(initCmd, nil); err != nil {
@@ -99,14 +99,14 @@ t.Setenv("USERPROFILE", home)
 		t.Fatal("no roles were generated")
 	}
 
-	// Each role should have a CLAUDE.md.
+	// Each role should have an AGENTS.md.
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		claudeMD := filepath.Join(cataractaeDir, entry.Name(), "CLAUDE.md")
-		if _, err := os.Stat(claudeMD); os.IsNotExist(err) {
-			t.Errorf("missing CLAUDE.md for role %q", entry.Name())
+		agentsMD := filepath.Join(cataractaeDir, entry.Name(), "AGENTS.md")
+		if _, err := os.Stat(agentsMD); os.IsNotExist(err) {
+			t.Errorf("missing AGENTS.md for role %q", entry.Name())
 		}
 	}
 }
@@ -114,7 +114,7 @@ t.Setenv("USERPROFILE", home)
 func TestInit_SkipsExistingFilesWithoutForce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	// First run to create files.
@@ -147,7 +147,7 @@ t.Setenv("USERPROFILE", home)
 func TestInit_ForceOverwritesExistingFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 
 	// First run to create files.
 	initForce = false
@@ -185,7 +185,7 @@ t.Setenv("USERPROFILE", home)
 func TestInit_IdempotentWithoutForce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	initForce = false
 
 	// Run twice — both must succeed with no errors.
@@ -490,16 +490,19 @@ func TestInit_WritesCisternYAML_ContainsDashboardFontFamily(t *testing.T) {
 	}
 }
 
-func TestInit_NextStepsMessage_DoesNotMentionAnthropicAPIKey(t *testing.T) {
+func TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars(t *testing.T) {
 	output := captureInitOutput(t)
-	if strings.Contains(output, "ANTHROPIC_API_KEY") {
-		t.Errorf("ct init next-steps message must not mention ANTHROPIC_API_KEY — claude uses OAuth, not an API key; output:\n%s", output)
+	removedEnvVars := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
+	for _, envVar := range removedEnvVars {
+		if strings.Contains(output, envVar) {
+			t.Errorf("ct init next-steps message must not mention %s; output:\n%s", envVar, output)
+		}
 	}
 }
 
-func TestInit_NextStepsMessage_MentionsClaudeAuth(t *testing.T) {
+func TestInit_NextStepsMessage_MentionsProviderAuth(t *testing.T) {
 	output := captureInitOutput(t)
-	if !strings.Contains(output, "claude") {
-		t.Errorf("ct init next-steps message should mention running 'claude' for OAuth authentication; output:\n%s", output)
+	if !strings.Contains(output, "provider") {
+		t.Errorf("ct init next-steps message should mention provider authentication; output:\n%s", output)
 	}
 }

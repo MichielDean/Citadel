@@ -16,9 +16,6 @@ import (
 	"github.com/MichielDean/cistern/internal/provider"
 )
 
-// syncBuffer wraps bytes.Buffer with a mutex so that concurrent Write calls
-// (from background goroutines writing via slog) and String() calls (from the
-// test polling loop) do not race under go test -race.
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -36,9 +33,6 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// captureDefaultSlog temporarily replaces slog.Default() with a buffer-backed
-// text logger for the duration of the test, then restores the original.
-// Returns the buffer whose String() can be inspected for log output.
 func captureDefaultSlog(t *testing.T) *syncBuffer {
 	t.Helper()
 	prev := slog.Default()
@@ -47,50 +41,6 @@ func captureDefaultSlog(t *testing.T) *syncBuffer {
 	slog.SetDefault(l)
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return buf
-}
-
-func TestBuildClaudeCmd_ContainsAddDir(t *testing.T) {
-	s := &Session{ID: "test", WorkDir: "/tmp"}
-	skillsDir := "/home/user/.cistern/skills"
-	cmd := s.buildClaudeCmd(skillsDir)
-	if !strings.Contains(cmd, "--add-dir") {
-		t.Errorf("claudeCmd missing --add-dir flag: %s", cmd)
-	}
-	if !strings.Contains(cmd, skillsDir) {
-		t.Errorf("claudeCmd missing skillsDir %q: %s", skillsDir, cmd)
-	}
-}
-
-func TestBuildClaudeCmd_QuotesPathWithSpaces(t *testing.T) {
-	s := &Session{ID: "test", WorkDir: "/tmp"}
-	skillsDir := "/home/john doe/.cistern/skills"
-	cmd := s.buildClaudeCmd(skillsDir)
-
-	// Unquoted form must not appear — it would split at the space.
-	if strings.Contains(cmd, "--add-dir /home/john doe/") {
-		t.Errorf("claudeCmd contains unquoted path with space — will break shell: %s", cmd)
-	}
-	// Shell-quoted form must be present.
-	want := "--add-dir '/home/john doe/.cistern/skills'"
-	if !strings.Contains(cmd, want) {
-		t.Errorf("claudeCmd missing shell-quoted skillsDir\nwant substring: %s\ngot: %s", want, cmd)
-	}
-}
-
-func TestBuildClaudeCmd_WithModel(t *testing.T) {
-	s := &Session{ID: "test", WorkDir: "/tmp", Model: "haiku"}
-	cmd := s.buildClaudeCmd("/home/user/.cistern/skills")
-	if !strings.Contains(cmd, "--model 'haiku'") {
-		t.Errorf("claudeCmd missing shell-quoted --model flag: %s", cmd)
-	}
-}
-
-func TestBuildClaudeCmd_WithoutModel(t *testing.T) {
-	s := &Session{ID: "test", WorkDir: "/tmp"}
-	cmd := s.buildClaudeCmd("/home/user/.cistern/skills")
-	if strings.Contains(cmd, "--model") {
-		t.Errorf("claudeCmd should not contain --model when model is empty: %s", cmd)
-	}
 }
 
 func TestShellQuote(t *testing.T) {
@@ -116,7 +66,7 @@ func TestBuildPrompt_WithIdentity_FileFound(t *testing.T) {
 	if err := os.MkdirAll(identityDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(identityDir, "CLAUDE.md"),
+	if err := os.WriteFile(filepath.Join(identityDir, "AGENTS.md"),
 		[]byte("# Implementer\n\nYou implement things.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -138,14 +88,13 @@ func TestBuildPrompt_WithIdentity_FileFound(t *testing.T) {
 
 func TestBuildPrompt_WithIdentity_FileMissing(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir) // no CLAUDE.md at cistern identity path
+	t.Setenv("HOME", dir)
 
 	s := &Session{ID: "test", WorkDir: dir, Identity: "implementer"}
 	prompt := s.buildPrompt()
 
-	// Fallback: prompt contains the actual missing path, not just any occurrence of "Read".
-	if !strings.Contains(prompt, "cataractae/implementer/CLAUDE.md") {
-		t.Error("prompt missing fallback path 'cataractae/implementer/CLAUDE.md' when identity file is missing")
+	if !strings.Contains(prompt, "cataractae/implementer/AGENTS.md") {
+		t.Error("prompt missing fallback path 'cataractae/implementer/AGENTS.md' when identity file is missing")
 	}
 	if !strings.Contains(prompt, "implementer") {
 		t.Error("prompt missing identity name in fallback")
@@ -157,7 +106,7 @@ func TestBuildPrompt_WithIdentity_FileMissing(t *testing.T) {
 
 func TestResolveIdentityPath_CisternHome(t *testing.T) {
 	dir := t.TempDir()
-	cisternPath := filepath.Join(dir, ".cistern", "cataractae", "reviewer", "CLAUDE.md")
+	cisternPath := filepath.Join(dir, ".cistern", "cataractae", "reviewer", "AGENTS.md")
 	if err := os.MkdirAll(filepath.Dir(cisternPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -175,176 +124,14 @@ func TestResolveIdentityPath_CisternHome(t *testing.T) {
 
 func TestResolveIdentityPath_FallbackSandbox(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir) // no CLAUDE.md at cistern identity path
+	t.Setenv("HOME", dir)
 
 	s := &Session{Identity: "implementer"}
 	got := s.resolveIdentityPath()
-	want := "cataractae/implementer/CLAUDE.md"
+	want := "cataractae/implementer/AGENTS.md"
 	if got != want {
 		t.Errorf("resolveIdentityPath = %q, want %q", got, want)
 	}
-}
-
-func TestClaudePath_EnvOverride(t *testing.T) {
-	t.Setenv("CLAUDE_PATH", "/usr/local/bin/my-claude")
-	got := claudePath()
-	if got != "/usr/local/bin/my-claude" {
-		t.Errorf("claudePath() = %q, want %q", got, "/usr/local/bin/my-claude")
-	}
-}
-
-func TestClaudePath_LookPath(t *testing.T) {
-	t.Setenv("CLAUDE_PATH", "")
-	// Place a fake "claude" executable on PATH so exec.LookPath finds it.
-	dir := t.TempDir()
-	fakeClaude := filepath.Join(dir, "claude")
-	if err := os.WriteFile(fakeClaude, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-
-	got := claudePath()
-	if got != fakeClaude {
-		t.Errorf("claudePath() = %q, want %q", got, fakeClaude)
-	}
-}
-
-// TestClaudePresetBackwardCompat verifies that buildPresetCmd produces a correctly
-// shell-quoted command string for the claude built-in preset. It was originally
-// written as a parity-with-buildClaudeCmd gate (ci-sc2wl); after ci-qdc7q it
-// checks the correct quoting behaviour instead, since command and args are now
-// shell-quoted for safety.
-func TestClaudePresetBackwardCompat(t *testing.T) {
-	// Normalise resolveCommandFn to identity so tests do not depend on
-	// claude being installed on the test machine.
-	orig := resolveCommandFn
-	resolveCommandFn = func(cmd string) string { return cmd }
-	t.Cleanup(func() { resolveCommandFn = orig })
-
-	var claudePreset provider.ProviderPreset
-	for _, p := range provider.Builtins() {
-		if p.Name == "claude" {
-			claudePreset = p
-			break
-		}
-	}
-	if claudePreset.Name == "" {
-		t.Fatal("claude preset not found in Builtins()")
-	}
-
-	skillsDir := "/home/user/.cistern/skills"
-
-	t.Run("without model", func(t *testing.T) {
-		s := &Session{ID: "test", WorkDir: "/tmp"}
-		got, err := s.buildPresetCmd(claudePreset, skillsDir)
-		if err != nil {
-			t.Fatalf("buildPresetCmd: %v", err)
-		}
-		// Command and arg must be shell-quoted.
-		if !strings.HasPrefix(got, "exec 'claude' '--dangerously-skip-permissions'") {
-			t.Errorf("buildPresetCmd: want shell-quoted command+arg prefix, got: %q", got)
-		}
-		if !strings.Contains(got, "--add-dir '"+skillsDir+"'") {
-			t.Errorf("buildPresetCmd missing add-dir with quoted skillsDir, got: %q", got)
-		}
-		if strings.Contains(got, "--model") {
-			t.Errorf("buildPresetCmd should not contain --model when model is empty, got: %q", got)
-		}
-	})
-
-	t.Run("with model", func(t *testing.T) {
-		s := &Session{ID: "test", WorkDir: "/tmp", Model: "haiku"}
-		got, err := s.buildPresetCmd(claudePreset, skillsDir)
-		if err != nil {
-			t.Fatalf("buildPresetCmd: %v", err)
-		}
-		if !strings.HasPrefix(got, "exec 'claude' '--dangerously-skip-permissions'") {
-			t.Errorf("buildPresetCmd: want shell-quoted command+arg prefix, got: %q", got)
-		}
-		if !strings.Contains(got, "--model 'haiku'") {
-			t.Errorf("buildPresetCmd missing shell-quoted model flag, got: %q", got)
-		}
-	})
-
-	t.Run("skills dir with spaces", func(t *testing.T) {
-		s := &Session{ID: "test", WorkDir: "/tmp"}
-		dir := "/home/john doe/.cistern/skills"
-		got, err := s.buildPresetCmd(claudePreset, dir)
-		if err != nil {
-			t.Fatalf("buildPresetCmd: %v", err)
-		}
-		if !strings.Contains(got, "--add-dir '/home/john doe/.cistern/skills'") {
-			t.Errorf("buildPresetCmd missing shell-quoted skillsDir with spaces, got: %q", got)
-		}
-	})
-
-	// This subtest verifies the LookPath contract: when resolveCommandFn returns
-	// an absolute path, buildPresetCmd must shell-quote it so paths with spaces
-	// are safe in /bin/sh -c.
-	t.Run("LookPath resolution — resolved absolute path is shell-quoted", func(t *testing.T) {
-		const resolvedPath = "/opt/test/claude"
-		resolvedPreset := claudePreset
-		resolvedPreset.Command = resolvedPath
-
-		s := &Session{ID: "test", WorkDir: "/tmp"}
-		got, err := s.buildPresetCmd(resolvedPreset, skillsDir)
-		if err != nil {
-			t.Fatalf("buildPresetCmd: %v", err)
-		}
-		want := "exec '" + resolvedPath + "'"
-		if !strings.HasPrefix(got, want) {
-			t.Errorf("buildPresetCmd: resolved path must be shell-quoted\nwant prefix: %s\ngot: %q", want, got)
-		}
-	})
-}
-
-// TestClaudeDefaultFallback verifies that an empty provider name resolves to the
-// "claude" built-in preset and that buildPresetCmd produces a correctly
-// shell-quoted command string.
-func TestClaudeDefaultFallback(t *testing.T) {
-	// Normalise resolveCommandFn so the test does not depend on claude being installed.
-	orig := resolveCommandFn
-	resolveCommandFn = func(cmd string) string { return cmd }
-	t.Cleanup(func() { resolveCommandFn = orig })
-
-	// Resolve preset: empty provider name must return the "claude" built-in.
-	preset := provider.ResolvePreset("")
-	if preset.Name != "claude" {
-		t.Fatalf("ResolvePreset(\"\") = %q, want %q", preset.Name, "claude")
-	}
-
-	skillsDir := "/home/user/.cistern/skills"
-
-	t.Run("without model", func(t *testing.T) {
-		s := &Session{ID: "test", WorkDir: "/tmp"}
-		got, err := s.buildPresetCmd(preset, skillsDir)
-		if err != nil {
-			t.Fatalf("buildPresetCmd error: %v", err)
-		}
-		if !strings.HasPrefix(got, "exec 'claude' '--dangerously-skip-permissions'") {
-			t.Errorf("default fallback: want shell-quoted command+arg prefix, got: %q", got)
-		}
-		if !strings.Contains(got, "--add-dir '"+skillsDir+"'") {
-			t.Errorf("default fallback: missing add-dir with quoted skillsDir, got: %q", got)
-		}
-		if strings.Contains(got, "--model") {
-			t.Errorf("default fallback: should not contain --model when model is empty, got: %q", got)
-		}
-	})
-
-	t.Run("with model", func(t *testing.T) {
-		s := &Session{ID: "test", WorkDir: "/tmp", Model: "haiku"}
-		got, err := s.buildPresetCmd(preset, skillsDir)
-		if err != nil {
-			t.Fatalf("buildPresetCmd error: %v", err)
-		}
-		if !strings.HasPrefix(got, "exec 'claude' '--dangerously-skip-permissions'") {
-			t.Errorf("default fallback: want shell-quoted command+arg prefix, got: %q", got)
-		}
-		if !strings.Contains(got, "--model 'haiku'") {
-			t.Errorf("default fallback: missing shell-quoted model flag, got: %q", got)
-		}
-	})
 }
 
 // buildTestBin compiles the Go package at importPath into a temp directory
@@ -361,24 +148,17 @@ func buildTestBin(t *testing.T, name, importPath string) string {
 
 // TestFakeagent_SpawnOutcomeCycle exercises the full Session.Spawn →
 // Session.isAlive → droplet outcome pipeline using the fakeagent binary.
-//
-// The test is skipped when tmux is unavailable (e.g. in minimal CI
-// environments) so that 'go test ./...' never hard-fails on missing
-// infrastructure.
 func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available — skipping integration test")
 	}
 
-	// Build fakeagent and ct.
 	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
 	ctBin := buildTestBin(t, "ct", "github.com/MichielDean/cistern/cmd/ct")
 
-	// Add both binaries to a temporary PATH so fakeagent can call 'ct'.
 	binDir := filepath.Dir(ctBin)
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 
-	// Create an isolated cistern DB.
 	dbDir := t.TempDir()
 	dbPath := filepath.Join(dbDir, "test.db")
 	t.Setenv("CT_DB", dbPath)
@@ -390,34 +170,30 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 	}
 	defer c.Close()
 
-	// Add a test droplet so fakeagent has an ID to pass.
 	droplet, err := c.Add("testrepo", "fakeagent test", "desc", 1, 2)
 	if err != nil {
 		t.Fatalf("cistern.Add: %v", err)
 	}
 
-	// Write CONTEXT.md into the WorkDir with the droplet ID.
 	workDir := t.TempDir()
 	contextContent := fmt.Sprintf("# Context\n\n## Item: %s\n\n**Title:** fakeagent test\n", droplet.ID)
 	if err := os.WriteFile(filepath.Join(workDir, "CONTEXT.md"), []byte(contextContent), 0o644); err != nil {
 		t.Fatalf("write CONTEXT.md: %v", err)
 	}
 
-	// Point CLAUDE_PATH at the fakeagent binary.
-	t.Setenv("CLAUDE_PATH", fakeagentBin)
-
-	// Spawn the session.
 	sessionID := "ci-t3xo9-fa-" + droplet.ID
 	s := &Session{
 		ID:      sessionID,
 		WorkDir: workDir,
+		Preset:  provider.ResolvePreset("opencode"),
 	}
+	s.Preset.Command = fakeagentBin
+
 	if err := s.Spawn(); err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
 	t.Cleanup(func() { exec.Command("tmux", "kill-session", "-t", s.ID).Run() })
 
-	// Wait for the session to die (fakeagent exits after calling ct droplet pass).
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		if !s.isAlive() {
@@ -429,7 +205,6 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 		t.Fatal("session still alive after 15s — fakeagent did not exit")
 	}
 
-	// Verify the outcome was recorded.
 	got, err := c.Get(droplet.ID)
 	if err != nil {
 		t.Fatalf("cistern.Get: %v", err)
@@ -440,14 +215,13 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 }
 
 // TestResolveIdentityPath_UsesPresetInstructionsFile verifies that resolveIdentityPath
-// returns the preset's InstructionsFile rather than always CLAUDE.md.
+// returns the preset's InstructionsFile rather than always AGENTS.md.
 func TestResolveIdentityPath_UsesPresetInstructionsFile(t *testing.T) {
 	dir := t.TempDir()
 	identityDir := filepath.Join(dir, ".cistern", "cataractae", "implementer")
 	if err := os.MkdirAll(identityDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Create AGENTS.md (not CLAUDE.md) — codex-style preset.
 	if err := os.WriteFile(filepath.Join(identityDir, "AGENTS.md"), []byte("# Implementer"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -468,14 +242,14 @@ func TestResolveIdentityPath_UsesPresetInstructionsFile(t *testing.T) {
 // path does not exist, the sandbox-relative path uses the preset's InstructionsFile.
 func TestResolveIdentityPath_FallbackSandbox_WithPreset(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir) // no identity dir at cistern path
+	t.Setenv("HOME", dir)
 
 	s := &Session{
 		Identity: "reviewer",
-		Preset:   provider.ProviderPreset{InstructionsFile: "GEMINI.md"},
+		Preset:   provider.ProviderPreset{InstructionsFile: "CUSTOM.md"},
 	}
 	got := s.resolveIdentityPath()
-	want := "cataractae/reviewer/GEMINI.md"
+	want := "cataractae/reviewer/CUSTOM.md"
 	if got != want {
 		t.Errorf("resolveIdentityPath = %q, want %q", got, want)
 	}
@@ -485,13 +259,13 @@ func TestResolveIdentityPath_FallbackSandbox_WithPreset(t *testing.T) {
 // returns the content of the preset's InstructionsFile when it exists.
 func TestBuildContextPreamble_ReadsInstructionsFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Codex Role\n\nDo work."), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Opencode Role\n\nDo work."), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	preset := provider.ProviderPreset{InstructionsFile: "AGENTS.md"}
 	got := buildContextPreamble(dir, preset)
-	if got != "# Codex Role\n\nDo work." {
-		t.Errorf("buildContextPreamble = %q, want %q", got, "# Codex Role\n\nDo work.")
+	if got != "# Opencode Role\n\nDo work." {
+		t.Errorf("buildContextPreamble = %q, want %q", got, "# Opencode Role\n\nDo work.")
 	}
 }
 
@@ -505,7 +279,6 @@ func TestBuildContextPreamble_FallsBackToSourceFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "INSTRUCTIONS.md"), []byte("Write tests."), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// No AGENTS.md — forces fallback.
 	preset := provider.ProviderPreset{InstructionsFile: "AGENTS.md"}
 	got := buildContextPreamble(dir, preset)
 	if !strings.Contains(got, "# Role: Coder") {
@@ -519,7 +292,7 @@ func TestBuildContextPreamble_FallsBackToSourceFiles(t *testing.T) {
 // TestBuildContextPreamble_EmptyWhenAllMissing verifies that buildContextPreamble
 // returns empty string when neither InstructionsFile nor source files exist.
 func TestBuildContextPreamble_EmptyWhenAllMissing(t *testing.T) {
-	dir := t.TempDir() // no files
+	dir := t.TempDir()
 	preset := provider.ProviderPreset{InstructionsFile: "AGENTS.md"}
 	got := buildContextPreamble(dir, preset)
 	if got != "" {
@@ -527,23 +300,22 @@ func TestBuildContextPreamble_EmptyWhenAllMissing(t *testing.T) {
 	}
 }
 
-// TestBuildContextPreamble_DefaultsToClaude verifies that empty InstructionsFile
-// defaults to reading CLAUDE.md.
-func TestBuildContextPreamble_DefaultsToClaude(t *testing.T) {
+// TestBuildContextPreamble_DefaultsToOpencode verifies that empty InstructionsFile
+// defaults to reading AGENTS.md.
+func TestBuildContextPreamble_DefaultsToOpencode(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("Claude role content"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("Opencode role content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	preset := provider.ProviderPreset{} // InstructionsFile is empty
+	preset := provider.ProviderPreset{}
 	got := buildContextPreamble(dir, preset)
-	if got != "Claude role content" {
-		t.Errorf("buildContextPreamble = %q, want %q", got, "Claude role content")
+	if got != "Opencode role content" {
+		t.Errorf("buildContextPreamble = %q, want %q", got, "Opencode role content")
 	}
 }
 
-// TestBuildPrompt_NonAddDirProvider_InjectsContextPreamble verifies that for a preset
-// without SupportsAddDir, buildPrompt injects the InstructionsFile content via
-// buildContextPreamble.
+// TestBuildPrompt_NonAddDirProvider_InjectsContextPreamble verifies that buildPrompt
+// injects the InstructionsFile content via buildContextPreamble.
 func TestBuildPrompt_NonAddDirProvider_InjectsContextPreamble(t *testing.T) {
 	dir := t.TempDir()
 	identityDir := filepath.Join(dir, ".cistern", "cataractae", "implementer")
@@ -551,7 +323,7 @@ func TestBuildPrompt_NonAddDirProvider_InjectsContextPreamble(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(identityDir, "AGENTS.md"),
-		[]byte("# Implementer (codex)\n\nYou write code."), 0o644); err != nil {
+		[]byte("# Implementer (opencode)\n\nYou write code."), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", dir)
@@ -561,9 +333,8 @@ func TestBuildPrompt_NonAddDirProvider_InjectsContextPreamble(t *testing.T) {
 		WorkDir:  dir,
 		Identity: "implementer",
 		Preset: provider.ProviderPreset{
-			Name:             "codex",
+			Name:             "opencode",
 			InstructionsFile: "AGENTS.md",
-			SupportsAddDir:   false,
 		},
 	}
 	prompt := s.buildPrompt()
@@ -579,11 +350,10 @@ func TestBuildPrompt_NonAddDirProvider_InjectsContextPreamble(t *testing.T) {
 	}
 }
 
-// TestBuildPrompt_NonAddDirProvider_InjectsSkills verifies that for a preset without
-// SupportsAddDir, skill content is injected into the prompt when Skills is set.
+// TestBuildPrompt_NonAddDirProvider_InjectsSkills verifies that skill content is
+// injected into the prompt when Skills is set.
 func TestBuildPrompt_NonAddDirProvider_InjectsSkills(t *testing.T) {
 	dir := t.TempDir()
-	// Create skill SKILL.md.
 	skillDir := filepath.Join(dir, ".cistern", "skills", "my-skill")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -597,8 +367,7 @@ func TestBuildPrompt_NonAddDirProvider_InjectsSkills(t *testing.T) {
 		ID:      "test",
 		WorkDir: dir,
 		Preset: provider.ProviderPreset{
-			Name:           "codex",
-			SupportsAddDir: false,
+			Name: "opencode",
 		},
 		Skills: []string{"my-skill"},
 	}
@@ -612,56 +381,11 @@ func TestBuildPrompt_NonAddDirProvider_InjectsSkills(t *testing.T) {
 	}
 }
 
-// TestBuildPrompt_AddDirProvider_SkillsNotInjectedInPrompt verifies that for
-// providers with SupportsAddDir=true, skills are NOT injected in the prompt
-// (they are available via --add-dir instead).
-func TestBuildPrompt_AddDirProvider_SkillsNotInjectedInPrompt(t *testing.T) {
-	dir := t.TempDir()
-	identityDir := filepath.Join(dir, ".cistern", "cataractae", "implementer")
-	if err := os.MkdirAll(identityDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(identityDir, "CLAUDE.md"),
-		[]byte("# Implementer\n\nYou implement."), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	skillDir := filepath.Join(dir, ".cistern", "skills", "my-skill")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# My Skill\n\nSkill content."), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("HOME", dir)
-
-	s := &Session{
-		ID:       "test",
-		WorkDir:  dir,
-		Identity: "implementer",
-		Preset: provider.ProviderPreset{
-			Name:             "claude",
-			InstructionsFile: "CLAUDE.md",
-			SupportsAddDir:   true,
-		},
-		Skills: []string{"my-skill"},
-	}
-	prompt := s.buildPrompt()
-
-	// Role content is injected (via SupportsAddDir=true path).
-	if !strings.Contains(prompt, "## Your Role") {
-		t.Error("prompt missing '## Your Role'")
-	}
-	// Skill content must NOT be in the prompt for AddDir providers.
-	if strings.Contains(prompt, "Skill content.") {
-		t.Error("prompt must not contain injected skill content for AddDir providers — skills available via --add-dir")
-	}
-}
-
 // TestBuildPresetCmd_ModelWithSpaces_IsShellQuoted verifies that a model value
 // containing spaces is shell-quoted before being interpolated into the tmux
-// command string. An unquoted model with spaces would split in /bin/sh -c.
+// command string.
 func TestBuildPresetCmd_ModelWithSpaces_IsShellQuoted(t *testing.T) {
-	s := &Session{ID: "test", WorkDir: "/tmp", Model: "claude opus 4.6"}
+	s := &Session{ID: "test", WorkDir: "/tmp", Model: "opencode llama 3.3"}
 	preset := provider.ProviderPreset{
 		Name:      "myagent",
 		Command:   "myagent",
@@ -671,12 +395,10 @@ func TestBuildPresetCmd_ModelWithSpaces_IsShellQuoted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPresetCmd: %v", err)
 	}
-	// Unquoted form must not appear — it would split at spaces in the shell.
-	if strings.Contains(cmd, "--model claude opus") {
+	if strings.Contains(cmd, "--model opencode llama") {
 		t.Errorf("buildPresetCmd contains unquoted model with space — will break shell: %s", cmd)
 	}
-	// Shell-quoted form must be present.
-	want := "--model 'claude opus 4.6'"
+	want := "--model 'opencode llama 3.3'"
 	if !strings.Contains(cmd, want) {
 		t.Errorf("buildPresetCmd missing shell-quoted model\nwant substring: %s\ngot: %s", want, cmd)
 	}
@@ -684,11 +406,9 @@ func TestBuildPresetCmd_ModelWithSpaces_IsShellQuoted(t *testing.T) {
 
 // TestBuildPresetCmd_EmptyCommand_ReturnsError verifies that buildPresetCmd
 // returns a descriptive error when the preset has no command configured.
-// A misconfigured provider with Name set but Command empty must not silently
-// produce a broken tmux command.
 func TestBuildPresetCmd_EmptyCommand_ReturnsError(t *testing.T) {
 	s := &Session{ID: "test", WorkDir: "/tmp"}
-	preset := provider.ProviderPreset{Name: "custom"} // Command is deliberately empty
+	preset := provider.ProviderPreset{Name: "custom"}
 	_, err := s.buildPresetCmd(preset, "/skills")
 	if err == nil {
 		t.Fatal("expected error for preset with empty Command, got nil")
@@ -720,15 +440,12 @@ func TestBuildPresetCmd_PromptFlag_AppendedWhenNonEmpty(t *testing.T) {
 }
 
 // TestBuildPresetCmd_PromptFlag_OmittedWhenEmpty verifies that buildPresetCmd
-// does not append any prompt flag when PromptFlag is empty. Presets for CLIs
-// that do not accept -p (e.g. opencode) must have PromptFlag="" to avoid
-// spawn failures from unrecognized flags.
+// does not append any prompt flag when PromptFlag is empty.
 func TestBuildPresetCmd_PromptFlag_OmittedWhenEmpty(t *testing.T) {
 	s := &Session{ID: "test", WorkDir: "/tmp"}
 	preset := provider.ProviderPreset{
 		Name:    "opencode",
 		Command: "opencode",
-		// PromptFlag deliberately empty — prompt delivered via instructions file
 	}
 	cmd, err := s.buildPresetCmd(preset, "/skills")
 	if err != nil {
@@ -743,16 +460,12 @@ func TestBuildPresetCmd_PromptFlag_OmittedWhenEmpty(t *testing.T) {
 }
 
 // TestCollectEnvArgs_GHToken_AlwaysForwarded_PresetPath verifies that GH_TOKEN
-// is included in env args when using the preset path. This is a regression test
-// for the ci-sc2wl refactor: the legacy path forwarded GH_TOKEN but the preset
-// path only iterated EnvPassthrough (which did not include GH_TOKEN for claude).
+// is included in env args when using the preset path.
 func TestCollectEnvArgs_GHToken_AlwaysForwarded_PresetPath(t *testing.T) {
 	t.Setenv("GH_TOKEN", "ghtoken-preset-123")
-	t.Setenv("OPENAI_API_KEY", "") // isolate to GH_TOKEN check
-
 	s := &Session{
 		ID:     "test",
-		Preset: provider.ProviderPreset{Name: "claude", Command: "claude"},
+		Preset: provider.ProviderPreset{Name: "opencode"},
 	}
 	args := s.collectEnvArgs()
 	if !containsEnvPair(args, "GH_TOKEN", "ghtoken-preset-123") {
@@ -765,7 +478,7 @@ func TestCollectEnvArgs_GHToken_AlwaysForwarded_PresetPath(t *testing.T) {
 func TestCollectEnvArgs_GHToken_AlwaysForwarded_LegacyPath(t *testing.T) {
 	t.Setenv("GH_TOKEN", "ghtoken-legacy-456")
 
-	s := &Session{ID: "test"} // Preset.Name is empty — legacy path
+	s := &Session{ID: "test"}
 	args := s.collectEnvArgs()
 	if !containsEnvPair(args, "GH_TOKEN", "ghtoken-legacy-456") {
 		t.Errorf("collectEnvArgs (legacy path) missing GH_TOKEN; args: %v", args)
@@ -777,7 +490,7 @@ func TestCollectEnvArgs_GHToken_AlwaysForwarded_LegacyPath(t *testing.T) {
 func TestCollectEnvArgs_GHToken_AbsentWhenNotSet(t *testing.T) {
 	t.Setenv("GH_TOKEN", "")
 
-	s := &Session{ID: "test", Preset: provider.ProviderPreset{Name: "claude"}}
+	s := &Session{ID: "test", Preset: provider.ProviderPreset{Name: "opencode"}}
 	args := s.collectEnvArgs()
 	for _, a := range args {
 		if strings.Contains(a, "GH_TOKEN") {
@@ -786,7 +499,6 @@ func TestCollectEnvArgs_GHToken_AbsentWhenNotSet(t *testing.T) {
 	}
 }
 
-// containsEnvPair checks whether args contains "-e" followed by "key=val".
 func containsEnvPair(args []string, key, val string) bool {
 	target := key + "=" + val
 	for i := 0; i < len(args)-1; i++ {
@@ -805,7 +517,7 @@ func TestResolveIdentityDir_CisternDirWithInstrFile(t *testing.T) {
 	if err := os.MkdirAll(identityDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(identityDir, "CLAUDE.md"), []byte("# Implementer"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(identityDir, "AGENTS.md"), []byte("# Implementer"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", dir)
@@ -819,14 +531,13 @@ func TestResolveIdentityDir_CisternDirWithInstrFile(t *testing.T) {
 
 // TestResolveIdentityDir_CisternDirWithoutInstrFile verifies that when the cistern
 // directory exists but the instrFile is absent, resolveIdentityDir still returns the
-// cistern path — directory existence, not file presence, is the resolution condition.
+// cistern path.
 func TestResolveIdentityDir_CisternDirWithoutInstrFile(t *testing.T) {
 	dir := t.TempDir()
 	identityDir := filepath.Join(dir, ".cistern", "cataractae", "implementer")
 	if err := os.MkdirAll(identityDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Intentionally no instrFile in this directory.
 	t.Setenv("HOME", dir)
 
 	s := &Session{Identity: "implementer"}
@@ -840,7 +551,7 @@ func TestResolveIdentityDir_CisternDirWithoutInstrFile(t *testing.T) {
 // does not exist, resolveIdentityDir returns the sandbox-relative path.
 func TestResolveIdentityDir_FallbackSandbox(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir) // no cistern identity dir
+	t.Setenv("HOME", dir)
 
 	s := &Session{Identity: "implementer"}
 	got := s.resolveIdentityDir()
@@ -850,10 +561,9 @@ func TestResolveIdentityDir_FallbackSandbox(t *testing.T) {
 	}
 }
 
-
 // TestBuildPresetCmd_CommandWithSpaces_IsShellQuoted verifies that a command
 // path containing spaces is shell-quoted before being interpolated into the
-// tmux command string. An unquoted path with spaces would split in /bin/sh -c.
+// tmux command string.
 func TestBuildPresetCmd_CommandWithSpaces_IsShellQuoted(t *testing.T) {
 	orig := resolveCommandFn
 	resolveCommandFn = func(cmd string) string { return cmd }
@@ -868,11 +578,9 @@ func TestBuildPresetCmd_CommandWithSpaces_IsShellQuoted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPresetCmd: %v", err)
 	}
-	// Unquoted form must not appear — it would split at the space.
 	if strings.Contains(cmd, "/home/john doe/bin/myagent") && !strings.Contains(cmd, "'/home/john doe/bin/myagent'") {
 		t.Errorf("buildPresetCmd contains unquoted command path with space — will break shell: %s", cmd)
 	}
-	// Shell-quoted form must be present.
 	want := "exec '/home/john doe/bin/myagent'"
 	if !strings.HasPrefix(cmd, want) {
 		t.Errorf("buildPresetCmd should start with shell-quoted command\nwant prefix: %s\ngot: %s", want, cmd)
@@ -880,8 +588,7 @@ func TestBuildPresetCmd_CommandWithSpaces_IsShellQuoted(t *testing.T) {
 }
 
 // TestBuildPresetCmd_ArgsWithSpaces_AreShellQuoted verifies that Args elements
-// containing spaces or shell metacharacters are shell-quoted. User-supplied
-// preset overrides via LoadUserPresets can contain arbitrary strings.
+// containing spaces or shell metacharacters are shell-quoted.
 func TestBuildPresetCmd_ArgsWithSpaces_AreShellQuoted(t *testing.T) {
 	orig := resolveCommandFn
 	resolveCommandFn = func(cmd string) string { return cmd }
@@ -897,13 +604,11 @@ func TestBuildPresetCmd_ArgsWithSpaces_AreShellQuoted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPresetCmd: %v", err)
 	}
-	// Shell-quoted forms must be present.
 	for _, want := range []string{"'--flag with spaces'", "'--another$arg'"} {
 		if !strings.Contains(cmd, want) {
 			t.Errorf("buildPresetCmd missing shell-quoted arg\nwant substring: %s\ngot: %s", want, cmd)
 		}
 	}
-	// Unquoted dollar sign must not appear bare (would be shell-expanded).
 	if strings.Contains(cmd, "--another$arg") && !strings.Contains(cmd, "'--another$arg'") {
 		t.Errorf("buildPresetCmd contains bare dollar sign in arg — shell-expansion risk: %s", cmd)
 	}
@@ -912,8 +617,7 @@ func TestBuildPresetCmd_ArgsWithSpaces_AreShellQuoted(t *testing.T) {
 // --- spawn logging tests ---
 
 // TestSpawn_LogsFreshSession_WhenNoTmux verifies that spawn emits a structured
-// slog entry with session, context_type=fresh, and model fields. The test uses
-// a fake tmux that always succeeds so the log is emitted without real tmux.
+// slog entry with session, context_type=fresh, and model fields.
 func TestSpawn_LogsFreshSession_WhenNoTmux(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
@@ -923,15 +627,14 @@ func TestSpawn_LogsFreshSession_WhenNoTmux(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("CLAUDE_PATH", "echo") // fake agent: 'echo' exits quickly
 
 	workDir := t.TempDir()
 	s := &Session{
 		ID:      "test-fresh-session",
 		WorkDir: workDir,
 		Model:   "haiku",
+		Preset:  provider.ProviderPreset{Command: "echo"},
 	}
-	// Spawn may fail (fake agent) — we only care about log output.
 	_ = s.spawn()
 	defer func() { exec.Command("tmux", "kill-session", "-t", s.ID).Run() }()
 

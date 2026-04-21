@@ -63,7 +63,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse aqueduct workflow: %w", err)
 	}
 	// Seed PERSONA.md + INSTRUCTIONS.md for each identity in the workflow so
-	// GenerateCataractaeFiles can write CLAUDE.md.
+	// GenerateCataractaeFiles can write AGENTS.md.
 	if err := initCataractaeDir(w, cataractaeDir); err != nil {
 		return fmt.Errorf("init cataractae dir: %w", err)
 	}
@@ -102,9 +102,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 Next:
   1. Edit ~/.cistern/cistern.yaml — add your repos
-  2. Authenticate with Claude (OAuth — no API key needed):
-       claude
-     For other providers (Codex, Gemini, etc.) add keys to ~/.cistern/env
+  2. Authenticate with your AI provider
   3. ct droplet add --title "Your first droplet" --repo yourrepo
   4. ct castellarius start
 `)

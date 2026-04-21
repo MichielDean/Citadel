@@ -58,7 +58,7 @@ func TestParseEvaluationResult(t *testing.T) {
 		"ticket": "PROJ-123",
 		"branch": "feat/fix",
 		"commit": "abc123",
-		"model": "claude-sonnet-4-20250514",
+		"model": "opencode-llama-3-3",
 		"scores": [
 			{"dimension": "contract_correctness", "score": 4, "evidence": "all methods honor contracts", "suggested": "n/a"},
 			{"dimension": "integration_coverage", "score": 3, "evidence": "missing test for loadPermissions", "suggested": "add integration test"},

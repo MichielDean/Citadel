@@ -888,15 +888,15 @@ func TestResolveModelVal(t *testing.T) {
 	}{
 		{
 			name:         "step model set — uses step model",
-			stepModel:    stepModel("claude-opus-4-6"),
-			defaultModel: "claude-sonnet-4-6",
-			want:         "claude-opus-4-6",
+			stepModel:    stepModel("opencode-llama-3-3"),
+			defaultModel: "opencode-llama-3-1",
+			want:         "opencode-llama-3-3",
 		},
 		{
 			name:         "step model nil, preset has default — uses preset default",
 			stepModel:    nil,
-			defaultModel: "claude-sonnet-4-6",
-			want:         "claude-sonnet-4-6",
+			defaultModel: "opencode-llama-3-1",
+			want:         "opencode-llama-3-1",
 		},
 		{
 			name:         "step model nil, no preset default — returns empty",
@@ -907,7 +907,7 @@ func TestResolveModelVal(t *testing.T) {
 		{
 			name:         "step model set to empty string — uses step model (empty)",
 			stepModel:    stepModel(""),
-			defaultModel: "claude-sonnet-4-6",
+			defaultModel: "opencode-llama-3-1",
 			want:         "",
 		},
 	}

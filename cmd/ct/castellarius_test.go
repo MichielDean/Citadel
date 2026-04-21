@@ -64,7 +64,7 @@ func TestStatusJSONOutput_ValidStructure(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
-	cfgPath := writeMinimalConfig(t, dir, "claude")
+	cfgPath := writeMinimalConfig(t, dir, "opencode")
 	t.Setenv("CT_CONFIG", cfgPath)
 
 	origJSON := statusJSON
@@ -107,7 +107,7 @@ func TestStatusJSONOutput_WithFlowingData(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
-	cfgPath := writeMinimalConfig(t, dir, "claude")
+	cfgPath := writeMinimalConfig(t, dir, "opencode")
 	t.Setenv("CT_CONFIG", cfgPath)
 
 	c, err := cistern.New(db, "ts")
@@ -158,7 +158,7 @@ func TestStatusJSONOutput_IncludesCataractae(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
 	t.Setenv("CT_DB", db)
-	cfgPath := writeMinimalConfig(t, dir, "claude")
+	cfgPath := writeMinimalConfig(t, dir, "opencode")
 	t.Setenv("CT_CONFIG", cfgPath)
 
 	origJSON := statusJSON
@@ -516,75 +516,30 @@ max_cataractae: 1
 
 // --- startupRequiredEnvVars tests ---
 
-// TestStartupRequiredEnvVars_NoConfig_DefaultsToClaudeNoVars verifies that when
-// no config path is given, the function defaults to claude (usesClaude=true) with
-// no required env vars — claude uses OAuth credentials, not an API key env var.
-func TestStartupRequiredEnvVars_NoConfig_DefaultsToClaudeNoVars(t *testing.T) {
-	vars, usesClaude := startupRequiredEnvVars("")
+// TestStartupRequiredEnvVars_NoConfig_ReturnsNil verifies that when
+// no config path is given, the function returns nil (no required env vars).
+func TestStartupRequiredEnvVars_NoConfig_ReturnsNil(t *testing.T) {
+	vars := startupRequiredEnvVars("")
 	if len(vars) != 0 {
-		t.Errorf("expected no required vars for claude default, got %v", vars)
-	}
-	if !usesClaude {
-		t.Error("expected usesClaude=true for default fallback")
+		t.Errorf("expected no required vars for empty config path, got %v", vars)
 	}
 }
 
-// TestStartupRequiredEnvVars_NonexistentConfig_DefaultsToClaudeNoVars verifies
-// that a missing config file also defaults to claude with no required env vars.
-func TestStartupRequiredEnvVars_NonexistentConfig_DefaultsToClaudeNoVars(t *testing.T) {
-	vars, usesClaude := startupRequiredEnvVars(filepath.Join(t.TempDir(), "missing.yaml"))
+// TestStartupRequiredEnvVars_NonexistentConfig_ReturnsNil verifies
+// that a missing config file also returns nil with no required env vars.
+func TestStartupRequiredEnvVars_NonexistentConfig_ReturnsNil(t *testing.T) {
+	vars := startupRequiredEnvVars(filepath.Join(t.TempDir(), "missing.yaml"))
 	if len(vars) != 0 {
-		t.Errorf("expected no required vars for claude default, got %v", vars)
-	}
-	if !usesClaude {
-		t.Error("expected usesClaude=true for default fallback")
+		t.Errorf("expected no required vars for missing config, got %v", vars)
 	}
 }
 
-func TestStartupRequiredEnvVars_CodexConfig_ReturnsOpenAIKey(t *testing.T) {
-	cfgPath := writeMinimalConfig(t, t.TempDir(), "codex")
-	vars, usesClaude := startupRequiredEnvVars(cfgPath)
-	if len(vars) != 1 || vars[0] != "OPENAI_API_KEY" {
-		t.Errorf("expected [OPENAI_API_KEY], got %v", vars)
-	}
-	if usesClaude {
-		t.Error("expected usesClaude=false for codex provider")
-	}
-}
-
-func TestStartupRequiredEnvVars_GeminiConfig_ReturnsGeminiKey(t *testing.T) {
-	cfgPath := writeMinimalConfig(t, t.TempDir(), "gemini")
-	vars, usesClaude := startupRequiredEnvVars(cfgPath)
-	if len(vars) != 1 || vars[0] != "GEMINI_API_KEY" {
-		t.Errorf("expected [GEMINI_API_KEY], got %v", vars)
-	}
-	if usesClaude {
-		t.Error("expected usesClaude=false for gemini provider")
-	}
-}
-
-func TestStartupRequiredEnvVars_ClaudeConfig_ReturnsNoRequiredVars(t *testing.T) {
-	// Claude authenticates via its own OAuth credentials file — no env vars required.
-	cfgPath := writeMinimalConfig(t, t.TempDir(), "claude")
-	vars, usesClaude := startupRequiredEnvVars(cfgPath)
-	if len(vars) != 0 {
-		t.Errorf("expected no required vars for claude, got %v", vars)
-	}
-	if !usesClaude {
-		t.Error("expected usesClaude=true for claude provider")
-	}
-}
-
-func TestStartupRequiredEnvVars_OpencodeConfig_ReturnsEmptyVarsNotClaude(t *testing.T) {
-	// opencode has no EnvPassthrough — resolved repos with zero required vars
-	// must NOT fall back to the claude default.
+func TestStartupRequiredEnvVars_OpencodeConfig_ReturnsNil(t *testing.T) {
+	// opencode has no EnvPassthrough — zero required vars.
 	cfgPath := writeMinimalConfig(t, t.TempDir(), "opencode")
-	vars, usesClaude := startupRequiredEnvVars(cfgPath)
+	vars := startupRequiredEnvVars(cfgPath)
 	if len(vars) != 0 {
 		t.Errorf("expected no required vars for opencode, got %v", vars)
-	}
-	if usesClaude {
-		t.Error("expected usesClaude=false for opencode provider")
 	}
 }
 

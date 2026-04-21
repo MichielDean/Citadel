@@ -142,11 +142,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkCisternEnvPermissions(envPath)
 
 		// Check that each env var required by the configured provider(s) is
-		// present in the env file. For the claude provider, no env vars are
-		// required — claude uses its own OAuth credentials file. Non-claude
-		// providers (codex → OPENAI_API_KEY, etc.) still require their keys
-		// in the env file.
-		requiredEnvVars, _ := startupRequiredEnvVars(cfgPath)
+		// present in the env file.
+		requiredEnvVars := startupRequiredEnvVars(cfgPath)
 		for _, key := range requiredEnvVars {
 			var envKeyFix func() error
 			if doctorFix {
@@ -172,8 +169,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 }
 
 // runDoctorProviderChecks checks that each provider binary required by the
-// current configuration is present in PATH, and runs provider-specific auth
-// checks (e.g. "claude auth status" for the claude provider).
+// current configuration is present in PATH.
 func runDoctorProviderChecks(cfg *aqueduct.AqueductConfig) bool {
 	ok := true
 	seenBinaries := map[string]bool{}
@@ -196,24 +192,8 @@ func runDoctorProviderChecks(cfg *aqueduct.AqueductConfig) bool {
 			}
 			return nil
 		}, nil) && ok
-
-		if name == "claude" {
-			ok = checkWithFix("claude CLI authenticated", providerAuthStatusFn, nil) && ok
-		}
 	}
 	return ok
-}
-
-// providerAuthStatusFn runs the configured provider's auth status check.
-// Only the claude provider has a discrete auth check command; other providers
-// authenticate via env vars which are checked separately.
-// Replaced in tests with a stub.
-var providerAuthStatusFn = func() error {
-	out, err := exec.Command("claude", "auth", "status").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s", out)
-	}
-	return nil
 }
 
 // fixCisternConfig creates ~/.cistern/cistern.yaml from the embedded default template.
@@ -240,10 +220,10 @@ func fixCisternDB(dbFile string) error {
 // the Cistern config being present and valid:
 //  1. Provider binary present for each configured repo preset
 //  2. Required env vars set for each configured preset
-//  3. Agent instructions file present; warn on CLAUDE.md/AGENTS.md mismatch
+//  3. Agent instructions file present
 //  4. LLM block: llm.provider=custom requires base_url
 //  5. Provider + LLM mismatch advisory (informational)
-//  6. CLAUDE.md integrity for each agent identity in the workflow
+//  6. Instructions file integrity for each agent identity in the workflow
 //  7. Skills installed at ~/.cistern/skills/<name>/SKILL.md
 //  8. Aqueduct YAML validity (one check per repo)
 //  9. Castellarius process (informational, does not fail the check)
@@ -319,7 +299,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 
 		// Determine the active InstructionsFile for this repo's provider.
 		// If the provider name is unknown or invalid, report it as a check failure
-		// rather than silently defaulting to CLAUDE.md.
+		// rather than silently defaulting to AGENTS.md.
 		presErrCopy := presErr
 		ok = checkWithFix(fmt.Sprintf("provider: %s", repo.Name), func() error { return presErrCopy }, nil) && ok
 		instrFile := preset.InstrFile()
@@ -338,28 +318,19 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 			mdPath := filepath.Join(cataractaeDir, identity, instrFile)
 			mdPathCopy := mdPath
 
-			var claudeFix func() error
+			var instrFix func() error
 			if doctorFix {
 				wfCopy := wf
 				dirCopy := cataractaeDir
 				instrFileCopy := instrFile
-				claudeFix = func() error {
+				instrFix = func() error {
 					_, err := aqueduct.GenerateCataractaeFiles(wfCopy, dirCopy, instrFileCopy)
 					return err
 				}
 			}
 			ok = checkWithFix(identity+" "+instrFile, func() error {
-				return checkClaudeMdIntegrity(mdPathCopy)
-			}, claudeFix) && ok
-
-			// Note if CLAUDE.md exists but the active provider uses a different filename.
-			// This is informational — CLAUDE.md is preserved for easy provider switching.
-			if instrFile != "CLAUDE.md" {
-				claudeMdPath := filepath.Join(cataractaeDir, identity, "CLAUDE.md")
-				if _, statErr := os.Stat(claudeMdPath); statErr == nil {
-					fmt.Printf("\u2139 %s: CLAUDE.md exists but active provider uses %s\n", identity, instrFile)
-				}
-			}
+				return checkInstructionsFileIntegrity(mdPathCopy)
+			}, instrFix) && ok
 		}
 
 		// Check 7: Skills installed at ~/.cistern/skills/<name>/SKILL.md.
@@ -428,12 +399,6 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 // Returns an empty string if no hint is available.
 func providerInstallHint(presetName string) string {
 	switch presetName {
-	case "claude":
-		return "npm install -g @anthropic-ai/claude-code"
-	case "codex":
-		return "npm install -g @openai/codex"
-	case "gemini":
-		return "npm install -g @google/gemini-cli"
 	case "opencode":
 		return "go install github.com/opencode-ai/opencode@latest"
 	}
@@ -445,23 +410,15 @@ func providerInstallHint(presetName string) string {
 // Returns an empty string for presets with no clear LLM backend mapping.
 func inferLLMProviderFromPreset(presetName string) string {
 	switch presetName {
-	case "claude":
-		return "anthropic"
-	case "codex":
-		return "openai"
-	case "gemini":
-		return "gemini"
 	case "opencode":
 		return "ollama"
-	case "copilot":
-		return "openai"
 	}
 	return ""
 }
 
-// checkClaudeMdIntegrity verifies that a CLAUDE.md exists and contains the
-// required sentinel string "ct droplet pass".
-func checkClaudeMdIntegrity(path string) error {
+// checkInstructionsFileIntegrity verifies that an instructions file exists and
+// contains the required sentinel string "ct droplet pass".
+func checkInstructionsFileIntegrity(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -921,7 +878,7 @@ func checkCisternEnvHasKey(envPath, key string) error {
 }
 
 // cisternEnvStub is the default content written to a new ~/.cistern/env file.
-const cisternEnvStub = "# Cistern credentials — add your provider API keys here\n# OPENAI_API_KEY=sk-...\n# GEMINI_API_KEY=...\n# GH_TOKEN=ghp_...\n"
+const cisternEnvStub = "# Cistern credentials — add your provider API keys here\n# GH_TOKEN=ghp_...\n"
 
 // fixCisternEnvFile creates envPath with mode 0o600 if it does not exist.
 // New files are populated with a commented-out stub.

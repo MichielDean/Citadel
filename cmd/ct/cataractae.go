@@ -23,8 +23,8 @@ var cataractaeRenderDroplet string
 
 var cataractaeRenderCmd = &cobra.Command{
 	Use:   "render",
-	Short: "Preview a rendered CLAUDE.md template for a given step and optional droplet",
-	Long: `Renders the CLAUDE.md template for the named step, substituting all template
+	Short: "Preview a rendered AGENTS.md template for a given step and optional droplet",
+	Long: `Renders the AGENTS.md template for the named step, substituting all template
 variables. Use this to preview exactly what an agent will see at spawn time.
 
 Without --droplet, placeholder values are used so you can inspect the template
@@ -94,7 +94,7 @@ func runCataractaeRender(cmd *cobra.Command, args []string) error {
 	// Locate and render the identity's instructions file.
 	cataractaeDir := cisternCataractaeDir(wfPath)
 	if step.Identity == "" {
-		return fmt.Errorf("step %q has no identity — only agent steps have CLAUDE.md files", cataractaeRenderStep)
+		return fmt.Errorf("step %q has no identity — only agent steps have AGENTS.md files", cataractaeRenderStep)
 	}
 	identityDir := filepath.Join(cataractaeDir, step.Identity)
 	instrFile := resolveInstructionsFile()
@@ -168,7 +168,7 @@ var cataractaeGenerateWorkflow string
 
 var cataractaeGenerateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generate CLAUDE.md files from cataractae PERSONA.md and INSTRUCTIONS.md",
+	Short: "Generate AGENTS.md files from cataractae PERSONA.md and INSTRUCTIONS.md",
 	RunE:  runCataractaeGenerate,
 }
 
@@ -257,7 +257,7 @@ func readPersonaName(personaPath, id string) string {
 
 var cataractaeEditCmd = &cobra.Command{
 	Use:   "edit",
-	Short: "Edit a cataractae's INSTRUCTIONS.md in $EDITOR and regenerate CLAUDE.md",
+	Short: "Edit a cataractae's INSTRUCTIONS.md in $EDITOR and regenerate AGENTS.md",
 	RunE:  runCataractaeEdit,
 }
 

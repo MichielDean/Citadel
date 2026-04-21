@@ -666,30 +666,23 @@ func resolveConfigPath() string {
 }
 
 // startupRequiredEnvVars parses the aqueduct config at cfgPath and returns the
-// deduplicated list of env vars required by the configured provider preset(s),
-// along with whether any repo uses the claude provider.
+// deduplicated list of env vars required by the configured provider preset(s).
 //
-// If cfgPath is empty or the config cannot be parsed, it returns nil env vars
-// and usesClaude=true — claude authenticates via its own OAuth credentials file
-// and requires no provider API key env var.
-func startupRequiredEnvVars(cfgPath string) (requiredVars []string, usesClaude bool) {
+// If cfgPath is empty or the config cannot be parsed, it returns nil env vars.
+func startupRequiredEnvVars(cfgPath string) []string {
 	if cfgPath == "" {
-		return nil, true
+		return nil
 	}
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 	if err != nil {
-		return nil, true
+		return nil
 	}
 	seen := map[string]bool{}
-	resolved := false
+	requiredVars := []string{}
 	for _, repo := range cfg.Repos {
 		preset, presErr := cfg.ResolveProvider(repo.Name)
 		if presErr != nil {
 			continue
-		}
-		resolved = true
-		if preset.Name == "claude" {
-			usesClaude = true
 		}
 		for _, envVar := range preset.EnvPassthrough {
 			if !seen[envVar] {
@@ -698,11 +691,10 @@ func startupRequiredEnvVars(cfgPath string) (requiredVars []string, usesClaude b
 			}
 		}
 	}
-	if !resolved {
-		// No repos resolved (empty list or all failed) — default to claude.
-		return nil, true
+	if len(requiredVars) == 0 {
+		return nil
 	}
-	return requiredVars, usesClaude
+	return requiredVars
 }
 
 // repoQueueSummary returns a one-line summary of queue depth and active

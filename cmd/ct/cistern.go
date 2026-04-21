@@ -85,7 +85,7 @@ var dropletAddCmd = &cobra.Command{
 // resolveFilterPreset returns the ProviderPreset to use for filtration.
 // It tries to load the AqueductConfig and resolve the preset for repo.
 // On any error (missing config, unknown repo, etc.) it falls back to the
-// built-in claude preset.
+// built-in opencode preset.
 func resolveFilterPreset(repo string) provider.ProviderPreset {
 	cfgPath := resolveConfigPath()
 	if cfg, err := aqueduct.ParseAqueductConfig(cfgPath); err == nil {
@@ -93,9 +93,9 @@ func resolveFilterPreset(repo string) provider.ProviderPreset {
 			return preset
 		}
 	}
-	// Fallback: built-in claude preset.
+	// Fallback: built-in opencode preset.
 	for _, p := range provider.Builtins() {
-		if p.Name == "claude" {
+		if p.Name == "opencode" {
 			return p
 		}
 	}

@@ -8,17 +8,14 @@ import (
 	"github.com/MichielDean/cistern/internal/provider"
 )
 
-// TestProviderCommandStrings is a comprehensive table-driven smoke test for all
-// built-in provider presets plus a custom user preset. For each preset it:
+// TestProviderCommandStrings is a comprehensive table-driven smoke test for the
+// opencode built-in preset plus a custom user preset. For each preset it:
 //   - Asserts the Command field is the correct binary name
 //   - Asserts autonomous Args are present (and appear before -p in the command)
 //   - Asserts ModelFlag + model value are appended when a model is set
-//   - Asserts AddDirFlag + skillsDir are appended when AddDirFlag is non-empty
 //   - Asserts EnvPassthrough contains the expected env var names
 //   - Asserts InstructionsFile is the expected filename
 func TestProviderCommandStrings(t *testing.T) {
-	// Normalise claudePathFn so the claude preset produces a deterministic binary name.
-	t.Setenv("CLAUDE_PATH", "claude")
 	// Normalise resolveCommandFn so presets produce deterministic binary names regardless
 	// of which agent binaries are installed on the test machine.
 	orig := resolveCommandFn
@@ -34,49 +31,8 @@ func TestProviderCommandStrings(t *testing.T) {
 		wantArgs             []string // args that must appear in preset.Args
 		wantEnvPassthrough   []string // env var names that must be in EnvPassthrough
 		wantInstructionsFile string
-		wantAddDir           bool   // AddDirFlag must appear in the built command
 		wantModelFlag        string // non-empty if the preset supports a model flag
 	}{
-		{
-			name:                 "claude",
-			preset:               builtinPreset(t, "claude"),
-			wantCommand:          "claude",
-			wantArgs:             []string{"--dangerously-skip-permissions"},
-			wantEnvPassthrough:   nil, // claude uses its own OAuth credentials — no env var required
-			wantInstructionsFile: "CLAUDE.md",
-			wantAddDir:           true,
-			wantModelFlag:        "--model",
-		},
-		{
-			name:                 "codex",
-			preset:               builtinPreset(t, "codex"),
-			wantCommand:          "codex",
-			wantArgs:             []string{"--dangerously-bypass-approvals-and-sandbox"},
-			wantEnvPassthrough:   []string{"OPENAI_API_KEY"},
-			wantInstructionsFile: "AGENTS.md",
-			wantAddDir:           false,
-			wantModelFlag:        "", // codex has no ModelFlag
-		},
-		{
-			name:                 "gemini",
-			preset:               builtinPreset(t, "gemini"),
-			wantCommand:          "gemini",
-			wantArgs:             []string{"--yolo"},
-			wantEnvPassthrough:   []string{"GEMINI_API_KEY"},
-			wantInstructionsFile: "GEMINI.md",
-			wantAddDir:           false,
-			wantModelFlag:        "--model",
-		},
-		{
-			name:                 "copilot",
-			preset:               builtinPreset(t, "copilot"),
-			wantCommand:          "copilot",
-			wantArgs:             []string{"--yolo"},
-			wantEnvPassthrough:   []string{"GH_TOKEN"},
-			wantInstructionsFile: "AGENTS.md",
-			wantAddDir:           false,
-			wantModelFlag:        "", // copilot has no ModelFlag
-		},
 		{
 			name:                 "opencode",
 			preset:               builtinPreset(t, "opencode"),
@@ -84,8 +40,7 @@ func TestProviderCommandStrings(t *testing.T) {
 			wantArgs:             []string{},
 			wantEnvPassthrough:   nil,
 			wantInstructionsFile: "AGENTS.md",
-			wantAddDir:           false,
-			wantModelFlag:        "",
+			wantModelFlag:        "--model",
 		},
 		{
 			name: "custom user preset",
@@ -95,14 +50,12 @@ func TestProviderCommandStrings(t *testing.T) {
 				Args:             []string{"--auto"},
 				EnvPassthrough:   []string{"MY_API_KEY"},
 				ModelFlag:        "--model-flag",
-				AddDirFlag:       "--context-dir",
 				InstructionsFile: "MY_AGENT.md",
 			},
 			wantCommand:          "my-agent-bin",
 			wantArgs:             []string{"--auto"},
 			wantEnvPassthrough:   []string{"MY_API_KEY"},
 			wantInstructionsFile: "MY_AGENT.md",
-			wantAddDir:           true,
 			wantModelFlag:        "--model-flag",
 		},
 	}
@@ -155,26 +108,6 @@ func TestProviderCommandStrings(t *testing.T) {
 				pPos := strings.LastIndex(cmd, " -p ")
 				if pPos >= 0 && argPos > pPos {
 					t.Errorf("arg %q appears after -p in cmd:\n  got: %s", arg, cmd)
-				}
-			}
-
-			// AddDir flag + skillsDir must appear when AddDirFlag is set.
-			if tt.wantAddDir {
-				addDirFlag := tt.preset.AddDirFlag
-				wantSubstr := addDirFlag + " '" + skillsDir + "'"
-				if !strings.Contains(cmd, wantSubstr) {
-					t.Errorf("cmd missing %q:\n  got: %s", wantSubstr, cmd)
-				}
-				// Must appear before -p.
-				addDirPos := strings.Index(cmd, addDirFlag)
-				pPos := strings.LastIndex(cmd, " -p ")
-				if pPos >= 0 && addDirPos > pPos {
-					t.Errorf("AddDirFlag appears after -p in cmd:\n  got: %s", cmd)
-				}
-			} else if tt.preset.AddDirFlag == "" {
-				// When no AddDirFlag, verify skillsDir does not appear.
-				if strings.Contains(cmd, skillsDir) {
-					t.Errorf("cmd contains skillsDir %q but preset has no AddDirFlag:\n  got: %s", skillsDir, cmd)
 				}
 			}
 

@@ -28,7 +28,7 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux \
     go build -o /out/ct ./cmd/ct
 
-# Build fakeagent — the Claude stub used in tests.
+# Build fakeagent — the agent stub used in tests.
 # No CGO dependency; built as a portable binary.
 RUN CGO_ENABLED=0 GOOS=linux \
     go build -o /out/fakeagent ./internal/testutil/fakeagent/
@@ -42,7 +42,7 @@ FROM jrei/systemd-ubuntu@sha256:6cf7f981a584f2afb83782f29abdcdff1fa16660a80be1fd
 
 # Install runtime dependencies.
 # Deliberately excludes pass and gnupg — the credential story must work without
-# them (ANTHROPIC_API_KEY or OAuth tokens are used instead).
+# them (provider credentials are managed by the opencode CLI).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tmux \
         git \
@@ -56,10 +56,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ct CLI — the main Cistern binary.
 COPY --chmod=0755 --from=builder /out/ct /usr/local/bin/ct
 
-# fakeagent installed as "claude" — acts as the Claude CLI stub.
-# Placed at /usr/local/bin/claude so exec.LookPath("claude") resolves it,
-# matching the path npm installs the real Claude Code CLI.
-COPY --chmod=0755 --from=builder /out/fakeagent /usr/local/bin/claude
+# fakeagent installed as "opencode" — acts as the opencode CLI stub.
+# Placed at /usr/local/bin/opencode so exec.LookPath("opencode") resolves it.
+COPY --chmod=0755 --from=builder /out/fakeagent /usr/local/bin/opencode
 
 # ── Installer scripts ─────────────────────────────────────────────────────────
 

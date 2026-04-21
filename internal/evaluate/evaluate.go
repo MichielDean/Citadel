@@ -88,26 +88,22 @@ type Caller interface {
 
 // LLMCaller invokes an LLM via CLI in non-interactive mode.
 type LLMCaller struct {
-	Command           string
-	Args              []string
-	PrintFlag         string
-	PromptFlag        string
-	ModelFlag         string
-	Model             string
-	AllowedToolsFlag  string
-	WorkDir           string
+	Command    string
+	Args       []string
+	PromptFlag string
+	ModelFlag  string
+	Model      string
+	WorkDir    string
 }
 
-func NewLLMCaller(command string, args []string, printFlag, promptFlag, modelFlag, model, allowedToolsFlag, workDir string) *LLMCaller {
+func NewLLMCaller(command string, args []string, promptFlag, modelFlag, model, workDir string) *LLMCaller {
 	return &LLMCaller{
-		Command:          command,
-		Args:            args,
-		PrintFlag:       printFlag,
-		PromptFlag:      promptFlag,
-		ModelFlag:       modelFlag,
-		Model:           model,
-		AllowedToolsFlag: allowedToolsFlag,
-		WorkDir:         workDir,
+		Command:    command,
+		Args:       args,
+		PromptFlag: promptFlag,
+		ModelFlag:  modelFlag,
+		Model:      model,
+		WorkDir:    workDir,
 	}
 }
 
@@ -134,14 +130,6 @@ func (c *LLMCaller) Call(prompt string) (string, error) {
 
 	if c.Model != "" && c.ModelFlag != "" {
 		parts = append(parts, c.ModelFlag, c.Model)
-	}
-
-	if c.PrintFlag != "" {
-		parts = append(parts, c.PrintFlag)
-	}
-
-	if c.AllowedToolsFlag != "" {
-		parts = append(parts, c.AllowedToolsFlag, "Glob,Grep,Read")
 	}
 
 	if c.PromptFlag != "" {
@@ -225,9 +213,9 @@ type toolCall struct {
 type chatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content    string     `json:"content"`
-			Reasoning  string     `json:"reasoning,omitempty"`
-			ToolCalls  []toolCall `json:"tool_calls,omitempty"`
+			Content   string     `json:"content"`
+			Reasoning string     `json:"reasoning,omitempty"`
+			ToolCalls []toolCall `json:"tool_calls,omitempty"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -238,7 +226,7 @@ type chatResponse struct {
 
 func (c *APICaller) Call(prompt string) (string, error) {
 	reqBody := chatRequest{
-		Model:    c.Model,
+		Model: c.Model,
 		Messages: []chatMessage{
 			{Role: "user", Content: prompt},
 		},

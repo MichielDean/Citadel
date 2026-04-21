@@ -180,16 +180,16 @@ cataractae:
 `
 	os.WriteFile(wfPath, []byte(wfContent), 0o644)
 
-	// Create a roles dir with a CLAUDE.md that is newer than the workflow YAML.
+	// Create a roles dir with an AGENTS.md that is newer than the workflow YAML.
 	cataractaeDir := filepath.Join(tmpDir, "cataractae")
 	implDir := filepath.Join(cataractaeDir, "implementer")
 	os.MkdirAll(implDir, 0o755)
-	claudePath := filepath.Join(implDir, "CLAUDE.md")
-	os.WriteFile(claudePath, []byte("existing role content"), 0o644)
+	agentsPath := filepath.Join(implDir, "AGENTS.md")
+	os.WriteFile(agentsPath, []byte("existing role content"), 0o644)
 
-	// Make the CLAUDE.md newer than the workflow YAML by touching it.
+	// Make the AGENTS.md newer than the workflow YAML by touching it.
 	future := time.Now().Add(time.Hour)
-	os.Chtimes(claudePath, future, future)
+	os.Chtimes(agentsPath, future, future)
 
 	cfg := &aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -205,7 +205,7 @@ cataractae:
 	}
 
 	// The role file should NOT have been regenerated (content unchanged).
-	data, _ := os.ReadFile(claudePath)
+	data, _ := os.ReadFile(agentsPath)
 	if string(data) != "existing role content" {
 		t.Error("roles_generate should have been a no-op but content changed")
 	}
@@ -239,15 +239,15 @@ cataractae:
 		os.Setenv("USERPROFILE", origUserProfile)
 	}()
 
-	// Create ~/.cistern/cataractae/implementer/ with PERSONA.md, INSTRUCTIONS.md, and an old CLAUDE.md.
+	// Create ~/.cistern/cataractae/implementer/ with PERSONA.md, INSTRUCTIONS.md, and an old AGENTS.md.
 	cisternRoles := filepath.Join(tmpDir, ".cistern", "cataractae", "implementer")
 	os.MkdirAll(cisternRoles, 0o755)
 	os.WriteFile(filepath.Join(cisternRoles, "PERSONA.md"), []byte("# Role: Implementer\n\nA new persona."), 0o644)
 	os.WriteFile(filepath.Join(cisternRoles, "INSTRUCTIONS.md"), []byte("New instructions. ct droplet pass <id>"), 0o644)
-	cisternClaude := filepath.Join(cisternRoles, "CLAUDE.md")
-	os.WriteFile(cisternClaude, []byte("old"), 0o644)
+	cisternAgents := filepath.Join(cisternRoles, "AGENTS.md")
+	os.WriteFile(cisternAgents, []byte("old"), 0o644)
 	past := time.Now().Add(-time.Hour)
-	os.Chtimes(cisternClaude, past, past)
+	os.Chtimes(cisternAgents, past, past)
 
 	cfg := &aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -263,7 +263,7 @@ cataractae:
 	}
 
 	// The role file should have been regenerated from PERSONA.md + INSTRUCTIONS.md.
-	data, _ := os.ReadFile(cisternClaude)
+	data, _ := os.ReadFile(cisternAgents)
 	content := string(data)
 	if content == "old" {
 		t.Error("roles_generate should have regenerated but didn't")
@@ -776,11 +776,11 @@ func TestRunDroughtHooks_GitFetchTimeout_ZeroDefault(t *testing.T) {
 
 	// Zero timeout should not panic.
 	RunDroughtHooks(DroughtHookParams{
-		Config:           &aqueduct.AqueductConfig{},
-		SandboxRoot:      tmpDir,
-		Logger:           discardLogger(),
-		CfgPath:          cfgPath,
-		GitFetchTimeout:  0,
+		Config:          &aqueduct.AqueductConfig{},
+		SandboxRoot:     tmpDir,
+		Logger:          discardLogger(),
+		CfgPath:         cfgPath,
+		GitFetchTimeout: 0,
 	})
 
 	// Explicit timeout should also not panic.

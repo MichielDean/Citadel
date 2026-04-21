@@ -1,31 +1,27 @@
 // fakeagent is a minimal fake agent binary used in tests to exercise the
 // Cistern session spawn → isAlive → outcome pipeline without a real LLM CLI.
 //
-// It accepts the same flags as the claude CLI:
+// It accepts the same flags as the opencode CLI:
 //
 //	--dangerously-skip-permissions (ignored)
-//	--add-dir <dir>                (ignored)
 //	--model <model>                (ignored)
-//	--print                        (triggers non-interactive mode)
-//	-p <prompt>                    (interactive prompt, also used with --print)
-//	--output-format <format>       (when "json", wraps output in a JSON envelope)
+//	--output-format <format>       (when "json", triggers non-interactive mode)
 //	--resume <session-id>          (ignored; accepted for flag compatibility)
 //
-// Non-interactive mode (when --print is present in os.Args):
+// Non-interactive mode (when --output-format is present in os.Args):
 //
-//	When --output-format is also present, prints a JSON envelope containing a
+//	When --output-format is "json", prints a JSON envelope containing a
 //	hardcoded proposal array and a test session_id. This is the behaviour
 //	expected by callFilterAgent() in filter.go.
 //
-//	When only --print is present (without --output-format), or when
-//	FAKEAGENT_MODE=raw_fallback is set, prints the hardcoded proposal array
+//	When FAKEAGENT_MODE=raw_fallback is set, prints the hardcoded proposal array
 //	directly. This exercises the JSON-fallback path in callFilterAgent().
 //
 //	We scan os.Args directly because flag.Parse stops at the first positional
-//	arg (e.g. a subcommand like "exec"), which would otherwise prevent --print
-//	from being parsed when it appears after the subcommand.
+//	arg (e.g. a subcommand like "run"), which would otherwise prevent
+//	--output-format from being parsed when it appears after the subcommand.
 //
-// Interactive mode (when --print is absent):
+// Interactive mode (when --output-format is absent):
 //
 //	Environment variables read:
 //	  CT_CATARACTA_NAME   identity passed by the session runner (ignored)
@@ -52,9 +48,9 @@ import (
 // becomes filterSessionResult.Text directly.
 const hardcodedProposals = `[{"title":"mock proposal","description":"test description","complexity":"standard","depends_on":[]}]`
 
-// hardcodedJSONEnvelope is returned when both --print and --output-format are
-// present. The result field becomes filterSessionResult.Text; session_id is a
-// stable test value used to verify session_id extraction.
+// hardcodedJSONEnvelope is returned when --output-format is present in
+// non-interactive mode. The result field becomes filterSessionResult.Text;
+// session_id is a stable test value used to verify session_id extraction.
 const hardcodedJSONEnvelope = `{"type":"result","subtype":"success","is_error":false,"result":"[{\"title\":\"mock proposal\",\"description\":\"test description\",\"complexity\":\"standard\",\"depends_on\":[]}]","session_id":"test-session-id-abc123"}`
 
 // hardcodedErrorEnvelope is returned in FAKEAGENT_MODE=error_envelope.
@@ -62,70 +58,48 @@ const hardcodedJSONEnvelope = `{"type":"result","subtype":"success","is_error":f
 const hardcodedErrorEnvelope = `{"type":"result","subtype":"error","is_error":true,"result":"agent encountered an error","session_id":"error-session-id"}`
 
 func main() {
-	// Pre-scan os.Args for --print and --output-format before calling flag.Parse.
+	// Pre-scan os.Args for --output-format before calling flag.Parse.
 	// flag.Parse stops at the first positional arg (e.g. a subcommand such as
-	// "exec" or "run"), so these flags could appear later in the arg list without
+	// "run"), so these flags could appear later in the arg list without
 	// being registered by the flag package.
-	hasPrint := false
 	hasOutputFormat := false
 	for _, arg := range os.Args[1:] {
-		switch arg {
-		case "--print":
-			hasPrint = true
-		case "--output-format":
+		if arg == "--output-format" {
 			hasOutputFormat = true
 		}
 	}
 
-	if hasPrint {
+	if hasOutputFormat {
 		// Capture all args for tests that need to inspect which flags were passed.
 		if argsFile := os.Getenv("FAKEAGENT_ARGS_FILE"); argsFile != "" {
 			_ = os.WriteFile(argsFile, []byte(strings.Join(os.Args[1:], "\n")), 0o644)
 		}
 		// Capture the prompt for tests that need to inspect what was sent.
+		// The prompt is always the last argument regardless of how it was passed.
 		if promptFile := os.Getenv("FAKEAGENT_PROMPT_FILE"); promptFile != "" {
-			args := os.Args[1:]
-			for i, arg := range args {
-				if arg == "-p" && i+1 < len(args) {
-					_ = os.WriteFile(promptFile, []byte(args[i+1]), 0o644)
-					break
-				}
+			if len(os.Args) > 1 {
+				_ = os.WriteFile(promptFile, []byte(os.Args[len(os.Args)-1]), 0o644)
 			}
 		}
 		mode := os.Getenv("FAKEAGENT_MODE")
 		switch {
 		case mode == "error_envelope":
-			// Return a JSON envelope with is_error:true to test the error path.
 			fmt.Println(hardcodedErrorEnvelope)
-		case hasOutputFormat && mode != "raw_fallback":
-			// Normal JSON envelope (default when --output-format is present).
+		case mode != "raw_fallback":
 			fmt.Println(hardcodedJSONEnvelope)
 		default:
-			// Raw proposals: either no --output-format, or raw_fallback mode.
 			fmt.Println(hardcodedProposals)
 		}
 		return
 	}
 
-	// Accept the same flags as claude so the command string built by
-	// buildClaudeCmd() / buildPresetCmd() is valid when the binary is
-	// substituted via CLAUDE_PATH. Return values are discarded — the
-	// flags exist only so flag.Parse does not reject them.
+	// Accept flags so flag.Parse does not reject them.
 	flag.Bool("dangerously-skip-permissions", false, "")
-	flag.String("add-dir", "", "")
 	flag.String("model", "", "")
-	flag.Bool("print", false, "")
 	flag.String("p", "", "")
 	flag.String("output-format", "", "")
 	flag.String("resume", "", "")
-	flag.String("allowedTools", "", "")
 	flag.Parse()
-
-	// Handle "claude auth status" command (no --print, args = ["auth", "status"]).
-	// In the test environment, always return success (exit 0), analogous to the gh CLI stub.
-	if len(flag.Args()) == 2 && flag.Args()[0] == "auth" && flag.Args()[1] == "status" {
-		return // Exit 0 (success)
-	}
 
 	mode := os.Getenv("FAKEAGENT_MODE")
 

@@ -83,11 +83,11 @@ ct droplet add \
 Filtration is a **thinking tool**, not a filing tool. It refines ideas into clear specs — filing is always done separately with `ct droplet add`.
 
 **⚠️ Filtration pitfalls:**
-- **Never set `ANTHROPIC_API_KEY` before running `ct filter`** — ct filter uses claude CLI OAuth, not API key auth. Setting `ANTHROPIC_API_KEY` in the environment causes claude to attempt API key auth, which fails with "Invalid API key" and ct filter exits with a confusing usage-help message.
+- **Do not set provider API keys before running `ct filter`** — ct filter uses the opencode CLI, which manages its own credentials. Setting API keys in the environment may cause authentication conflicts.
 - **Run `ct filter` from `~/cistern`** — it uses `--allowedTools` to read codebase context. Running from another directory gives the agent no context.
 - **Don't use `--description` for long text** — pass the title only; provide full context in the first interactive turn instead.
 
-**Step 1 — Start (from ~/cistern, no ANTHROPIC_API_KEY exported):**
+**Step 1 — Start (from ~/cistern, no provider API keys exported):**
 ```bash
 cd ~/cistern
 ct filter --title "Rough idea"
@@ -173,20 +173,20 @@ systemctl --user start cistern-ttyd.service
 ## Infrastructure
 
 - Castellarius: systemd user service `cistern-castellarius.service` (Restart=always)
-- Auth: Claude CLI manages its own credentials via `~/.claude/.credentials.json` — no ANTHROPIC_API_KEY env var needed in service
+- Auth: Opencode CLI manages its own credentials — no provider API keys needed in the service environment
 - `start-castellarius.sh` just runs `exec ct castellarius start` — no credential setup
 - ttyd dashboard: port 5737, managed by `cistern-ttyd.service`
 - Self-restart: git_sync drought hook + binary mtime detection → os.Exit(0) → systemd restarts
 
 ## Troubleshooting
 
-Run `ct doctor` first — it checks daemon status, claude CLI auth, and common config issues automatically.
+Run `ct doctor` first — it checks daemon status and common config issues automatically.
 
 | Symptom | Check |
 |---------|-------|
 | Castellarius not running | `systemctl --user status cistern-castellarius` → start it |
 | Castellarius hung/log quiet | `ct doctor` flags it automatically; manual check: `cat ~/.cistern/castellarius.health` (shows last tick time + poll interval) |
-| Sessions failing auth | `ct doctor` checks claude CLI authenticated automatically; also verify nothing sets ANTHROPIC_API_KEY in env — if set, claude switches from OAuth to API key mode and fails |
+| Sessions failing auth | `ct doctor` checks agent CLI auth automatically; also verify environment variables are correct for the configured provider |
 | Droplet stuck | `ct droplet show <id>` — check notes; `ct droplet restart <id>` |
 | Logs | `journalctl --user -u cistern-castellarius -f` or `cat ~/.cistern/castellarius.log` |
 | Dashboard stale after rebuild | Kill old process on port 5737, restart cistern-ttyd.service |
