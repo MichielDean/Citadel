@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { StatusIndicator } from '../components/StatusIndicator';
 import { ActionButton } from '../components/ActionButton';
 import { useToast } from '../components/Toast';
-import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { SkeletonCard } from '../components/LoadingSkeleton';
 import { useCastellariusStatus, castellariusAction } from '../api/castellarius';
 
 export function CastellariusPage() {
@@ -33,8 +33,8 @@ export function CastellariusPage() {
   if (loading && !status) {
     return (
       <div className="flex-1 p-4 md:p-6 space-y-6">
-        <LoadingSkeleton className="h-24" />
-        <LoadingSkeleton className="h-16" />
+        <SkeletonCard lines={4} />
+        <SkeletonCard lines={3} />
       </div>
     );
   }

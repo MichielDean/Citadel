@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ModalOverlay } from './ModalOverlay';
 
 interface CommandPaletteProps {
   open: boolean;
@@ -52,11 +53,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      } else if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
       } else if (e.key === 'ArrowUp') {
@@ -69,7 +66,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     };
     window.addEventListener('keydown', handleKey, true);
     return () => window.removeEventListener('keydown', handleKey, true);
-  }, [open, filtered, selectedIndex, execute, onClose]);
+  }, [open, filtered, selectedIndex, execute]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -78,44 +75,45 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center pt-[20vh]" role="dialog" aria-label="Command palette">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-cistern-surface border border-cistern-border rounded-lg shadow-2xl w-full max-w-lg overflow-hidden">
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Type a command…"
-          className="w-full bg-transparent px-4 py-3 text-sm text-cistern-fg placeholder-cistern-muted border-b border-cistern-border outline-none"
-          aria-label="Search commands"
-        />
-        <ul className="max-h-64 overflow-y-auto py-1" role="listbox">
-          {filtered.length === 0 && (
-            <li className="px-4 py-2 text-sm text-cistern-muted">No commands found</li>
-          )}
-          {filtered.map((cmd, i) => (
-            <li key={cmd.id}>
-              <button
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${
-                  i === selectedIndex
-                    ? 'bg-cistern-accent/10 text-cistern-accent'
-                    : 'text-cistern-fg hover:bg-cistern-border/30'
-                }`}
-                onClick={() => execute(cmd)}
-                role="option"
-                aria-selected={i === selectedIndex}
-              >
-                <span className="text-cistern-muted text-xs">{cmd.section}</span>
-                <span>{cmd.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="px-4 py-2 border-t border-cistern-border text-xs text-cistern-muted">
-          ↑↓ navigate · Enter select · Esc close
+    <ModalOverlay open={open} onClose={onClose} maxWidth="max-w-lg">
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Type a command…"
+        className="w-full bg-transparent text-sm text-cistern-fg placeholder-cistern-muted outline-none"
+        aria-label="Search commands"
+      />
+      {filtered.length > 0 && (
+        <div className="border-t border-cistern-border max-h-64 overflow-y-auto py-1">
+          <ul role="listbox">
+            {filtered.map((cmd, i) => (
+              <li key={cmd.id}>
+                <button
+                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${
+                    i === selectedIndex
+                      ? 'bg-cistern-accent/10 text-cistern-accent'
+                      : 'text-cistern-fg hover:bg-cistern-border/30'
+                  }`}
+                  onClick={() => execute(cmd)}
+                  role="option"
+                  aria-selected={i === selectedIndex}
+                >
+                  <span className="text-cistern-muted text-xs">{cmd.section}</span>
+                  <span>{cmd.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
+      )}
+      {filtered.length === 0 && (
+        <div className="px-4 py-2 text-sm text-cistern-muted border-t border-cistern-border">No commands found</div>
+      )}
+      <div className="px-4 py-2 border-t border-cistern-border text-xs text-cistern-muted">
+        ↑↓ navigate · Enter select · Esc close
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

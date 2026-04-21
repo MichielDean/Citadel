@@ -3,15 +3,51 @@ import { LoadingSkeleton, SkeletonLine, SkeletonCard, SkeletonTable } from '../c
 import { render, screen } from '@testing-library/react';
 
 describe('LoadingSkeleton', () => {
-  it('renders with default styles', () => {
-    const { container } = render(<LoadingSkeleton />);
-    expect(container.firstChild).toBeTruthy();
-    expect(container.firstChild).toHaveClass('animate-pulse');
+  it('renders children when loading is false', () => {
+    render(
+      <LoadingSkeleton loading={false}>
+        <div>Loaded content</div>
+      </LoadingSkeleton>,
+    );
+    expect(screen.getByText('Loaded content')).toBeInTheDocument();
+  });
+
+  it('renders skeleton when loading is true with card variant', () => {
+    const { container } = render(
+      <LoadingSkeleton loading variant="card">
+        <div>Loaded content</div>
+      </LoadingSkeleton>,
+    );
+    expect(container.querySelector('.animate-pulse')).toBeTruthy();
+    expect(screen.queryByText('Loaded content')).not.toBeInTheDocument();
+  });
+
+  it('renders skeleton when loading is true with row variant', () => {
+    const { container } = render(
+      <LoadingSkeleton loading variant="row" count={3}>
+        <div>Loaded content</div>
+      </LoadingSkeleton>,
+    );
+    const pulses = container.querySelectorAll('.animate-pulse');
+    expect(pulses.length).toBe(3);
+  });
+
+  it('renders skeleton when loading is true with table variant', () => {
+    const { container } = render(
+      <LoadingSkeleton loading variant="table" count={2}>
+        <div>Loaded content</div>
+      </LoadingSkeleton>,
+    );
+    expect(container.querySelectorAll('.border-t').length).toBe(2);
   });
 
   it('applies custom className', () => {
-    const { container } = render(<LoadingSkeleton className="h-8 w-32" />);
-    expect(container.firstChild).toHaveClass('h-8', 'w-32');
+    const { container } = render(
+      <LoadingSkeleton loading variant="card" className="custom-class">
+        <div>Content</div>
+      </LoadingSkeleton>,
+    );
+    expect(container.querySelector('.custom-class')).toBeTruthy();
   });
 });
 

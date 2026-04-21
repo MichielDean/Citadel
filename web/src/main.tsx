@@ -19,7 +19,7 @@ import './index.css';
 const router = createBrowserRouter([
   {
     path: '/app',
-    element: <ErrorBoundary><AppLayout /></ErrorBoundary>,
+    element: <AppLayout />,
     children: [
       { index: true, element: <Dashboard /> },
       { path: 'droplets', element: <DropletsList /> },
@@ -38,6 +38,8 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

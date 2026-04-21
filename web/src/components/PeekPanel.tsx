@@ -71,7 +71,7 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
   const handleScroll = useCallback(() => {
     const el = terminalRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
     if (atBottom) {
       userScrollingRef.current = false;
       setAutoScroll(true);
@@ -143,7 +143,7 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
             title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
             aria-label={autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
           >
-            {autoScroll ? '⬇ Scroll' : '⬇ Paused'}
+            {autoScroll ? '⬇ Auto' : '⬇ Manual'}
           </button>
           <button
             onClick={onClose}

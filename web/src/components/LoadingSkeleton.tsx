@@ -1,6 +1,36 @@
-export function LoadingSkeleton({ className = '' }: { className?: string }) {
+import { type ReactNode } from 'react';
+
+interface LoadingSkeletonWrapperProps {
+  loading: boolean;
+  children: ReactNode;
+  variant?: 'card' | 'row' | 'table';
+  count?: number;
+  className?: string;
+}
+
+export function LoadingSkeleton({ loading, children, variant = 'card', count = 1, className = '' }: LoadingSkeletonWrapperProps) {
+  if (!loading) return <>{children}</>;
+
+  if (variant === 'row') {
+    return (
+      <div className={className}>
+        {Array.from({ length: count }).map((_, i) => (
+          <div key={i} className="animate-pulse h-6 w-full bg-cistern-border/30 rounded mb-2" />
+        ))}
+      </div>
+    );
+  }
+
+  if (variant === 'table') {
+    return <SkeletonTable rows={count} cols={4} className={className} />;
+  }
+
   return (
-    <div className={`animate-pulse bg-cistern-border/30 rounded ${className}`} />
+    <div className={`space-y-4 ${className}`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </div>
   );
 }
 
@@ -19,9 +49,9 @@ export function SkeletonCard({ lines = 3 }: { lines?: number }) {
   );
 }
 
-export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+export function SkeletonTable({ rows = 5, cols = 4, className = '' }: { rows?: number; cols?: number; className?: string }) {
   return (
-    <div className="bg-cistern-surface border border-cistern-border rounded-lg overflow-hidden">
+    <div className={`bg-cistern-surface border border-cistern-border rounded-lg overflow-hidden ${className}`}>
       <div className="grid gap-4 p-4" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
         {Array.from({ length: cols }).map((_, i) => (
           <SkeletonLine key={i} width="70%" />

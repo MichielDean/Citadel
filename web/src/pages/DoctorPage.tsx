@@ -2,7 +2,7 @@ import { useDoctor } from '../api/doctor';
 import type { DoctorCheck } from '../api/types';
 import { HealthCheckCard } from '../components/HealthCheckCard';
 import { ActionButton } from '../components/ActionButton';
-import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { SkeletonCard } from '../components/LoadingSkeleton';
 
 export function DoctorPage() {
   const { result, loading, error, rerun, fix } = useDoctor();
@@ -21,9 +21,9 @@ export function DoctorPage() {
   if (loading && !result) {
     return (
       <div className="flex-1 p-4 md:p-6 space-y-4">
-        <LoadingSkeleton className="h-24" />
-        <LoadingSkeleton className="h-16" />
-        <LoadingSkeleton className="h-16" />
+        <SkeletonCard lines={4} />
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={3} />
       </div>
     );
   }
