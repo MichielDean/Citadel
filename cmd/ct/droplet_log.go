@@ -54,7 +54,7 @@ func runLog(out io.Writer, id string) error {
 		return err
 	}
 
-	timeline, err := c.GetDropletTimeline(id, 500)
+	timeline, err := c.GetDropletTimeline(id, 0)
 	if err != nil {
 		return err
 	}
