@@ -316,19 +316,19 @@ func TestRemapEvent_DisplaysHumanReadableDetails(t *testing.T) {
 		wantOmit string
 	}{
 		{
-			name:     "create event shows repo and title",
+			name:     "create event shows repo, title, priority, complexity",
 			evt:      "create",
 			detail:   `{"repo":"myrepo","title":"My task","priority":1,"complexity":2}`,
 			wantEvt:  "created",
-			wantSub:  "repo: myrepo, title: My task",
+			wantSub:  "repo: myrepo, title: My task, priority: 1, complexity: 2",
 			wantOmit: `"repo"`,
 		},
 		{
-			name:     "dispatch event shows step and assignee",
+			name:     "dispatch event shows aqueduct, step and assignee",
 			evt:      "dispatch",
-			detail:   `{"cataractae":"implement","assignee":"alice"}`,
+			detail:   `{"aqueduct":"default","cataractae":"implement","assignee":"alice"}`,
 			wantEvt:  "dispatched",
-			wantSub:  "step: implement, assignee: alice",
+			wantSub:  "aqueduct: default, step: implement, assignee: alice",
 			wantOmit: `"cataractae"`,
 		},
 		{
@@ -393,6 +393,14 @@ func TestRemapEvent_DisplaysHumanReadableDetails(t *testing.T) {
 			detail:  `{}`,
 			wantEvt: "delivered",
 			wantSub: "",
+		},
+		{
+			name:     "dispatch event without aqueduct shows step and assignee",
+			evt:      "dispatch",
+			detail:   `{"cataractae":"implement","assignee":"alice"}`,
+			wantEvt:  "dispatched",
+			wantSub:  "step: implement, assignee: alice",
+			wantOmit: `"cataractae"`,
 		},
 		{
 			name:    "empty dispatch payload shows no detail",

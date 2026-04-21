@@ -833,14 +833,22 @@ func (c *Client) Pool(id, reason string) error {
 
 	now := time.Now().UTC()
 	res, err := tx.Exec(
-		`UPDATE droplets SET status = 'pooled', outcome = 'pool', assigned_aqueduct = '', updated_at = ? WHERE id = ?`,
+		`UPDATE droplets SET status = 'pooled', outcome = 'pool', assigned_aqueduct = '', updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
 		now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("cistern: pool %s: %w", id, err)
 	}
-	if err := checkRowsAffected(res, id); err != nil {
-		return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("cistern: pool %s: rows affected: %w", id, err)
+	}
+	if n == 0 {
+		var status string
+		if err := tx.QueryRow(`SELECT status FROM droplets WHERE id = ?`, id).Scan(&status); err != nil {
+			return fmt.Errorf("cistern: droplet %s not found", id)
+		}
+		return fmt.Errorf("cistern: pool %s: droplet has terminal status %q", id, status)
 	}
 
 	poolPayload, _ := json.Marshal(map[string]any{"reason": reason})
@@ -906,6 +914,7 @@ func (c *Client) FileDroplet(repo, title, description string, priority, complexi
 
 // CloseItem marks a droplet as delivered.
 // assigned_aqueduct is cleared atomically so no ghost assignments linger.
+// Returns an error if the droplet has a terminal status (delivered or cancelled).
 func (c *Client) CloseItem(id string) error {
 	tx, err := c.db.Begin()
 	if err != nil {
@@ -914,14 +923,22 @@ func (c *Client) CloseItem(id string) error {
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`UPDATE droplets SET status = 'delivered', assigned_aqueduct = '', updated_at = ? WHERE id = ?`,
+		`UPDATE droplets SET status = 'delivered', assigned_aqueduct = '', updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
 		time.Now().UTC(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("cistern: close %s: %w", id, err)
 	}
-	if err := checkRowsAffected(res, id); err != nil {
-		return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("cistern: close %s: rows affected: %w", id, err)
+	}
+	if n == 0 {
+		var status string
+		if err := tx.QueryRow(`SELECT status FROM droplets WHERE id = ?`, id).Scan(&status); err != nil {
+			return fmt.Errorf("cistern: droplet %s not found", id)
+		}
+		return fmt.Errorf("cistern: close %s: droplet has terminal status %q", id, status)
 	}
 	if err := c.recordEvent(tx, id, EventDelivered, "{}"); err != nil {
 		return err

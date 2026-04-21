@@ -3605,3 +3605,100 @@ func TestApprove_CataractaeGuardInWhere(t *testing.T) {
 		t.Fatal("expected error when cataractae changed from human before Approve")
 	}
 }
+
+func TestPool_Delivered_ReturnsTerminalError(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Pool delivered guard test", "", 1, 2)
+	c.CloseItem(item.ID)
+
+	err := c.Pool(item.ID, "should fail")
+	if err == nil {
+		t.Fatal("expected error for delivered droplet")
+	}
+	if !strings.Contains(err.Error(), "terminal status") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	got, _ := c.Get(item.ID)
+	if got.Status != "delivered" {
+		t.Errorf("status = %q, want delivered (should not resurrect)", got.Status)
+	}
+}
+
+func TestPool_Cancelled_ReturnsTerminalError(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Pool cancelled guard test", "", 1, 2)
+	c.Cancel(item.ID, "no longer needed")
+
+	err := c.Pool(item.ID, "should fail")
+	if err == nil {
+		t.Fatal("expected error for cancelled droplet")
+	}
+	if !strings.Contains(err.Error(), "terminal status") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	got, _ := c.Get(item.ID)
+	if got.Status != "cancelled" {
+		t.Errorf("status = %q, want cancelled (should not resurrect)", got.Status)
+	}
+}
+
+func TestCloseItem_Cancelled_ReturnsTerminalError(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Close cancelled guard test", "", 1, 2)
+	c.Cancel(item.ID, "superseded")
+
+	err := c.CloseItem(item.ID)
+	if err == nil {
+		t.Fatal("expected error for cancelled droplet")
+	}
+	if !strings.Contains(err.Error(), "terminal status") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	got, _ := c.Get(item.ID)
+	if got.Status != "cancelled" {
+		t.Errorf("status = %q, want cancelled (should not resurrect)", got.Status)
+	}
+}
+
+func TestCloseItem_Delivered_ReturnsTerminalError(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Close delivered guard test", "", 1, 2)
+	c.CloseItem(item.ID)
+
+	err := c.CloseItem(item.ID)
+	if err == nil {
+		t.Fatal("expected error for already-delivered droplet")
+	}
+	if !strings.Contains(err.Error(), "terminal status") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPool_DeliveredGuardInWhere(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Pool guard where test", "", 1, 2)
+	c.UpdateStatus(item.ID, "in_progress")
+
+	c.CloseItem(item.ID)
+
+	err := c.Pool(item.ID, "should fail")
+	if err == nil {
+		t.Fatal("expected error when droplet becomes delivered before Pool")
+	}
+}
+
+func TestCloseItem_CancelledGuardInWhere(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Close guard where test", "", 1, 2)
+	c.UpdateStatus(item.ID, "in_progress")
+
+	c.Cancel(item.ID, "obsolete")
+
+	err := c.CloseItem(item.ID)
+	if err == nil {
+		t.Fatal("expected error when droplet becomes cancelled before CloseItem")
+	}
+}

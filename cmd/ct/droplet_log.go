@@ -174,6 +174,12 @@ func remapPayloadCreate(detail string) string {
 	if title, ok := payload["title"]; ok && title != "" {
 		parts = append(parts, fmt.Sprintf("title: %v", title))
 	}
+	if priority, ok := payload["priority"]; ok {
+		parts = append(parts, fmt.Sprintf("priority: %v", priority))
+	}
+	if complexity, ok := payload["complexity"]; ok {
+		parts = append(parts, fmt.Sprintf("complexity: %v", complexity))
+	}
 	if len(parts) == 0 {
 		return ""
 	}
@@ -189,6 +195,9 @@ func remapPayloadDispatch(detail string) string {
 		return detail
 	}
 	var parts []string
+	if aqueduct, ok := payload["aqueduct"]; ok && aqueduct != "" {
+		parts = append(parts, fmt.Sprintf("aqueduct: %v", aqueduct))
+	}
 	if cat, ok := payload["cataractae"]; ok && cat != "" {
 		parts = append(parts, fmt.Sprintf("step: %v", cat))
 	}

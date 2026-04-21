@@ -687,15 +687,11 @@ var dropletPoolCmd = &cobra.Command{
 			}
 		}
 
+		if err := c.Pool(args[0], poolNotes); err != nil {
+			return err
+		}
 		if item.Status == "in_progress" {
-			if err := c.SetOutcome(args[0], "pool"); err != nil {
-				return err
-			}
 			notifyCastellarius()
-		} else {
-			if err := c.Pool(args[0], poolNotes); err != nil {
-				return err
-			}
 		}
 		fmt.Printf("droplet %s: outcome=pool\n", args[0])
 		return nil
