@@ -1,7 +1,7 @@
 // Package mockllm provides a fake LLM HTTP server for use in tests.
 //
-// The server handles two endpoints that together cover all Cistern provider
-// configurations:
+// The server handles two endpoints that together cover all Cistern LLM API
+// backend configurations (for the LLM backend used by ct filter, not the agent CLI):
 //
 //   - POST /v1/messages        — Anthropic Messages API format
 //   - POST /v1/chat/completions — OpenAI-compatible chat completions format
@@ -16,7 +16,7 @@
 //	defer mock.Close()
 //
 //	t.Setenv("GH_TOKEN", "test-key")
-//	t.Setenv("ANTHROPIC_BASE_URL", mock.URL)
+//	t.Setenv("ANTHROPIC_BASE_URL", mock.URL) // or OPENAI_BASE_URL for OpenAI-compatible providers
 //
 //	// make an HTTP call that hits the mock server, then:
 //	reqs := mock.Requests()
@@ -86,6 +86,7 @@ func (s *Server) record(r *http.Request) {
 
 // handleMessages responds to POST /v1/messages with a well-formed Anthropic
 // Messages API response containing [HardcodedProposalsJSON] as the text block.
+// This endpoint tests the Anthropic LLM API backend, not the claude CLI agent.
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
