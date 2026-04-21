@@ -1,4 +1,4 @@
-// Package runner manages named workers, persistent sandboxes, and Claude Code
+// Package runner manages named workers, persistent sandboxes, and agent
 // sessions for executing workflow steps against work items.
 package cataractae
 
@@ -49,7 +49,7 @@ type Config struct {
 	SandboxRoot      string                  // Override for sandbox root dir (default: ~/.cistern/sandboxes)
 	HandoffThreshold int                     // Token threshold for session handoff (default: 150000)
 	SkipInitialClone bool                    // Skip the startup clone (for tests with fake repo URLs)
-	Preset           provider.ProviderPreset // Resolved provider preset; zero-value falls back to legacy claude path
+	Preset           provider.ProviderPreset // Resolved provider preset
 }
 
 // New creates a Runner for the given repo, initializing named workers from the
@@ -237,9 +237,9 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 		return fmt.Errorf("context: %w", err)
 	}
 
-	// 2. Verify skills are installed in ~/.cistern/skills/. Claude reads them
-	// directly via --add-dir ~/.cistern/skills (injected in session.go) using
-	// the absolute paths written into CONTEXT.md by context.go. No file copying.
+	// 2. Verify skills are installed in ~/.cistern/skills/. The agent reads them
+	// directly via the absolute paths written into CONTEXT.md by context.go.
+	// No file copying is needed.
 	for _, skill := range step.Skills {
 		if !skills.IsInstalled(skill.Name) {
 			cleanup()

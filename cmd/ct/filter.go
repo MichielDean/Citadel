@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// claudeJSONOutput is the envelope returned by claude --print --output-format json.
-// The Result field contains the assistant's raw text response; SessionID identifies
-// the conversation so it can be resumed.
-type claudeJSONOutput struct {
+// agentJSONOutput is the envelope returned by the agent's --output-format json
+// mode. The Result field contains the assistant's raw text response; SessionID
+// identifies the conversation so it can be resumed.
+type agentJSONOutput struct {
 	Type      string `json:"type"`
 	Subtype   string `json:"subtype"`
 	IsError   bool   `json:"is_error"`
@@ -152,7 +152,7 @@ func callFilterAgent(preset provider.ProviderPreset, extraArgs []string, prompt 
 		return filterSessionResult{}, fmt.Errorf("agent exec failed: %w", err)
 	}
 
-	var envelope claudeJSONOutput
+	var envelope agentJSONOutput
 	if err := json.Unmarshal(out, &envelope); err != nil {
 		// Fallback: the preset may not support --output-format json; use raw output as text.
 		return filterSessionResult{Text: strings.TrimSpace(string(out))}, nil
