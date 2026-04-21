@@ -1265,16 +1265,18 @@ func (c *Client) GetDropletTimeline(id string) ([]TimelineEntry, error) {
 	return entries, rows.Err()
 }
 
-// GetDropletChanges returns recent events for a droplet, ordered
-// oldest-first. Each entry has Kind="event" and Value="event_type: payload".
+// GetDropletChanges returns up to limit most recent events for a droplet,
+// ordered oldest-first. Each entry has Kind="event" and Value="event_type: payload".
 // Used by ct droplet tail and the dashboard API.
 func (c *Client) GetDropletChanges(id string, limit int) ([]DropletChange, error) {
 	rows, err := c.db.Query(`
-		SELECT created_at, event_type, COALESCE(payload, '')
-		FROM events
-		WHERE droplet_id = ?
-		ORDER BY created_at ASC
-		LIMIT ?`, id, limit)
+		SELECT created_at, event_type, COALESCE(payload, '') FROM (
+			SELECT created_at, event_type, payload
+			FROM events
+			WHERE droplet_id = ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		) ORDER BY created_at ASC`, id, limit)
 	if err != nil {
 		return nil, fmt.Errorf("cistern: get droplet changes %s: %w", id, err)
 	}

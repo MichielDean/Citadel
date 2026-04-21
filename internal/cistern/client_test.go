@@ -2669,13 +2669,25 @@ func TestGetDropletChanges_RespectsLimit_ReturnsNewest(t *testing.T) {
 		c.RecordEvent(item.ID, "pass", fmt.Sprintf(`{"cataractae":"step-%d"}`, i))
 	}
 
-	// create event + 5 pass events = 6 total; limit 3 returns 3 oldest (ASC order)
+	// create event + 5 pass events = 6 total; limit 3 returns the 3 newest, ordered oldest-first
 	changes, err := c.GetDropletChanges(item.ID, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(changes) != 3 {
 		t.Fatalf("got %d changes, want 3 (limit applied)", len(changes))
+	}
+	// Verify we got the newest 3 events (pass-2, pass-3, pass-4), not the oldest (create, pass-0, pass-1)
+	for _, ch := range changes {
+		if ch.Kind != "event" {
+			t.Errorf("Kind = %q, want 'event'", ch.Kind)
+		}
+	}
+	if changes[0].Value != "pass: {\"cataractae\":\"step-2\"}" {
+		t.Errorf("first change = %q, want step-2 (newest slice starts at step-2)", changes[0].Value)
+	}
+	if changes[2].Value != "pass: {\"cataractae\":\"step-4\"}" {
+		t.Errorf("last change = %q, want step-4 (newest slice ends at step-4)", changes[2].Value)
 	}
 }
 
