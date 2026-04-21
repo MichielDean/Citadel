@@ -71,7 +71,7 @@ No database migrations. No file system migration concerns — all code-level ref
 
 ### Test Code
 
-- [ ] `cmd/ct/init_test.go:495` — `TestInit_NextStepsMessage_DoesNotMentionRemovedProviderEnvVars` lists `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` as removed env vars. Remove these from the list or update the test assertion to be provider-name-based rather than env-var-based, since these env var names may still be relevant for opencode's LLM backend.
+- [x] `cmd/ct/init_test.go:493` — `TestInit_NextStepsMessage_DoesNotMentionRemovedProviders` now checks provider names (claude, codex, gemini, CLAUDE_PATH) instead of env var names (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) that may still be relevant for opencode's LLM backend.
 
 ### No-Op Items (Already Implemented)
 
