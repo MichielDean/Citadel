@@ -11,6 +11,7 @@ package gates
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -85,9 +86,14 @@ func New() *Executor {
 }
 
 // DefaultExec runs a command via os/exec.
+// It sets GIT_EDITOR and GIT_SEQUENCE_EDITOR to prevent git from opening
+// an interactive editor in non-interactive agent contexts.
 func DefaultExec(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if name == "git" {
+		cmd.Env = append(os.Environ(), "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true")
+	}
 	return cmd.CombinedOutput()
 }
 

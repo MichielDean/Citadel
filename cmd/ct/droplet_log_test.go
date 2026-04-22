@@ -33,7 +33,7 @@ func runLogCapture(t *testing.T, id string) (string, error) {
 
 func TestDropletLog_ShowsCreationAndNotes(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Log task", "do something", 1, 2)
+	item, err := c.Add("myrepo", "Log task", "do something", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestDropletLog_ShowsCreationAndNotes(t *testing.T) {
 
 func TestDropletLog_ShowsPoolEvent(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Pool task", "", 1, 2)
+	item, err := c.Add("myrepo", "Pool task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestDropletLog_ShowsPoolEvent(t *testing.T) {
 
 func TestDropletLog_ShowsStageAssignment(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Stage task", "", 1, 2)
+	item, err := c.Add("myrepo", "Stage task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestDropletLog_ShowsStageAssignment(t *testing.T) {
 
 func TestDropletLog_ShowsHeader(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Header task", "desc", 1, 2)
+	item, err := c.Add("myrepo", "Header task", "desc", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestDropletLog_ShowsHeader(t *testing.T) {
 
 func TestDropletLog_ChronologicalOrder(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Order task", "", 1, 2)
+	item, err := c.Add("myrepo", "Order task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestDropletLog_NonexistentDroplet(t *testing.T) {
 
 func TestDropletLog_EmptyDroplet(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Empty task", "", 1, 2)
+	item, err := c.Add("myrepo", "Empty task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestDropletLog_JsonFormat(t *testing.T) {
 	t.Cleanup(func() { logFmt = "text" })
 
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Json log task", "", 1, 2)
+	item, err := c.Add("myrepo", "Json log task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestDropletLog_InvalidFormat(t *testing.T) {
 	t.Cleanup(func() { logFmt = "text" })
 
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "Format task", "", 1, 2)
+	item, err := c.Add("myrepo", "Format task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestDropletLog_InvalidFormat(t *testing.T) {
 
 func TestDropletLog_NoSyntheticHeartbeat(t *testing.T) {
 	c := setupLogTestDB(t)
-	item, err := c.Add("myrepo", "No hb task", "", 1, 2)
+	item, err := c.Add("myrepo", "Heartbeat task", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,11 +268,44 @@ func TestDropletLog_NoSyntheticHeartbeat(t *testing.T) {
 	}
 }
 
+func TestDropletLog_HeartbeatInChronologicalOrder(t *testing.T) {
+	c := setupLogTestDB(t)
+	item, err := c.Add("myrepo", "Heartbeat order task", "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c.GetReadyForAqueduct("myrepo", "default")
+	c.Assign(item.ID, "worker-1", "implement")
+	c.AddNote(item.ID, "implement", "early note")
+	err = c.Heartbeat(item.ID)
+	if err != nil {
+		t.Fatalf("heartbeat failed: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	c.AddNote(item.ID, "implement", "late note")
+
+	out, err := runLogCapture(t, item.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	heartbeatIdx := strings.Index(out, "heartbeat")
+	lateNoteIdx := strings.Index(out, "late note")
+	if heartbeatIdx == -1 || lateNoteIdx == -1 {
+		t.Fatalf("log output missing expected entries: %s", out)
+	}
+	if heartbeatIdx > lateNoteIdx {
+		t.Errorf("heartbeat should appear before late note in chronological order: heartbeat at %d, late note at %d", heartbeatIdx, lateNoteIdx)
+	}
+}
+
 func TestBuildLogEntries_DisplaysEventsFromTimeline(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	timeline := []cistern.TimelineEntry{
-		{Time: now, EventType: "create", Payload: `{"repo":"myrepo","title":"Test task","priority":1,"complexity":2}`},
+		{Time: now, EventType: "create", Payload: `{"repo":"myrepo","title":"Test task","priority":1}`},
 		{Time: now.Add(time.Minute), EventType: "dispatch", Payload: `{"aqueduct":"default","cataractae":"implement","assignee":"worker-1"}`},
 		{Time: now.Add(2 * time.Minute), EventType: "pass", Payload: `{"cataractae":"implement","notes":"all good"}`},
 	}
@@ -360,7 +393,7 @@ func TestBuildLogEntries_NoDuplicateCreatedEvent(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	timeline := []cistern.TimelineEntry{
-		{Time: now, EventType: "create", Payload: `{"repo":"myrepo","title":"New task","priority":1,"complexity":2}`},
+		{Time: now, EventType: "create", Payload: `{"repo":"myrepo","title":"New task","priority":1}`},
 		{Time: now.Add(time.Minute), EventType: "dispatch", Payload: `{}`},
 	}
 
@@ -389,11 +422,11 @@ func TestDisplayInfo_DisplaysHumanReadableDetails(t *testing.T) {
 		wantOmit string
 	}{
 		{
-			name:     "create event shows repo, title, priority, complexity",
+			name:     "create event shows repo, title, priority",
 			evt:      "create",
-			detail:   `{"repo":"myrepo","title":"My task","priority":1,"complexity":2}`,
+			detail:   `{"repo":"myrepo","title":"My task","priority":1}`,
 			wantEvt:  "created",
-			wantSub:  "repo: myrepo, title: My task, priority: 1, complexity: 2",
+			wantSub:  "repo: myrepo, title: My task, priority: 1",
 			wantOmit: `"repo"`,
 		},
 		{

@@ -23,10 +23,11 @@ const (
 	EventCircuitBreaker = "circuit_breaker"
 	EventLoopRecovery   = "loop_recovery"
 	EventAutoPromote    = "auto_promote"
+	EventHeartbeat      = "heartbeat"
 	EventNoRoute        = "no_route"
 )
 
-var ValidEventTypes = map[string]bool{
+	var ValidEventTypes = map[string]bool{
 	EventCreate:         true,
 	EventDispatch:       true,
 	EventPass:           true,
@@ -44,6 +45,7 @@ var ValidEventTypes = map[string]bool{
 	EventLoopRecovery:   true,
 	EventAutoPromote:    true,
 	EventNoRoute:        true,
+	EventHeartbeat:      true,
 }
 
 func parsePayload(payload string) map[string]any {
@@ -98,6 +100,8 @@ func DisplayInfo(eventType, payload string) (eventLabel, detail string) {
 		return "auto_promote", displayInfoAutoPromote(m)
 	case EventNoRoute:
 		return "no_route", displayInfoCataractae(m)
+	case EventHeartbeat:
+		return "heartbeat", displayInfoHeartbeat(m)
 	default:
 		return eventType, payload
 	}
@@ -116,9 +120,6 @@ func displayInfoCreate(m map[string]any) string {
 	}
 	if priority, ok := m["priority"]; ok {
 		parts = append(parts, fmt.Sprintf("priority: %v", priority))
-	}
-	if complexity, ok := m["complexity"]; ok {
-		parts = append(parts, fmt.Sprintf("complexity: %v", complexity))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -276,6 +277,23 @@ func displayInfoAutoPromote(m map[string]any) string {
 	}
 	if routedTo, ok := m["routed_to"]; ok && routedTo != "" {
 		parts = append(parts, fmt.Sprintf("routed to: %v", routedTo))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func displayInfoHeartbeat(m map[string]any) string {
+	if m == nil {
+		return "heartbeat recorded"
+	}
+	var parts []string
+	if cat, ok := m["cataractae"]; ok && cat != "" {
+		parts = append(parts, fmt.Sprintf("step: %v", cat))
+	}
+	if elapsed, ok := m["elapsed"]; ok && elapsed != "" {
+		parts = append(parts, fmt.Sprintf("elapsed: %v", elapsed))
+	}
+	if len(parts) == 0 {
+		return "heartbeat recorded"
 	}
 	return strings.Join(parts, ", ")
 }

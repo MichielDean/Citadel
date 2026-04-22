@@ -170,7 +170,7 @@ func TestFakeagent_SpawnOutcomeCycle(t *testing.T) {
 	}
 	defer c.Close()
 
-	droplet, err := c.Add("testrepo", "fakeagent test", "desc", 1, 2)
+	droplet, err := c.Add("testrepo", "fakeagent test", "desc", 1)
 	if err != nil {
 		t.Fatalf("cistern.Add: %v", err)
 	}
@@ -496,6 +496,20 @@ func TestCollectEnvArgs_GHToken_AbsentWhenNotSet(t *testing.T) {
 		if strings.Contains(a, "GH_TOKEN") {
 			t.Errorf("collectEnvArgs contains GH_TOKEN when unset; args: %v", args)
 		}
+	}
+}
+
+// TestCollectEnvArgs_GitEditorAlwaysSet verifies that GIT_EDITOR and
+// GIT_SEQUENCE_EDITOR are always set to "true" so git never opens an
+// interactive editor inside agent sessions.
+func TestCollectEnvArgs_GitEditorAlwaysSet(t *testing.T) {
+	s := &Session{ID: "test", Preset: provider.ProviderPreset{Name: "opencode"}}
+	args := s.collectEnvArgs()
+	if !containsEnvPair(args, "GIT_EDITOR", "true") {
+		t.Errorf("collectEnvArgs missing GIT_EDITOR=true; args: %v", args)
+	}
+	if !containsEnvPair(args, "GIT_SEQUENCE_EDITOR", "true") {
+		t.Errorf("collectEnvArgs missing GIT_SEQUENCE_EDITOR=true; args: %v", args)
 	}
 }
 

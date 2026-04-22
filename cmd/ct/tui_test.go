@@ -1471,7 +1471,7 @@ func newTestDBWithDroplet(t *testing.T) (dbPath, dropletID string) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	d, err := c.Add("test-repo", "test droplet", "", 2, 2)
+	d, err := c.Add("test-repo", "test droplet", "", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2744,9 +2744,9 @@ func TestTabApp_MultiOverlay_TypeChar_AppendsToInput(t *testing.T) {
 	m := detailModelWithDroplet()
 	m.overlayMode = overlayMulti
 	m.overlayAction = actionEditMeta
-	m.overlayMultiFields = []string{"title", "priority (1-5)", "complexity (1-3)", "description"}
+	m.overlayMultiFields = []string{"title", "priority (1-5)", "description"}
 	m.overlayMultiIdx = 0
-	m.overlayMultiValues = make([]string, 4)
+	m.overlayMultiValues = make([]string, 3)
 	m.overlayInput = ""
 
 	for _, ch := range []rune{'a', 'b', 'c'} {
@@ -2799,9 +2799,9 @@ func TestTabApp_MultiOverlay_Enter_AdvancesToNextField(t *testing.T) {
 	m.height = 30
 	m.overlayMode = overlayMulti
 	m.overlayAction = actionCreateDroplet
-	m.overlayMultiFields = []string{"repo", "title", "description", "complexity (1-3)"}
+	m.overlayMultiFields = []string{"repo", "title", "description"}
 	m.overlayMultiIdx = 0
-	m.overlayMultiValues = make([]string, 4)
+	m.overlayMultiValues = make([]string, 3)
 	m.overlayInput = "myrepo"
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2835,9 +2835,9 @@ func TestTabApp_MultiOverlay_Enter_OnLastField_ClosesAndDispatches(t *testing.T)
 	m.height = 30
 	m.overlayMode = overlayMulti
 	m.overlayAction = actionCreateDroplet
-	m.overlayMultiFields = []string{"repo", "title", "description", "complexity (1-3)"}
-	m.overlayMultiIdx = 3 // last field
-	m.overlayMultiValues = []string{"myrepo", "mytitle", "desc", ""}
+	m.overlayMultiFields = []string{"repo", "title", "description"}
+	m.overlayMultiIdx = 2 // last field
+	m.overlayMultiValues = []string{"myrepo", "mytitle", "desc"}
 	m.overlayInput = "2"
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -3127,7 +3127,7 @@ func TestExecActionCmd_AddDependency_AddsDep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dep, err := c.Add("test-repo", "dep droplet", "", 1, 1)
+	dep, err := c.Add("test-repo", "dep droplet", "", 1)
 	c.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -3172,7 +3172,7 @@ func TestExecActionCmd_RemoveDependency_RemovesDep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dep, err := c.Add("test-repo", "dep droplet", "", 1, 1)
+	dep, err := c.Add("test-repo", "dep droplet", "", 1)
 	if err != nil {
 		c.Close()
 		t.Fatal(err)
@@ -3284,9 +3284,6 @@ func TestExecMultiActionCmd_CreateDroplet_CreatesDroplet(t *testing.T) {
 	}
 	if items[0].Title != "my new task" {
 		t.Errorf("title = %q, want %q", items[0].Title, "my new task")
-	}
-	if items[0].Complexity != 2 {
-		t.Errorf("complexity = %d, want 2", items[0].Complexity)
 	}
 }
 
@@ -3457,8 +3454,8 @@ func TestTabApp_MultiOverlay_EditMeta_MultiFields(t *testing.T) {
 	updated, _ := m.Update(tuiPaletteActionMsg{dropletID: "ci-aaa", action: actionEditMeta})
 	um := updated.(tabAppModel)
 
-	if len(um.overlayMultiFields) != 4 {
-		t.Errorf("overlayMultiFields len = %d, want 4 for editMeta", len(um.overlayMultiFields))
+	if len(um.overlayMultiFields) != 3 {
+		t.Errorf("overlayMultiFields len = %d, want 3 for editMeta", len(um.overlayMultiFields))
 	}
 }
 
