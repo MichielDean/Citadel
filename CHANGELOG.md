@@ -281,7 +281,7 @@ Built the Droplets pages — the core interaction surface for monitoring and man
 Added four operator-facing infrastructure pages to the web dashboard: Castellarius control, Doctor health checks, log viewer, and repos/skills browser. Also adds Go-side SSE log streaming and log history endpoints.
 
 **Key features:**
-- **Castellarius page** (`/app/castellarius`): running/stopped status with pulse animation, PID and uptime display, aqueduct table (status, current droplet, step, elapsed), farm status badge, start/stop/restart action buttons (restart requires confirmation), toast notifications, auto-refresh every 5 seconds
+- **Castellarius page** (`/app/castellarius`): running/stopped status with pulse animation, PID and uptime display, aqueduct table (status, current droplet, step, elapsed), Castellarius status badge, start/stop/restart action buttons (restart requires confirmation), toast notifications, auto-refresh every 5 seconds
 - **Doctor page** (`/app/doctor`): health check display with pass/fail/warn indicators grouped by category, summary card (X/Y passed), re-run and fix buttons, timestamp of last check
 - **Logs page** (`/app/logs`): real-time SSE log streaming with source selector, log level color coding (INFO=cyan, WARN=yellow, ERROR=red, DEBUG=dim), search/filter, auto-scroll toggle, line numbers, clear button, file size and last-modified metadata; monospace dark theme
 - **Repos & Skills page** (`/app/repos`): repository cards with aqueduct chains and step visualization, skills table with name/source/installed date; display-only (no install/uninstall from UI)
@@ -401,7 +401,7 @@ All display surfaces now show how long each flowing droplet has been in its curr
 Added `--json` flag to `ct status` that outputs machine-readable JSON instead of the human-readable TUI summary. Enables scripts and dashboards to consume pipeline state without parsing tabular text.
 
 **Key features:**
-- **JSON output**: `ct status --json` prints a JSON object with flowing/queued droplet counts, cataractae chain info, aqueduct status, and farm running state
+- **JSON output**: `ct status --json` prints a JSON object with flowing/queued droplet counts, cataractae chain info, aqueduct status, and Castellarius running state
 - **Incompatible with --watch**: `--json` and `--watch` are mutually exclusive; using both returns an error
 - **Error propagation**: When infrastructure (config or DB) is missing, the JSON path returns an error instead of degraded partial data — scripts get a clear signal when something is broken
 
