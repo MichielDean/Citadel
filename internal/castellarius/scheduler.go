@@ -1570,7 +1570,10 @@ func (s *Castellarius) circuitBreaker(repo aqueduct.RepoConfig, items []*cistern
 		// restart belong to a previous processing attempt and should not
 		// accumulate toward the circuit breaker threshold.
 		lastRestart, err := client.LastEventTime(item.ID, cistern.EventRestart)
-		if err == nil && !lastRestart.IsZero() && lastRestart.After(cutoff) {
+		if err != nil {
+			s.logger.Warn("circuit breaker: failed to query last restart time, using unadjusted cutoff",
+				"repo", repo.Name, "droplet", item.ID, "error", err)
+		} else if !lastRestart.IsZero() && lastRestart.After(cutoff) {
 			cutoff = lastRestart
 		}
 
