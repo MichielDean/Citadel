@@ -3720,6 +3720,56 @@ func TestCountEventsByType_ZeroWhenWrongType(t *testing.T) {
 	}
 }
 
+func TestLastEventTime_ReturnsMostRecent(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "LastEvent test", "", 1)
+	payload := `{"cataractae":"implement"}`
+
+	c.RecordEvent(item.ID, EventRestart, payload)
+	time.Sleep(10 * time.Millisecond)
+	cutoff := time.Now().UTC()
+	time.Sleep(10 * time.Millisecond)
+	c.RecordEvent(item.ID, EventRestart, payload)
+
+	ts, err := c.LastEventTime(item.ID, EventRestart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts.IsZero() {
+		t.Fatal("LastEventTime returned zero time, expected a timestamp")
+	}
+	if !ts.After(cutoff) {
+		t.Errorf("LastEventTime = %v, expected after cutoff %v", ts, cutoff)
+	}
+}
+
+func TestLastEventTime_ZeroWhenNone(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "LastEvent zero test", "", 1)
+
+	ts, err := c.LastEventTime(item.ID, EventRestart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("LastEventTime = %v, expected zero time when no events", ts)
+	}
+}
+
+func TestLastEventTime_ZeroWhenWrongType(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "LastEvent wrong type test", "", 1)
+	c.RecordEvent(item.ID, EventStall, `{"cataractae":"implement"}`)
+
+	ts, err := c.LastEventTime(item.ID, EventRestart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("LastEventTime = %v, expected zero time when only stall events exist", ts)
+	}
+}
+
 func TestMigration018_SchedulerNotesToEvents(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("myrepo", "Migration test", "", 1)

@@ -1210,6 +1210,23 @@ func (c *Client) CountEventsByType(id, eventType string, since time.Time) (int, 
 	return count, nil
 }
 
+// LastEventTime returns the timestamp of the most recent event of the given type
+// for the specified droplet. Returns zero time if no such event exists.
+func (c *Client) LastEventTime(id, eventType string) (time.Time, error) {
+	var t time.Time
+	err := c.db.QueryRow(
+		`SELECT created_at FROM events WHERE droplet_id = ? AND event_type = ? ORDER BY created_at DESC LIMIT 1`,
+		id, eventType,
+	).Scan(&t)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, fmt.Errorf("cistern: last event time %s for %s: %w", eventType, id, err)
+	}
+	return t, nil
+}
+
 // TimelineEntry is a single row from the events table, returned by
 // GetDropletTimeline. It provides structured event data for the log display.
 type TimelineEntry struct {

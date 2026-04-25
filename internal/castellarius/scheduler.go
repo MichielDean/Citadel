@@ -63,6 +63,9 @@ type CisternClient interface {
 	// CountEventsByType returns the number of events with the given type for a
 	// droplet created after the since timestamp.
 	CountEventsByType(id, eventType string, since time.Time) (int, error)
+	// LastEventTime returns the timestamp of the most recent event of the given
+	// type for the specified droplet. Returns zero time if no such event exists.
+	LastEventTime(id, eventType string) (time.Time, error)
 }
 
 // CataractaeRunner executes a single workflow step.
@@ -1408,6 +1411,25 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 							"was", item.CurrentCataractae, "now", fresh.CurrentCataractae)
 						continue
 					}
+					// The main tick's dispatch cycle may have re-dispatched this
+					// droplet after the observer advanced it, giving it a new
+					// stage_dispatched_at. If so, the snapshot is stale — the
+					// dead session belongs to the previous cataractae, not the
+					// current one.
+					if !fresh.StageDispatchedAt.IsZero() && fresh.StageDispatchedAt != item.StageDispatchedAt {
+						s.logger.Info("heartbeat: stage_dispatched_at changed — re-dispatched since snapshot",
+							"repo", repo.Name, "droplet", item.ID,
+							"was", item.StageDispatchedAt, "now", fresh.StageDispatchedAt)
+						continue
+					}
+					// The assignee may have been cleared by observe or changed by
+					// dispatch. If so, the session we're checking is stale.
+					if fresh.Assignee != item.Assignee {
+						s.logger.Info("heartbeat: assignee changed — stale session check",
+							"repo", repo.Name, "droplet", item.ID,
+							"was", item.Assignee, "now", fresh.Assignee)
+						continue
+					}
 				}
 
 				// Session exited with no outcome — reset for re-dispatch.
@@ -1542,6 +1564,19 @@ func (s *Castellarius) circuitBreaker(repo aqueduct.RepoConfig, items []*cistern
 		}
 
 		cutoff := time.Now().Add(-circuitBreakerWindow)
+
+		// If the droplet was recently restarted (un-pooled), only count
+		// exit_no_outcome events after the restart. Events from before the
+		// restart belong to a previous processing attempt and should not
+		// accumulate toward the circuit breaker threshold.
+		lastRestart, err := client.LastEventTime(item.ID, cistern.EventRestart)
+		if err != nil {
+			s.logger.Warn("circuit breaker: failed to query last restart time, using unadjusted cutoff",
+				"repo", repo.Name, "droplet", item.ID, "error", err)
+		} else if !lastRestart.IsZero() && lastRestart.After(cutoff) {
+			cutoff = lastRestart
+		}
+
 		dispatchCount, err := client.CountEventsByType(item.ID, cistern.EventExitNoOutcome, cutoff)
 		if err != nil {
 			s.logger.Warn("circuit breaker: count events failed", "droplet", item.ID, "error", err)

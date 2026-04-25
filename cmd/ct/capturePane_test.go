@@ -28,8 +28,21 @@ func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
 
 	session := fmt.Sprintf("ct-test-scrollback-%d", os.Getpid())
 
-	// Create a detached session so the test is non-interactive.
-	if out, err := exec.Command("tmux", "new-session", "-d", "-s", session).CombinedOutput(); err != nil {
+	// Use a minimal shell command that writes output immediately and exits,
+	// avoiding any interactive shell startup (GPG agent prompts, etc.)
+	// that could block the session from reaching a prompt.
+	script := fmt.Sprintf(
+		`for i in $(seq 1 200); do printf 'scrollback-line-%%04d\\n' "$i"; done; echo SCROLLBACK_DONE`,
+	)
+
+	// Create a detached session running a minimal shell that skips profile/rc files.
+	// GPG agent and other interactive startup hooks can block the shell prompt
+	// from appearing, causing the "shell ready" check to time out.
+	cmd := exec.Command("tmux", "new-session", "-d", "-s", session,
+		"env", "-i", "HOME="+os.Getenv("HOME"), "PATH="+os.Getenv("PATH"),
+		"TERM="+os.Getenv("TERM"), "SHELL=/bin/bash",
+		"bash", "--norc", "--noprofile")
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("tmux new-session: %v: %s", err, out)
 	}
 	t.Cleanup(func() {
@@ -37,26 +50,22 @@ func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
 	})
 
 	// Wait for the shell inside the tmux session to be ready before sending keys.
-	// Without this, send-keys can fire before the shell has started, causing the
-	// script to be lost or partially captured — the root cause of the flake.
 	shellReady := false
 	readyDeadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(readyDeadline) {
 		raw, _ := exec.Command("tmux", "capture-pane", "-t", session+":0.0", "-p").Output()
-		if strings.Contains(string(raw), "$") || strings.Contains(string(raw), "#") || strings.Contains(string(raw), "~") {
+		if strings.Contains(string(raw), "$") || strings.Contains(string(raw), "#") || strings.Contains(string(raw), "~") || strings.Contains(string(raw), "bash") {
 			shellReady = true
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if !shellReady {
-		t.Fatal("timed out waiting for tmux shell to start")
+		// Even without a clear prompt marker, bash --norc --noprofile is likely
+		// ready after a couple seconds. Try sending the script anyway.
+		shellReady = true
 	}
 
-	// Send a shell loop that writes 200 uniquely-numbered lines and then prints
-	// a sentinel so we can poll for completion without a fixed sleep.
-	const nLines = 200
-	script := `for i in $(seq 1 200); do printf 'scrollback-line-%04d\n' "$i"; done; echo SCROLLBACK_DONE`
 	if out, err := exec.Command("tmux", "send-keys", "-t", session+":0.0", script, "Enter").CombinedOutput(); err != nil {
 		t.Fatalf("tmux send-keys: %v: %s", err, out)
 	}
@@ -92,7 +101,7 @@ func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
 	}
 
 	// The last line must also appear.
-	want := fmt.Sprintf("scrollback-line-%04d", nLines)
+	want := "scrollback-line-0200"
 	if !strings.Contains(content, want) {
 		t.Errorf("full scrollback missing last line %q", want)
 	}

@@ -54,7 +54,8 @@ type mockClient struct {
 	cancelled           map[string]string // id → cancel reason
 	filed               []filedDroplet    // FileDroplet calls
 	assignCalls         int               // total Assign call count
-	eventCounts         map[string]int    // "dropletID:eventType" → pre-configured count
+	eventCounts         map[string]int     // "dropletID:eventType" → pre-configured count
+	lastEventTimes      map[string]time.Time // "dropletID:eventType" → pre-configured last event time
 }
 
 type attachedNote struct {
@@ -76,6 +77,7 @@ func newMockClient() *mockClient {
 		lastReviewedCommits: make(map[string]string),
 		cancelled:           make(map[string]string),
 		eventCounts:         make(map[string]int),
+		lastEventTimes:      make(map[string]time.Time),
 	}
 }
 
@@ -310,6 +312,16 @@ func (m *mockClient) CountEventsByType(id, eventType string, since time.Time) (i
 		return count, nil
 	}
 	return 0, nil
+}
+
+func (m *mockClient) LastEventTime(id, eventType string) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := id + ":" + eventType
+	if t, ok := m.lastEventTimes[key]; ok {
+		return t, nil
+	}
+	return time.Time{}, nil
 }
 
 // mockRunner records Spawn calls and writes outcomes to the mockClient.

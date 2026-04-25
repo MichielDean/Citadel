@@ -231,6 +231,10 @@ func (c *pipelineClient) CountEventsByType(id, eventType string, since time.Time
 	return 0, nil
 }
 
+func (c *pipelineClient) LastEventTime(id, eventType string) (time.Time, error) {
+	return time.Time{}, nil
+}
+
 // resultToOutcome converts an Outcome Result to the DB outcome string
 // written by `ct droplet` commands.
 func resultToOutcome(r Result) string {
