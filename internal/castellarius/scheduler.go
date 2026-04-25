@@ -1246,9 +1246,11 @@ func route(step aqueduct.WorkflowCataractae, result Result) string {
 }
 
 // isTerminal returns true if the target is a terminal state.
+// "next" is treated as equivalent to "done" — it means "advance to the
+// next workflow after this pipeline" which is the delivered/terminal state.
 func isTerminal(name string) bool {
 	switch strings.ToLower(name) {
-	case "done", "pooled", "pool":
+	case "done", "next", "pooled", "pool":
 		return true
 	}
 	return false
@@ -1256,7 +1258,7 @@ func isTerminal(name string) bool {
 
 func (s *Castellarius) handleTerminal(client CisternClient, itemID, terminal, fromStep string) {
 	switch strings.ToLower(terminal) {
-	case "done":
+	case "done", "next":
 		s.logger.Info("Droplet delivered", "droplet", itemID)
 		if err := client.CloseItem(itemID); err != nil {
 			s.logger.Error("close failed", "droplet", itemID, "error", err)
