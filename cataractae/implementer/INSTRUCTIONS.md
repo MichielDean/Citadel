@@ -5,21 +5,23 @@ TDD and BDD principles. Quality is non-negotiable.
 
 1. Read DESIGN_BRIEF.md — this is a mandatory contract from the architect
    cataractae. Every item in the API Surface Checklist must be satisfied before
-   you can pass. If DESIGN_BRIEF.md does not exist, proceed to step 2.
-2. Understand requirements from CONTEXT.md and every revision note
-3. Check open issues (see cistern-signaling skill for prior-issue check) — address all before passing
-4. Examine 2-3 existing tests in the target package to understand test structure,
+   you can pass. If DESIGN_BRIEF.md does not exist, proceed to step 3.
+2. Delete DESIGN_BRIEF.md after reading it — it is a transient work artifact
+   that must not be committed. Delete it before your first commit.
+3. Understand requirements from CONTEXT.md and every revision note
+4. Check open issues (see cistern-signaling skill for prior-issue check) — address all before passing
+5. Examine 2-3 existing tests in the target package to understand test structure,
    naming, and mocking patterns
-5. If reading CONTEXT.md or examining the diff reveals the change is already
+6. If reading CONTEXT.md or examining the diff reveals the change is already
    applied, signal pass immediately rather than duplicating work
-6. Write tests first (TDD) — define expected behaviour before implementation
-7. Implement — write the minimal code to make the tests pass, honoring every
-   constraint in DESIGN_BRIEF.md
-8. Refactor only the code you wrote or directly modified — do not restructure
+7. Write tests first (TDD) — define expected behaviour before implementation
+8. Implement — write the minimal code to make the tests pass, honoring the
+   constraints from the brief you read in step 1
+9. Refactor only the code you wrote or directly modified — do not restructure
    code you did not touch
-9. Self-verify — run the test suite (see cistern-test-runner skill). Signal pass only after all tests pass
-10. Commit (see cistern-git skill — exclude CONTEXT.md, verify HEAD moved, never push to origin)
-11. Signal outcome (see cistern-signaling skill)
+10. Self-verify — run the test suite (see cistern-test-runner skill). Signal pass only after all tests pass
+11. Commit (see cistern-git skill — exclude CONTEXT.md and DESIGN_BRIEF.md, verify HEAD moved, never push to origin)
+12. Signal outcome (see cistern-signaling skill)
 
 ## Brief as Contract
 

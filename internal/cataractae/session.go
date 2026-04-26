@@ -593,11 +593,15 @@ func (s *Session) resolveIdentityPath() string {
 
 // writeAgentMarkdown writes a provider agent markdown file for the cataractae
 // identity. Used by providers that support named agents (e.g. opencode --agent).
-// The file is written to ~/.cistern/catartae/<identity>/.opencode/agents/<identity>.md
-// so OPENCODE_CONFIG_DIR can discover it. Returns the path of the written file.
+// The file is written to <identityDir>/agents/<identity>.md so that opencode's
+// loadAgent (which globs {agent,agents}/**/*.md from the config dir) can find it.
+// OPENCODE_CONFIG_DIR is set to identityDir, so the glob runs from there directly.
+// The prior path (.opencode/agents/) was unreachable because opencode's glob
+// pattern requires "agents/" at the top level of the config dir, not nested
+// under ".opencode/". Returns the path of the written file.
 func (s *Session) writeAgentMarkdown(prompt string) (string, error) {
 	identityDir := s.resolveIdentityDir()
-	agentsDir := filepath.Join(identityDir, ".opencode", "agents")
+	agentsDir := filepath.Join(identityDir, "agents")
 	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir agents dir %s: %w", agentsDir, err)
 	}
@@ -610,6 +614,17 @@ func (s *Session) writeAgentMarkdown(prompt string) (string, error) {
 		"---",
 		"",
 	}, "\n")
+
+	// Clean up stale agent markdown from the old .opencode/agents/ path.
+	// The old location was unreachable by opencode's loadAgent glob, so removing
+	// it avoids confusion about which file is active.
+	oldPath := filepath.Join(identityDir, ".opencode", "agents", s.Identity+".md")
+	if _, err := os.Stat(oldPath); err == nil {
+		os.Remove(oldPath)
+		slog.Default().Info("spawn: removed stale agent markdown from old path",
+			"session", s.ID,
+			"old_path", oldPath)
+	}
 
 	agentPath := filepath.Join(agentsDir, s.Identity+".md")
 	content := fm + prompt
