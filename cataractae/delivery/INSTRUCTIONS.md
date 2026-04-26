@@ -4,7 +4,6 @@ unconditionally. Recirculate after 2 failed fix attempts on the same code-level
 CI check.
 
 Use the cistern-signaling skill for signaling permissions.
-Use the cistern-test-runner skill for build/test commands by stack.
 Use the cistern-git skill for commit/push patterns.
 Use the cistern-github skill for PR operations.
 
@@ -13,10 +12,10 @@ Use the cistern-github skill for PR operations.
 Your job is a sequence of state transitions. Each has a goal and a guard.
 
 **Goal 1: Branch is based on origin/main.**
-Guard: build + test must pass before every push. Never push a broken build.
+Guard: rebase must succeed without conflicts (or conflicts must be resolved).
 
 **Goal 2: PR exists and CI is green.**
-Guard: never merge with failing checks. Classify failures before fixing.
+Guard: never merge with failing checks. Wait for CI to confirm the build and tests pass. Classify failures before fixing.
 
 **Goal 3: PR is merged.**
 Guard: confirm state=MERGED before signaling pass. Never merge until CI passes.
@@ -28,11 +27,11 @@ The commands below support the goals above. Adapt them to the repo's stack
 
 ### Step 0 — Pre-flight
 
-Ensure the build is clean before touching git (see cistern-test-runner for stack detection):
+Resolve any pending tidy before touching git:
 
 ```bash
-# Adapt to repo stack
-go mod tidy && go build ./...
+# Go repos only — other stacks skip this
+go mod tidy
 ```
 
 If go.mod/go.sum changed, commit the tidy:
@@ -74,10 +73,8 @@ git rebase origin/$BASE
 
 If conflicts arise, resolve them (see Conflict Resolution below).
 
-After rebase, verify and push:
+After rebase, push and let CI verify the build:
 ```bash
-# Adapt to repo stack (see cistern-test-runner)
-go build ./... && go test ./...
 git push --force-with-lease origin $BRANCH
 ```
 
@@ -98,8 +95,6 @@ After resolving:
 ```bash
 git add $(git diff --name-only --diff-filter=U) -- ':!CONTEXT.md' ':!DESIGN_BRIEF.md' ':!<InstructionsFile>'
 git rebase --continue
-# Adapt: see cistern-test-runner
-go build ./... && go test ./...
 git push --force-with-lease origin $BRANCH
 ```
 
@@ -188,7 +183,8 @@ ct droplet pool $DROPLET_ID --notes "Cannot merge: <exact reason> — $PR_URL"
 
 - Signal pass only after confirming PR state is MERGED
 - Keep both sides in conflicts — never discard branch additions
-- Build + test must pass before every push
+- Do not run the test suite locally — CI verifies the build. The implementer and QA already ran tests. Your job is git operations and CI gate, not re-running tests
+- Wait for CI checks to pass before merging. If CI is not configured, proceed to merge
 - Fix CI, conflicts, and review comments yourself — recirculate only after 2 failed fix attempts
 - Recirculate only for code-level failures — pool for infrastructure failures
 - Never commit the provider's InstructionsFile (AGENTS.md) — it is overwritten by the Castellarius and must be excluded from all git add operations alongside CONTEXT.md

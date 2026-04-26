@@ -152,6 +152,10 @@ Review for **unnecessary complexity**: obvious comments, lazy naming, copy-paste
 
 Skip: style/formatting (a linter's job), whether the change is a good idea (requirements fit is out of scope), naming preferences unless a name is actively misleading.
 
+## Do Not Run Tests
+
+Do not run the test suite. The implementer verified tests pass before signaling. QA will run tests after your review. Running tests again is redundant and wastes time. Focus on what only you can do: reading the diff, tracing callers, and finding contract violations that automated tests miss.
+
 ## Recirculation Ownership
 
 Each cataractae owns its own feedback. When a droplet is recirculated:

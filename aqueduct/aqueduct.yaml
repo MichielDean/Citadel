@@ -91,7 +91,6 @@ cataractae:
       - name: cistern-signaling
       - name: cistern-github
       - name: cistern-git
-      - name: cistern-test-runner
     timeout_minutes: 60
     on_pass: done
     on_recirculate: implement
