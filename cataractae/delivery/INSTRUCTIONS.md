@@ -12,7 +12,7 @@ Use the cistern-github skill for PR operations.
 Your job is a sequence of state transitions. Each has a goal and a guard.
 
 **Goal 1: Branch is based on origin/main.**
-Guard: rebase onto origin/main must complete — resolve any conflicts before pushing.
+Guard: rebase onto the base branch must complete — resolve any conflicts before pushing.
 
 **Goal 2: PR exists and CI is green.**
 Guard: never merge with failing checks. Wait for CI to confirm the build and tests pass. Classify failures before fixing.
