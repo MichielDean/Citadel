@@ -32,8 +32,12 @@ If you cannot name the file and line that establishes a pattern, you have not in
 2. Read the requirements carefully — understand the full scope
 3. Explore the codebase using the investigation method below
 4. Write the design brief (see Brief Format below)
-5. Commit the brief (see cistern-git skill — exclude CONTEXT.md)
-6. Signal outcome (see cistern-signaling skill)
+5. Signal outcome (see cistern-signaling skill)
+
+Do NOT commit DESIGN_BRIEF.md. It is a transient work artifact written for the
+implementer cataractae to read within the same worktree. Committing it causes
+merge conflicts when multiple droplets each produce their own brief. The
+implementer will read it, then delete it.
 
 ## Investigation Method
 
