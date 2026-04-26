@@ -39,6 +39,9 @@ Never say "drop/item/task/ticket/issue" for work units — always **droplet**.
 | cistern | `ci-` | virgo, marcia |
 | ScaledTest | `st-` | julia, appia |
 | PortfolioWebsite | `pw-` | anio |
+| lobsterdog | `ld-` | claudia, palatinus, traiana |
+
+**Aqueduct configs live ONLY in `~/.cistern/cistern.yaml` and `~/source/cistern/aqueduct/aqueduct.yaml`.** The `git_sync` drought hook copies the pipeline definition from each repo's `origin/main` into `~/.cistern/aqueduct/`, overwriting local edits — but since lobsterdog, ScaledTest, and PortfolioWebsite don't have their own aqueduct.yaml, they all share the cistern repo's. Never create `aqueduct/aqueduct.yaml` in lobsterdog, ScaledTest, or PortfolioWebsite — it was specifically removed from lobsterdog (ca958e9). To add or change aqueduct names, edit only `~/.cistern/cistern.yaml` (names, cataractae count, max_cataractae) and restart Castellarius.
 
 ## Worktree Rule
 
