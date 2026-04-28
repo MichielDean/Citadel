@@ -1678,6 +1678,23 @@ func prepareBranchInSandbox(dir, itemID string) error {
 		return nil
 	}
 
+	// Check whether origin/main has commits. On an empty/unborn repo there's
+	// nothing to fetch or reset to — the branch must be created as an orphan.
+	hasCommits, commitsErr := repoHasCommits(dir, "origin/main")
+	if commitsErr != nil {
+		return fmt.Errorf("castellarius: branch check in %s: %w", dir, commitsErr)
+	}
+
+	if !hasCommits {
+		// Empty repo: create an orphan branch (no parent commit).
+		create := exec.Command("git", "checkout", "--orphan", branch)
+		create.Dir = dir
+		if co, err := create.CombinedOutput(); err != nil {
+			return fmt.Errorf("git checkout --orphan %s in %s: %w: %s", branch, dir, err, co)
+		}
+		return nil
+	}
+
 	// New branch — fetch and start from a clean origin/main.
 	fetch := exec.Command("git", "fetch", "origin")
 	fetch.Dir = dir
@@ -1706,6 +1723,27 @@ func prepareBranchInSandbox(dir, itemID string) error {
 	return nil
 }
 
+// repoHasCommits reports whether the given ref resolves to a commit in dir.
+// It runs git rev-parse --verify <ref> in dir. If the ref exists, it returns
+// true, nil. If the ref does not exist (unknown revision), it returns false, nil.
+// For any other error (dir does not exist, permission denied), it returns false, err.
+func repoHasCommits(dir, ref string) (bool, error) {
+	cmd := exec.Command("git", "rev-parse", "--verify", ref)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// git rev-parse --verify exits with code 1 (or 128) and prints
+		// "fatal: Needed a single revision" or "unknown revision" when
+		// the ref does not exist. This is the expected "no commits" case.
+		lower := strings.ToLower(string(out))
+		if strings.Contains(lower, "unknown revision") || strings.Contains(lower, "needed a single revision") {
+			return false, nil
+		}
+		return false, fmt.Errorf("castellarius: repoHasCommits %s in %s: %w: %s", ref, dir, err, out)
+	}
+	return true, nil
+}
+
 // prepareDropletWorktree creates (or resumes) a per-droplet git worktree at
 // sandboxRoot/<repoName>/<dropletID>/ on branch feat/<dropletID>.
 //
@@ -1714,6 +1752,8 @@ func prepareBranchInSandbox(dir, itemID string) error {
 // If new, it first tries `git worktree add <path> feat/<id>` (attach existing branch);
 // if that fails (branch does not exist), falls back to
 // `git worktree add -b feat/<id> <path> origin/main` to create a fresh branch.
+// When origin/main has no commits (empty/unborn repo), uses
+// `git worktree add --orphan -b feat/<id> <path>` instead.
 func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string) (string, error) {
 	return prepareDropletWorktreeWithLogger(slog.Default(), primaryDir, sandboxRoot, repoName, dropletID)
 }
@@ -1753,32 +1793,61 @@ func prepareDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRo
 		return worktreePath, nil
 	}
 
-	// Fetch latest before creating.
-	logger.Info("git fetch", "dir", primaryDir)
-	fetch := exec.Command("git", "fetch", "origin")
-	fetch.Dir = primaryDir
-	if out, err := fetch.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("git fetch in %s: %w: %s", primaryDir, err, out)
+	// Fetch latest before creating — but only if origin/main exists. On an
+	// empty/unborn repo, git fetch origin succeeds but there are no refs to
+	// base a worktree on. The orphan path handles this case.
+	hasCommits, commitsErr := repoHasCommits(primaryDir, "origin/main")
+	if commitsErr != nil {
+		// If we can't check, assume commits exist (conservative fallback)
+		// and let the normal path fail with a descriptive error if wrong.
+		logger.Warn("repoHasCommits check failed, assuming commits exist",
+			"dir", primaryDir, "error", commitsErr)
+		hasCommits = true
+	}
+	if hasCommits {
+		logger.Info("git fetch", "dir", primaryDir)
+		fetch := exec.Command("git", "fetch", "origin")
+		fetch.Dir = primaryDir
+		if out, err := fetch.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("git fetch in %s: %w: %s", primaryDir, err, out)
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir for worktree %s: %w", worktreePath, err)
 	}
 
+	freshBranch := false
+	orphanBranch := false
+
 	// First try attaching to an existing branch (handles crash-between-branch-create-and-worktree-add,
 	// and resumes stagnant droplets whose worktree was removed but branch preserved).
+	// This must be attempted before the orphan path because --orphan -b fails when
+	// the branch already exists.
 	addExisting := exec.Command("git", "worktree", "add", worktreePath, branch)
 	addExisting.Dir = primaryDir
-	freshBranch := false
 	if out, err := addExisting.CombinedOutput(); err != nil {
-		// Branch doesn't exist yet — create it fresh from origin/main.
-		addNew := exec.Command("git", "worktree", "add", "-b", branch, worktreePath, "origin/main")
-		addNew.Dir = primaryDir
-		if out2, err2 := addNew.CombinedOutput(); err2 != nil {
-			return "", fmt.Errorf("git worktree add %s in %s: %w: %s", worktreePath, primaryDir, err2, out2)
+		_ = out // Branch doesn't exist or other issue — try creating fresh.
+		if !hasCommits {
+			// Empty/unborn repo: origin/main has no commits. Use --orphan to create
+			// an unborn branch (no parent commit). The agent's first commit will
+			// create the root commit for this branch.
+			addOrphan := exec.Command("git", "worktree", "add", "--orphan", "-b", branch, worktreePath)
+			addOrphan.Dir = primaryDir
+			if orphanOut, orphanErr := addOrphan.CombinedOutput(); orphanErr != nil {
+				return "", fmt.Errorf("git worktree add --orphan %s in %s: %w: %s", worktreePath, primaryDir, orphanErr, orphanOut)
+			}
+			freshBranch = true
+			orphanBranch = true
+		} else {
+			// Branch doesn't exist yet — create it fresh from origin/main.
+			addNew := exec.Command("git", "worktree", "add", "-b", branch, worktreePath, "origin/main")
+			addNew.Dir = primaryDir
+			if out2, err2 := addNew.CombinedOutput(); err2 != nil {
+				return "", fmt.Errorf("git worktree add %s in %s: %w: %s", worktreePath, primaryDir, err2, out2)
+			}
+			freshBranch = true
 		}
-		_ = out // first attempt output discarded; only the second failure matters
-		freshBranch = true
 	}
 
 	for _, args := range [][]string{
@@ -1792,9 +1861,11 @@ func prepareDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRo
 		}
 	}
 
-	if freshBranch {
+	if freshBranch && !orphanBranch {
 		// Hard-reset to origin/main to guarantee a clean baseline — the worktree
 		// may inherit local modifications from the primary clone.
+		// This is skipped for orphan branches (empty repo) since origin/main
+		// doesn't exist — there's nothing to reset to.
 		reset := exec.Command("git", "reset", "--hard", "origin/main")
 		reset.Dir = worktreePath
 		if out, err := reset.CombinedOutput(); err != nil {
@@ -1805,9 +1876,15 @@ func prepareDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRo
 		_ = clean.Run()
 	}
 
-	logger.Info("worktree created",
-		"droplet", dropletID, "path", worktreePath,
-		"duration", time.Since(t0).Round(time.Millisecond).String())
+	if orphanBranch {
+		logger.Info("worktree created (orphan)",
+			"droplet", dropletID, "path", worktreePath,
+			"duration", time.Since(t0).Round(time.Millisecond).String())
+	} else {
+		logger.Info("worktree created",
+			"droplet", dropletID, "path", worktreePath,
+			"duration", time.Since(t0).Round(time.Millisecond).String())
+	}
 	return worktreePath, nil
 }
 

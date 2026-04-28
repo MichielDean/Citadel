@@ -251,12 +251,22 @@ func hookGitSync(cfg *aqueduct.AqueductConfig, sandboxRoot string, gitFetchTimeo
 		// this ensures they get the latest AGENTS.md and repo files. Agent
 		// worktrees (non-_primary names) are never reset — they carry
 		// in-progress work on feature branches.
+		// On empty/unborn repos (no commits on origin/main), the reset is
+		// skipped — there's nothing to reset to, and the command would fail.
 		if filepath.Base(cloneDir) == "_primary" {
-			resetOut, resetErr := exec.Command("git", "-C", cloneDir, "reset", "--hard", "origin/main").CombinedOutput()
-			if resetErr != nil {
-				logger.Warn("git_sync: failed to reset _primary to origin/main", "repo", repo.Name, "error", resetErr, "output", string(resetOut))
+			primaryHasCommits, commitsErr := repoHasCommits(cloneDir, "origin/main")
+			if commitsErr != nil {
+				logger.Warn("git_sync: cannot check if origin/main has commits",
+					"repo", repo.Name, "error", commitsErr)
+			} else if primaryHasCommits {
+				resetOut, resetErr := exec.Command("git", "-C", cloneDir, "reset", "--hard", "origin/main").CombinedOutput()
+				if resetErr != nil {
+					logger.Warn("git_sync: failed to reset _primary to origin/main", "repo", repo.Name, "error", resetErr, "output", string(resetOut))
+				} else {
+					logger.Info("git_sync: _primary reset to origin/main", "repo", repo.Name)
+				}
 			} else {
-				logger.Info("git_sync: _primary reset to origin/main", "repo", repo.Name)
+				logger.Info("git_sync: _primary has no origin/main — skipping reset", "repo", repo.Name)
 			}
 		}
 

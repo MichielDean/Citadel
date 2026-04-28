@@ -146,7 +146,7 @@ repos:
 
 Repo names are validated case-insensitively — `ct droplet add --repo myproject` and `ct droplet add --repo MYPROJECT` both map to the canonical name `myproject` in the config.
 
-Aqueduct names are **concurrency slots** — they control how many droplets run in parallel per repo. Each active droplet gets its own isolated git worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/` on branch `feat/<droplet-id>`. Worktrees are created when a droplet enters the `implement` step and removed once it reaches a terminal state (`done`, `pooled`, or `human`).
+Aqueduct names are **concurrency slots** — they control how many droplets run in parallel per repo. Each active droplet gets its own isolated git worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/` on branch `feat/<droplet-id>`. Worktrees are created when a droplet enters the `implement` step and removed once it reaches a terminal state (`done`, `pooled`, or `human`). On empty repos (no commits on `origin/main`), worktrees are created with `--orphan` branches instead of branching from `origin/main`, so brand-new repos work without any initial commit.
 
 All per-droplet worktrees share a single primary clone object store at `~/.cistern/sandboxes/<repo>/_primary/` — objects are shared, only the working tree is per-droplet, keeping disk cost low. Each tmux session is named `<repo>-<aqueduct>`. Every `tmux ls` shows the cistern in motion:
 
@@ -320,7 +320,7 @@ drought_hooks:
 
 | Action | What it does |
 |---|---|
-| `git_sync` | Fetches `origin/main` (with 30s timeout) and deploys `aqueduct.yaml`, `cataractae/<role>/PERSONA.md`, `cataractae/<role>/INSTRUCTIONS.md`, and `skills/` to `~/.cistern/`. Resets the `_primary` clone's working tree to `origin/main` so new worktrees always inherit current files. Safe for agent worktrees (droplet ID directories) — they are never reset and retain in-progress work. Skips files that are already up to date. **Must be the first drought hook** so roles and skills are available to subsequent hooks. |
+| `git_sync` | Fetches `origin/main` (with 30s timeout) and deploys `aqueduct.yaml`, `cataractae/<role>/PERSONA.md`, `cataractae/<role>/INSTRUCTIONS.md`, and `skills/` to `~/.cistern/`. Resets the `_primary` clone's working tree to `origin/main` so new worktrees always inherit current files. Safe for agent worktrees (droplet ID directories) — they are never reset and retain in-progress work. Skips files that are already up to date. On empty repos (no commits on `origin/main`), the reset is skipped since there is nothing to reset to. **Must be the first drought hook** so roles and skills are available to subsequent hooks. |
 | `cataractae_generate` | Regenerates the instructions file (`AGENTS.md`) for each cataractae from its `PERSONA.md` + `INSTRUCTIONS.md`. Run after `git_sync` to pick up new source files. |
 | `worktree_prune` | Runs `git worktree prune` on the repo's primary clone to remove stale worktree registrations. |
 | `db_vacuum` | Flushes the SQLite WAL file back into the main database using `PRAGMA wal_checkpoint(TRUNCATE)`. This reclaims space without requiring an exclusive lock, making it safe to run while agents are active. |
