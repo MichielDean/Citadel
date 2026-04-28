@@ -1,6 +1,7 @@
 package castellarius
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"os"
@@ -699,4 +700,268 @@ func TestPurgeOrphanedWorktrees_NoSandboxRoot_IsNoOp(t *testing.T) {
 		logger:      newBranchLifecycleLogger(io.Discard),
 	}
 	s.purgeOrphanedWorktrees()
+}
+
+// --- empty repo (orphan) tests ---
+
+// makeEmptyBareAndClone creates:
+//
+//	base/remote/ — bare git repo with ZERO commits on main (unborn branch)
+//	base/primary/ — full clone of remote (has origin remote set, but origin/main
+//	                does not exist because there are no commits)
+//
+// Returns the primary directory. Callers will find that origin/main does NOT
+// resolve, simulating a brand-new empty repo.
+func makeEmptyBareAndClone(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	remoteDir := filepath.Join(base, "remote")
+	primaryDir := filepath.Join(base, "primary")
+
+	// Create a bare repo. It has no commits and an unborn default branch.
+	branchMustRun(t, branchGitCmd(".", "init", "--bare", remoteDir))
+
+	// We need to set HEAD in the bare repo to point to main so that clones
+	// get origin/main as the expected default. Since there are no commits,
+	// refs/heads/main won't exist yet — but HEAD will point to it.
+	// Git init --bare defaults HEAD to refs/heads/main, so this should be fine.
+
+	// Clone the bare remote. This creates a primary clone with origin set,
+	// but origin/main is unborn (no commits).
+	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, primaryDir))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "test@test.com"))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Test"))
+
+	return primaryDir
+}
+
+// TestRepoHasCommits_TrueWhenCommitsExist verifies that repoHasCommits returns
+// true when origin/main has commits.
+func TestRepoHasCommits_TrueWhenCommitsExist(t *testing.T) {
+	dir := makeBareAndClone(t)
+
+	has, err := repoHasCommits(dir, "origin/main")
+	if err != nil {
+		t.Fatalf("repoHasCommits: %v", err)
+	}
+	if !has {
+		t.Error("expected repoHasCommits to return true for repo with commits")
+	}
+}
+
+// TestRepoHasCommits_FalseWhenEmptyRepo verifies that repoHasCommits returns
+// false when the repo has no commits on origin/main (empty/unborn repo).
+func TestRepoHasCommits_FalseWhenEmptyRepo(t *testing.T) {
+	dir := makeEmptyBareAndClone(t)
+
+	has, err := repoHasCommits(dir, "origin/main")
+	if err != nil {
+		t.Fatalf("repoHasCommits: %v", err)
+	}
+	if has {
+		t.Error("expected repoHasCommits to return false for empty repo")
+	}
+}
+
+// TestPrepareDropletWorktree_EmptyRepo_UsesOrphanBranch verifies that on an empty
+// repo (no origin/main commits), prepareDropletWorktree creates an orphan branch
+// worktree instead of failing with "invalid reference: HEAD".
+func TestPrepareDropletWorktree_EmptyRepo_UsesOrphanBranch(t *testing.T) {
+	primaryDir := makeEmptyBareAndClone(t)
+	sandboxRoot := t.TempDir()
+
+	worktreePath, err := prepareDropletWorktreeWithLogger(
+		newBranchLifecycleLogger(io.Discard), primaryDir, sandboxRoot, "myrepo", "drop-orphan",
+	)
+	if err != nil {
+		t.Fatalf("prepareDropletWorktree on empty repo: %v", err)
+	}
+
+	// (a) no error returned (verified above by not fatalf-ing)
+
+	// (b) worktree directory exists
+	if _, statErr := os.Stat(worktreePath); statErr != nil {
+		t.Fatalf("worktree path does not exist: %v", statErr)
+	}
+
+	// (c) git branch --show-current returns feat/<id>
+	// On an orphan branch with no commits, rev-parse HEAD fails, so use
+	// git branch --show-current which correctly reports unborn branch names.
+	branchOut, branchErr := exec.Command("git", "-C", worktreePath, "branch", "--show-current").Output()
+	if branchErr != nil {
+		t.Fatalf("git branch --show-current: %v", branchErr)
+	}
+	if got := strings.TrimSpace(string(branchOut)); got != "feat/drop-orphan" {
+		t.Errorf("current branch = %q, want feat/drop-orphan", got)
+	}
+
+	// (d) worktree has no tracked files (empty initial state — orphan branch)
+	statusOut, statusErr := exec.Command("git", "-C", worktreePath, "status", "--porcelain").Output()
+	if statusErr != nil {
+		t.Fatalf("git status in orphan worktree: %v", statusErr)
+	}
+	if strings.TrimSpace(string(statusOut)) != "" {
+		t.Errorf("orphan worktree has tracked files (should be empty):\n%s", statusOut)
+	}
+}
+
+// TestPrepareDropletWorktree_EmptyRepo_ResumeOrphanBranch verifies that when
+// an orphan worktree already exists (from a prior dispatch), the resume path
+// works correctly — checking out the existing branch with the commit intact.
+func TestPrepareDropletWorktree_EmptyRepo_ResumeOrphanBranch(t *testing.T) {
+	primaryDir := makeEmptyBareAndClone(t)
+	sandboxRoot := t.TempDir()
+	l := newBranchLifecycleLogger(io.Discard)
+
+	// First dispatch: create the orphan worktree and commit a file.
+	worktreePath, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-resume-orphan")
+	if err != nil {
+		t.Fatalf("first prepareDropletWorktree on empty repo: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(worktreePath, "impl.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	branchMustRun(t, branchGitCmd(worktreePath, "add", "."))
+	branchMustRun(t, branchGitCmd(worktreePath, "commit", "-m", "agent work"))
+
+	beforeSHA, err := exec.Command("git", "-C", worktreePath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse before cleanup: %v", err)
+	}
+
+	// Simulate stagnant cleanup: remove worktree but keep branch (keepBranch=true).
+	removeDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-resume-orphan", true)
+
+	if _, statErr := os.Stat(worktreePath); statErr == nil {
+		t.Fatal("worktree directory should be gone after stagnant cleanup")
+	}
+
+	// Second dispatch: resume the orphan branch.
+	newWorktreePath, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-resume-orphan")
+	if err != nil {
+		t.Fatalf("second prepareDropletWorktree (resume) on empty repo: %v", err)
+	}
+
+	// Verify the branch is resumed with the commit intact.
+	if got := currentBranch(t, newWorktreePath); got != "feat/drop-resume-orphan" {
+		t.Errorf("HEAD branch after resume = %q, want feat/drop-resume-orphan", got)
+	}
+
+	afterSHA, err := exec.Command("git", "-C", newWorktreePath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse after resume: %v", err)
+	}
+
+	before, after := strings.TrimSpace(string(beforeSHA)), strings.TrimSpace(string(afterSHA))
+	if before != after {
+		t.Errorf("prior commits lost on orphan resume: HEAD before=%s after=%s", before, after)
+	}
+}
+
+// TestPrepareDropletWorktree_EmptyRepo_MultipleDroplets verifies that two
+// droplets can create independent orphan worktrees on an empty repo.
+func TestPrepareDropletWorktree_EmptyRepo_MultipleDroplets(t *testing.T) {
+	primaryDir := makeEmptyBareAndClone(t)
+	sandboxRoot := t.TempDir()
+	l := newBranchLifecycleLogger(io.Discard)
+
+	wt1, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-multi-1")
+	if err != nil {
+		t.Fatalf("prepareDropletWorktree for drop-multi-1: %v", err)
+	}
+	wt2, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-multi-2")
+	if err != nil {
+		t.Fatalf("prepareDropletWorktree for drop-multi-2: %v", err)
+	}
+
+	// Both branches should exist and be independent.
+	// Use git branch --show-current since rev-parse HEAD fails on unborn branches.
+	branch1Out, err := exec.Command("git", "-C", wt1, "branch", "--show-current").Output()
+	if err != nil {
+		t.Fatalf("git branch --show-current in wt1: %v", err)
+	}
+	if got := strings.TrimSpace(string(branch1Out)); got != "feat/drop-multi-1" {
+		t.Errorf("worktree 1 branch = %q, want feat/drop-multi-1", got)
+	}
+
+	branch2Out, err := exec.Command("git", "-C", wt2, "branch", "--show-current").Output()
+	if err != nil {
+		t.Fatalf("git branch --show-current in wt2: %v", err)
+	}
+	if got := strings.TrimSpace(string(branch2Out)); got != "feat/drop-multi-2" {
+		t.Errorf("worktree 2 branch = %q, want feat/drop-multi-2", got)
+	}
+
+	// Commit in wt1 and verify wt2 is unaffected.
+	if err := os.WriteFile(filepath.Join(wt1, "from1.txt"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	branchMustRun(t, branchGitCmd(wt1, "add", "."))
+	branchMustRun(t, branchGitCmd(wt1, "commit", "-m", "commit from droplet 1"))
+
+	// wt2 should still have no tracked files.
+	statusOut, err := exec.Command("git", "-C", wt2, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("git status in wt2: %v", err)
+	}
+	if strings.TrimSpace(string(statusOut)) != "" {
+		t.Errorf("wt2 should be empty after wt1 commit, but has:\n%s", statusOut)
+	}
+}
+
+// TestPrepareDropletWorktree_EmptyRepo_LogsWorktreeCreated verifies that
+// prepareDropletWorktree emits a log message containing "worktree created (orphan)"
+// when creating a worktree on an empty repo.
+func TestPrepareDropletWorktree_EmptyRepo_LogsWorktreeCreated(t *testing.T) {
+	var buf bytes.Buffer
+	l := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	primaryDir := makeEmptyBareAndClone(t)
+	sandboxRoot := t.TempDir()
+
+	_, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "ci-orphan-log")
+	if err != nil {
+		t.Fatalf("prepareDropletWorktree on empty repo: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "worktree created (orphan)") {
+		t.Errorf("log missing 'worktree created (orphan)'; got: %s", out)
+	}
+	if !strings.Contains(out, "ci-orphan-log") {
+		t.Errorf("log missing droplet ID; got: %s", out)
+	}
+	if !strings.Contains(out, "duration=") {
+		t.Errorf("log missing duration field; got: %s", out)
+	}
+}
+
+// TestPrepareBranchInSandbox_EmptyRepo_CreatesOrphanBranch verifies that on an
+// empty repo (no origin/main commits), prepareBranchInSandbox creates an orphan
+// branch instead of failing with git fetch/reset errors.
+func TestPrepareBranchInSandbox_EmptyRepo_CreatesOrphanBranch(t *testing.T) {
+	primaryDir := makeEmptyBareAndClone(t)
+
+	// First, create a detached worktree on the empty repo using the orphan path
+	// (simulating the worktree EnsureWorktree would create).
+	worktreeDir := filepath.Join(t.TempDir(), "sandbox")
+	branchMustRun(t, branchGitCmd(primaryDir, "worktree", "add", "--orphan", "-b", "_worker_sandbox", worktreeDir))
+	branchMustRun(t, branchGitCmd(worktreeDir, "config", "user.email", "test@test.com"))
+	branchMustRun(t, branchGitCmd(worktreeDir, "config", "user.name", "Test"))
+
+	// Now prepareBranchInSandbox on the orphan worktree.
+	if err := prepareBranchInSandbox(worktreeDir, "drop-empty-branch"); err != nil {
+		t.Fatalf("prepareBranchInSandbox on empty repo: %v", err)
+	}
+
+	// Verify the feature branch was created. On an unborn orphan branch,
+	// rev-parse HEAD fails, so use git branch --show-current.
+	branchOut, branchErr := exec.Command("git", "-C", worktreeDir, "branch", "--show-current").Output()
+	if branchErr != nil {
+		t.Fatalf("git branch --show-current: %v", branchErr)
+	}
+	if got := strings.TrimSpace(string(branchOut)); got != "feat/drop-empty-branch" {
+		t.Errorf("current branch = %q, want feat/drop-empty-branch", got)
+	}
 }

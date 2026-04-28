@@ -381,6 +381,27 @@ git status                           # Assess damage
 git checkout -B lobsterdog-work origin/main  # Nuke and re-sync (loses local changes)
 ```
 
+## Empty Repos (No Commits)
+
+Cistern supports repos that have zero commits on `origin/main` (brand-new empty repos with an unborn default branch). Previously, empty repos caused the Castellarius to crash in a restart loop with `fatal: invalid reference: HEAD` because `git worktree add --detach` and `git worktree add -b feat/<id> <path> origin/main` both require an existing commit.
+
+**How it works now:**
+- `prepareDropletWorktree` detects empty repos and uses `git worktree add --orphan -b feat/<id> <path>` instead, creating an unborn branch with no parent commit
+- `EnsureWorktree` detects empty repos and uses `--orphan -b _worker_<name>` instead of `--detach`
+- `prepareBranchInSandbox` uses `git checkout --orphan` on empty repos instead of fetching and resetting from `origin/main`
+- The `git_sync` drought hook skips `git reset --hard origin/main` on the `_primary` clone when the repo has no commits — it logs `_primary has no origin/main — skipping reset`
+- Once any droplet creates the first commit on its orphan branch, subsequent worktrees for that repo use the normal path (branching from `origin/main`)
+
+**What to expect with a brand-new repo:**
+1. Add the repo to `cistern.yaml` as usual
+2. Add droplets — the first droplet will create an orphan branch and make the initial commit
+3. After the first commit lands on `origin/main` (via delivery/merge), all subsequent droplets branch normally from `origin/main`
+
+**Troubleshooting:**
+- If you see `worktree created (orphan)` in the Castellarius logs, this is expected — it means the repo has no commits yet
+- If a droplet on an orphan branch is recirculated, the existing branch is reattached and prior commits are preserved
+- If you see `_primary has no origin/main — skipping reset` in drought logs, this is expected for empty repos — the reset will resume once the first commit exists
+
 ## Drought Protocol Not Running
 
 Drought hooks run during idle periods. If they're not firing:

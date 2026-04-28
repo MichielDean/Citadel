@@ -46,6 +46,8 @@ func EnsurePrimaryClone(primaryDir, repoURL string) error {
 // It prunes stale worktree registrations first to prevent "already in use" errors.
 // If worktreeDir exists as a legacy dedicated clone (not a registered worktree), it
 // is removed so a fresh worktree can be created.
+// On an empty/unborn repo (no commits on HEAD), it uses --orphan to create
+// an orphan worktree because --detach would fail with "fatal: invalid reference: HEAD".
 func EnsureWorktree(primaryDir, worktreeDir string) error {
 	// Prune stale registrations so dead paths don't block re-registration.
 	prune := exec.Command("git", "worktree", "prune", "--expire=0")
@@ -80,17 +82,65 @@ func EnsureWorktree(primaryDir, worktreeDir string) error {
 		}
 	}
 
-	t0 := time.Now()
-	add := exec.Command("git", "worktree", "add", "--detach", worktreeDir)
-	add.Dir = primaryDir
-	if addOut, err := add.CombinedOutput(); err != nil {
-		slog.Default().Error("git worktree add failed",
-			"dir", worktreeDir, "duration", time.Since(t0).Round(time.Millisecond).String(), "error", err)
-		return fmt.Errorf("git worktree add --detach %s: %w: %s", worktreeDir, err, addOut)
+	// Check whether HEAD has commits. On an empty/unborn repo, --detach fails
+	// with "fatal: invalid reference: HEAD". Use --orphan in that case.
+	hasCommits, commitsErr := repoHasCommits(primaryDir, "HEAD")
+	if commitsErr != nil {
+		// If we can't check, assume commits exist (conservative fallback) and
+		// let the normal path fail with a descriptive error if wrong.
+		slog.Default().Warn("repoHasCommits check failed, assuming commits exist",
+			"dir", primaryDir, "error", commitsErr)
+		hasCommits = true
 	}
-	slog.Default().Info("git worktree created",
-		"dir", worktreeDir, "duration", time.Since(t0).Round(time.Millisecond).String())
+
+	t0 := time.Now()
+	if !hasCommits {
+		// Empty repo: create an orphan worktree. --orphan requires -b, so use
+		// a named branch for the worker. The _worker_ prefix makes it distinct
+		// from feature branches.
+		branchName := "_worker_" + filepath.Base(worktreeDir)
+		add := exec.Command("git", "worktree", "add", "--orphan", "-b", branchName, worktreeDir)
+		add.Dir = primaryDir
+		if addOut, err := add.CombinedOutput(); err != nil {
+			slog.Default().Error("git worktree add --orphan failed",
+				"dir", worktreeDir, "duration", time.Since(t0).Round(time.Millisecond).String(), "error", err)
+			return fmt.Errorf("git worktree add --orphan -b %s %s: %w: %s", branchName, worktreeDir, err, addOut)
+		}
+		slog.Default().Info("git worktree created (orphan)",
+			"dir", worktreeDir, "duration", time.Since(t0).Round(time.Millisecond).String())
+	} else {
+		add := exec.Command("git", "worktree", "add", "--detach", worktreeDir)
+		add.Dir = primaryDir
+		if addOut, err := add.CombinedOutput(); err != nil {
+			slog.Default().Error("git worktree add failed",
+				"dir", worktreeDir, "duration", time.Since(t0).Round(time.Millisecond).String(), "error", err)
+			return fmt.Errorf("git worktree add --detach %s: %w: %s", worktreeDir, err, addOut)
+		}
+		slog.Default().Info("git worktree created",
+			"dir", worktreeDir, "duration", time.Since(t0).Round(time.Millisecond).String())
+	}
 	return nil
+}
+
+// repoHasCommits reports whether the given ref resolves to a commit in dir.
+// It runs git rev-parse --verify <ref> in dir. If the ref exists, it returns
+// true, nil. If the ref does not exist (unknown revision), it returns false, nil.
+// For any other error (dir does not exist, permission denied), it returns false, err.
+func repoHasCommits(dir, ref string) (bool, error) {
+	cmd := exec.Command("git", "rev-parse", "--verify", ref)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// git rev-parse --verify exits with code 1 (or 128) and prints
+		// "fatal: Needed a single revision" or "unknown revision" when
+		// the ref does not exist. This is the expected "no commits" case.
+		lower := strings.ToLower(string(out))
+		if strings.Contains(lower, "unknown revision") || strings.Contains(lower, "needed a single revision") {
+			return false, nil
+		}
+		return false, fmt.Errorf("cataractae: repoHasCommits %s in %s: %w: %s", ref, dir, err, out)
+	}
+	return true, nil
 }
 
 // cloneSandbox performs a fresh git clone into dir.

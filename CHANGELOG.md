@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Handle empty repos in worktree creation with --orphan flag (ci-adwp9)
+
+When a repo has no commits (empty/unborn branch), `git worktree add --detach` and `git worktree add -b feat/<id> <path> origin/main` both fail with `fatal: invalid reference: HEAD`. This crashed the Castellarius in a restart loop. The fix detects empty repos (no commits on `origin/main` or `HEAD`) and uses `git worktree add --orphan` instead, which creates an unborn branch with no parent commit. Once an initial commit exists, subsequent worktrees use the normal path.
+
+**Key changes:**
+- `prepareDropletWorktree`: skips `git fetch` on empty repos (nothing to fetch), uses `--orphan -b` flag for worktree creation, skips `git reset --hard origin/main` on orphan branches
+- `EnsureWorktree`: detects empty repos and uses `--orphan -b _worker_<name>` instead of `--detach`
+- `prepareBranchInSandbox`: detects empty repos and uses `git checkout --orphan` instead of fetch/checkout from `origin/main`
+- `hookGitSync`: skips `git reset --hard origin/main` on the `_primary` clone when the repo has no commits on `origin/main`
+- New `repoHasCommits(dir, ref)` helper (in both `castellarius` and `cataractae` packages) checks whether a ref resolves to a commit using `git rev-parse --verify`
+
+**Testing:** 8 new integration tests covering empty-repo behavior for all four code paths, including orphan branch creation, branch resumption, multiple concurrent droplets, and logging.
+
 ### Fix web SPA crash on empty data — null array regression (ci-1a9sf)
 
 The web SPA crashed on launch when `pooled_items`, `unassigned_items`, or other collection fields were empty. The Go API serialized nil slices as JSON `null` (standard Go behavior), and the React frontend called `.length` on them without null-coalescing.

@@ -148,3 +148,65 @@ func TestEnsureWorktree_PrunesStaleRegistrations(t *testing.T) {
 		t.Error("worktree not registered after prune+re-add")
 	}
 }
+
+// makeEmptyGitRepo creates a git repo with ZERO commits on main (unborn branch).
+// This simulates a brand-new empty repo where HEAD points to refs/heads/main
+// but no commit exists.
+func makeEmptyGitRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	// Init creates a repo with an unborn default branch (no commits).
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config user.email: %v\n%s", err, out)
+	}
+
+	cmd = exec.Command("git", "config", "user.name", "Test")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config user.name: %v\n%s", err, out)
+	}
+
+	// Rename branch to main for consistency.
+	cmd = exec.Command("git", "branch", "-M", "main")
+	cmd.Dir = dir
+	// This will fail on an empty repo with no commits — that's expected.
+	// The branch doesn't exist yet, so -M can't rename it. That's fine;
+	// we just need the .git directory to exist for worktree operations.
+	_ = cmd.Run()
+
+	return dir
+}
+
+// TestEnsureWorktree_EmptyRepo_UsesOrphanBranch verifies that on an empty repo
+// (no commits), EnsureWorktree uses --orphan to create a worktree instead of
+// --detach which would fail with "fatal: invalid reference: HEAD".
+func TestEnsureWorktree_EmptyRepo_UsesOrphanBranch(t *testing.T) {
+	primary := makeEmptyGitRepo(t)
+	worktreeDir := filepath.Join(t.TempDir(), "wt")
+
+	if err := EnsureWorktree(primary, worktreeDir); err != nil {
+		t.Fatalf("EnsureWorktree on empty repo: %v", err)
+	}
+
+	// (a) no error returned (verified above)
+
+	// (b) worktree directory exists
+	if _, err := os.Stat(worktreeDir); err != nil {
+		t.Fatalf("worktree dir not created: %v", err)
+	}
+
+	// (c) worktree is registered in git worktree list
+	abs, _ := filepath.Abs(worktreeDir)
+	if !isWorktreeRegistered(t, primary, abs) {
+		t.Error("worktree not registered in primary clone")
+	}
+}
