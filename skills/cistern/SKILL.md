@@ -168,9 +168,8 @@ systemctl --user restart cistern-castellarius
 ct cataractae list
 ct cataractae generate
 
-# Dashboard (reload after rebuild)
-kill $(ss -tlnp | grep 5737 | grep -o 'pid=[0-9]*' | cut -d= -f2) 2>/dev/null
-systemctl --user start cistern-ttyd.service
+# Dashboard (restart after rebuild)
+systemctl --user restart cistern-web.service
 ```
 
 ## Infrastructure
@@ -178,7 +177,7 @@ systemctl --user start cistern-ttyd.service
 - Castellarius: systemd user service `cistern-castellarius.service` (Restart=always)
 - Auth: Opencode CLI manages its own credentials — no provider API keys needed in the service environment
 - `start-castellarius.sh` just runs `exec ct castellarius start` — no credential setup
-- ttyd dashboard: port 5737, managed by `cistern-ttyd.service`
+- Web dashboard: port 5737, managed by `cistern-web.service`
 - Self-restart: git_sync drought hook + binary mtime detection → os.Exit(0) → systemd restarts
 
 ## Troubleshooting
@@ -192,5 +191,5 @@ Run `ct doctor` first — it checks daemon status and common config issues autom
 | Sessions failing auth | `ct doctor` checks agent CLI auth automatically; also verify environment variables are correct for the configured provider |
 | Droplet stuck | `ct droplet show <id>` — check notes; `ct droplet restart <id>` |
 | Logs | `journalctl --user -u cistern-castellarius -f` or `cat ~/.cistern/castellarius.log` |
-| Dashboard stale after rebuild | Kill old process on port 5737, restart cistern-ttyd.service |
+| Dashboard stale after rebuild | `systemctl --user restart cistern-web.service` |
 | Binary out of date | Rebuild: `cd ~/cistern && COMMIT=$(git rev-parse --short HEAD) && PATH="/usr/local/go/bin:$PATH" go build -ldflags "-X main.version=${COMMIT} -X main.commit=${COMMIT}" -o ~/go/bin/ct ./cmd/ct/` |
