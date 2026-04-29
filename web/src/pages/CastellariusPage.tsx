@@ -86,7 +86,7 @@ export function CastellariusPage() {
     : null;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 md:p-6 space-y-4">
+    <div className="flex-1 flex flex-col min-h-0 p-4 md:p-6 space-y-4">
       <section className="bg-cistern-surface border border-cistern-border rounded-lg p-4 shrink-0">
         <div className="flex items-center justify-between mb-4">
           <StatusIndicator status={indicatorStatus} label="Castellarius" size="lg" />
